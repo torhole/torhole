@@ -218,15 +218,26 @@ dashboard then verifies DNS resolution, blocking, Tor routing, the current exit,
 and whether the resolver sees the Tor exit rather than the host's normal public
 address.
 
-Command-line checks are also available:
+The installer runs its own DNS check inside the Pi-hole container, so `dig` is
+not a host prerequisite. To repeat the check without installing another Debian
+package, run:
 
 ```bash
-dig @127.0.0.1 example.com
-dig @127.0.0.1 doubleclick.net
+sudo docker exec torhole-qs-pihole dig @127.0.0.1 example.com
+sudo docker exec torhole-qs-pihole dig @127.0.0.1 doubleclick.net
 ```
 
-The first should resolve. The second should return a blocked response after the
-Pi-hole lists are ready.
+Omit `sudo` if your account can already access Docker. The first query should
+resolve. The second should return a blocked response after the Pi-hole lists
+are ready.
+
+To test from another LAN device instead, install that device's DNS utilities
+if needed (`sudo apt install dnsutils` on Debian/Ubuntu), then query the
+**DNS server address shown by the installer**, not `127.0.0.1`:
+
+```bash
+dig @<torhole-dns-address> example.com
+```
 
 > **Port 53 already in use?** Torhole needs port 53 to serve ordinary routers
 > and devices. Stop the conflicting DNS service, then run the installer again.
