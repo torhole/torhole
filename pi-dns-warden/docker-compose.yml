@@ -1,0 +1,141 @@
+services:
+  tor:
+    build:
+      context: ./tor-image
+    container_name: tor
+    restart: unless-stopped
+    command: ["tor", "-f", "/etc/tor/torrc"]
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ./tor/torrc:/etc/tor/torrc:ro
+    networks:
+      dns_int:
+        ipv4_address: 172.30.0.10
+      tor_out:
+        gw_priority: 1
+    # SOCKS port is NOT published to the host.
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 9050"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  dnscrypt_trusted:
+    image: ${DNSCRYPT_IMAGE:-klutchell/dnscrypt-proxy:latest}
+    container_name: dnscrypt-trusted
+    restart: unless-stopped
+    depends_on:
+      tor:
+        condition: service_healthy
+    tmpfs:
+      - /tmp:rw,mode=1777
+    volumes:
+      - ./dnscrypt/trusted:/config
+    command: ["-config", "/config/dnscrypt-proxy.toml"]
+    networks:
+      dns_int:
+        ipv4_address: 172.30.0.11
+
+  dnscrypt_iot:
+    image: ${DNSCRYPT_IMAGE:-klutchell/dnscrypt-proxy:latest}
+    container_name: dnscrypt-iot
+    restart: unless-stopped
+    depends_on:
+      tor:
+        condition: service_healthy
+    tmpfs:
+      - /tmp:rw,mode=1777     
+    volumes:
+      - ./dnscrypt/iot:/config
+    networks:
+      dns_int:
+        ipv4_address: 172.30.0.12
+
+  pihole_trusted:
+    image: ${PIHOLE_IMAGE:-pihole/pihole:latest}
+    container_name: pihole_trusted
+    hostname: pihole-trusted
+    restart: unless-stopped
+    depends_on:
+      - dnscrypt_trusted
+    environment:
+      TZ: ${TZ}
+      FTLCONF_webserver_api_password: ${PIHOLE_TRUSTED_PASSWORD}
+      FTLCONF_dns_listeningMode: all
+      FTLCONF_dns_upstreams: "172.30.0.11#5053"
+      FTLCONF_dns_cache_size: 10000
+      FTLCONF_dns_cache_optimizer: 3600
+      FTLCONF_misc_etc_dnsmasq_d: "true"
+      FTLCONF_webserver_api_max_sessions: 256
+    volumes:
+      - ./pihole/trusted/etc-pihole:/etc/pihole
+      - ./pihole/trusted/etc-dnsmasq.d:/etc/dnsmasq.d
+    networks:
+      dns_int:
+        ipv4_address: 172.30.0.21
+        gw_priority: 1
+      macvlan_trusted:
+        ipv4_address: ${PIHOLE_TRUSTED_IP}
+
+  pihole_iot:
+    image: ${PIHOLE_IMAGE:-pihole/pihole:latest}
+    container_name: pihole_iot
+    hostname: pihole-iot
+    restart: unless-stopped
+    depends_on:
+      - dnscrypt_iot
+    environment:
+      TZ: ${TZ}
+      FTLCONF_webserver_api_password: ${PIHOLE_IOT_PASSWORD}
+      FTLCONF_dns_listeningMode: all
+      FTLCONF_dns_upstreams: 172.30.0.12#5053
+      FTLCONF_dns_cache_size: 10000
+      FTLCONF_dns_cache_optimizer: 3600
+      FTLCONF_misc_etc_dnsmasq_d: "true"
+      FTLCONF_webserver_api_max_sessions: 256
+    volumes:
+      - ./pihole/iot/etc-pihole:/etc/pihole
+      - ./pihole/iot/etc-dnsmasq.d:/etc/dnsmasq.d
+    networks:
+      dns_int:
+        ipv4_address: 172.30.0.22
+        gw_priority: 1
+      macvlan_iot:
+        ipv4_address: ${PIHOLE_IOT_IP}
+
+networks:
+  dns_int:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+  tor_out:
+    driver: bridge
+
+  macvlan_trusted:
+    driver: macvlan
+    driver_opts:
+      # For UniFi, VLAN 1 is often *untagged/native*. In that common case, use:
+      #   TRUSTED_PARENT=eth0
+      # If your Trusted network is tagged, use:
+      #   TRUSTED_PARENT=eth0.1
+      parent: ${TRUSTED_PARENT}
+    ipam:
+      config:
+        - subnet: ${TRUSTED_SUBNET_CIDR}
+          gateway: ${TRUSTED_GATEWAY}
+
+  macvlan_iot:
+    driver: macvlan
+    driver_opts:
+      parent: ${IOT_PARENT}
+    ipam:
+      config:
+        - subnet: ${IOT_SUBNET_CIDR}
+          gateway: ${IOT_GATEWAY}
+

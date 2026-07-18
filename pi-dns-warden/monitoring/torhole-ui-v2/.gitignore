@@ -1,0 +1,11 @@
+node_modules
+dist
+*.log
+
+# Playwright
+tests/.env.test
+tests/.auth
+test-results
+playwright-report
+.playwright
+.playwright-browsers

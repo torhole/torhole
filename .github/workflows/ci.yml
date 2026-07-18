@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    name: Validate configs & backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pi-dns-warden
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy env example
+        run: cp .env.example .env
+
+      - name: Validate core compose
+        run: docker compose config --quiet
+
+      # Note: the monitoring compose is an overlay — its networks/deps live in
+      # the core file, so it is only validated combined, never standalone.
+      - name: Validate combined compose
+        run: docker compose -f docker-compose.yml -f docker-compose.monitoring.yml config --quiet
+
+      - name: Check Python syntax (all services)
+        run: |
+          find monitoring -name "*.py" -not -path "*/__pycache__/*" \
+            -exec python3 -m py_compile {} \;
+
+      - name: Backend security tests
+        run: python3 monitoring/backup-manager/test_security.py
+
+      - name: Backend characterization tests
+        run: python3 monitoring/backup-manager/test_characterization.py
+
+      - name: Shell tests (env loader + compose hardening)
+        run: |
+          bash ops/tests/test-load-env.sh
+          bash ops/tests/test-security-compose.sh
+
+      - name: Validate dnscrypt configs (TOML)
+        run: |
+          pip install tomli --quiet
+          for f in dnscrypt/*/dnscrypt-proxy.toml; do
+            python3 -c "import tomli; tomli.loads(open('$f').read())" && echo "OK: $f"
+          done
+
+      # The prom/prometheus image's entrypoint IS the prometheus binary, so
+      # `... prom/prometheus promtool ...` feeds "promtool" as an argument to
+      # prometheus ("unexpected promtool"). Override the entrypoint to run
+      # promtool directly.
+      - name: Validate Prometheus config
+        run: |
+          docker run --rm --entrypoint promtool \
+            -v "$GITHUB_WORKSPACE/pi-dns-warden/monitoring/prometheus:/etc/prometheus:ro" \
+            prom/prometheus:latest \
+            check config /etc/prometheus/prometheus.yml
+
+      - name: Validate Prometheus alert rules
+        run: |
+          docker run --rm --entrypoint promtool \
+            -v "$GITHUB_WORKSPACE/pi-dns-warden/monitoring/prometheus:/etc/prometheus:ro" \
+            prom/prometheus:latest \
+            check rules /etc/prometheus/alert.rules.yml
+
+      - name: Validate Caddy config
+        run: |
+          # auth-snippets.caddy is rendered at deploy time (18-render-auth.sh);
+          # stub it so the top-level import resolves during static validation.
+          printf '# CI stub for the deploy-rendered auth snippet\n' \
+            > monitoring/caddy/auth-snippets.caddy
+          docker run --rm --env-file .env \
+            -v "$GITHUB_WORKSPACE/pi-dns-warden/monitoring/caddy:/etc/caddy:ro" \
+            caddy:latest \
+            caddy validate --config /etc/caddy/Caddyfile
+
+  ui:
+    name: UI typecheck & build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pi-dns-warden/monitoring/torhole-ui-v2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: pi-dns-warden/monitoring/torhole-ui-v2/package-lock.json
+      - name: Install deps
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+
+  lint-shell:
+    name: Lint shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: ./pi-dns-warden
+          # Gate on warning+ (real portability/correctness issues). SC-level
+          # "note" style hints (SC1091 unfollowable sources, SC2029 ssh-side
+          # expansion, SC2012 ls) are informational and don't block deploys.
+          severity: warning

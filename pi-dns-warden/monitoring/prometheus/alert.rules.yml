@@ -1,0 +1,161 @@
+groups:
+  - name: dns-warden
+    interval: 30s
+    rules:
+      - alert: BlackboxExporterDown
+        expr: up{job="blackbox-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Blackbox exporter offline"
+          description: "Prometheus cannot scrape blackbox-exporter for more than 2 minutes."
+
+      - alert: MetricsTargetDown
+        expr: up{job=~"node|cadvisor|caddy|loki|alloy|pihole-exporter"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Metrics target offline"
+          description: "{{ $labels.job }} is not reachable for more than 2 minutes."
+
+      - alert: PiHoleTelemetryDown
+        expr: pihole_exporter_up == 0
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pi-hole telemetry offline"
+          description: "The authenticated Pi-hole API scrape for {{ $labels.role }} is failing for more than 3 minutes."
+
+      - alert: LokiDown
+        expr: up{job="loki"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Loki offline"
+          description: "Prometheus cannot scrape Loki for more than 2 minutes."
+
+      - alert: LogPipelineDown
+        expr: up{job="alloy"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Log pipeline offline"
+          description: "Grafana Alloy is not reachable for more than 2 minutes."
+
+      - alert: MonitoringServiceDown
+        expr: probe_success{job="blackbox-monitoring-tcp"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Monitoring service offline"
+          description: "{{ $labels.instance }} is not reachable for more than 2 minutes."
+
+      - alert: PiholeDnsDown
+        expr: probe_success{job="blackbox-dns-udp-pihole"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Pi-hole DNS offline"
+          description: "{{ $labels.instance }} is failing UDP DNS probes for more than 2 minutes."
+
+      - alert: PiholeWebDown
+        expr: probe_success{job="blackbox-pihole-http"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pi-hole web UI offline"
+          description: "{{ $labels.instance }} is failing HTTP probes for more than 5 minutes."
+
+      - alert: DnscryptDown
+        expr: probe_success{job="blackbox-dns-tcp-dnscrypt"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "dnscrypt offline"
+          description: "{{ $labels.instance }} is failing TCP DNS probes for more than 2 minutes."
+
+      - alert: TorSocksDown
+        expr: probe_success{job="blackbox-tor-socks"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Tor SOCKS offline"
+          description: "{{ $labels.instance }} is not reachable on SOCKS port 9050 for more than 2 minutes."
+
+      - alert: ProbeFailureRateHigh
+        expr: avg_over_time(probe_success{job=~"blackbox-.*"}[5m]) < 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Probe success below 80%"
+          description: "{{ $labels.instance }} has probe success below 80% over the last 10 minutes."
+
+      - alert: ContainerRestarts
+        expr: increase(container_restart_count_total{name=~"tor|dnscrypt-(trusted|iot)|pihole_(trusted|iot)|prometheus|grafana|alertmanager|blackbox-exporter|dockhand|reverse-proxy"}[1h]) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container restarting frequently"
+          description: "{{ $labels.name }} restarted more than 2 times in the last hour."
+
+      # Tor can be "up" (control + SOCKS ports answering) while completely
+      # unable to reach the network — e.g. an egress firewall blocking relay
+      # connections leaves it stuck at "Bootstrapped 5% (conn)". TorSocksDown
+      # never fires in that state; this rule does. (2026-07-13 staging
+      # incident: tor sat at 5% for hours with every port-level check green.)
+      - alert: TorBootstrapStuck
+        expr: tor_bootstrap_percent < 100
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Tor stuck bootstrapping"
+          description: "Tor has been at {{ $value }}% bootstrap for more than 5 minutes — no privacy path. Check egress firewall to Tor relays and `docker logs tor`."
+
+      # The scheduled leak test (every 30 min) SOCKS-connects through
+      # tor:9050 to check.torproject.org and verifies IsTor. A failure means
+      # DNS may be exiting outside Tor — the core guarantee is broken.
+      - alert: LeakTestFailed
+        expr: torhole_leak_test_pass == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Tor leak test failed"
+          description: "The last leak test did not confirm IsTor via check.torproject.org. The privacy guarantee may be compromised."
+
+      # Scheduled backups stopped happening: the newest archive is older than
+      # 1.5x the configured interval. Only meaningful when scheduling is on
+      # (interval > 0); a fresh install with no archives yet exports no age
+      # metric and stays silent.
+      - alert: BackupStale
+        expr: torhole_last_backup_age_seconds > (torhole_backup_schedule_interval_hours * 3600 * 1.5) and torhole_backup_schedule_interval_hours > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scheduled backups are stale"
+          description: "The newest backup archive is older than 1.5x the configured interval. Check the backup-manager scheduler and disk space."
+
+      # Catches a dead leak-test scheduler (or a backup-manager that cannot
+      # complete a test at all): no fresh result in 2 hours = 4 missed runs.
+      - alert: LeakTestStale
+        expr: torhole_leak_test_age_seconds > 7200
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Leak test results are stale"
+          description: "No leak test has completed in over 2 hours (scheduler runs every 30 minutes). Privacy verification is not happening."

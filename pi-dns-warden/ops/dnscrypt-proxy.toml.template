@@ -1,0 +1,58 @@
+# dnscrypt-proxy configuration (Tor upstream)
+# TCP-only is required when using Tor SOCKS.
+
+ipv4_servers = true
+ipv6_servers = false
+
+# Enable both; your resolver choice decides what gets used.
+dnscrypt_servers = true
+doh_servers = true
+odoh_servers = false
+
+# Privacy preferences (best effort)
+# NOTE: for malware-blocking resolvers, filtering is expected -> require_nofilter must be false.
+require_dnssec = false
+require_nolog = false
+require_nofilter = false
+
+# Tor uses TCP; enforce TCP upstream.
+force_tcp = true
+
+# Timeouts for Tor
+timeout = @TIMEOUT_MS@
+keepalive = @KEEPALIVE_S@
+
+# Tor SOCKS proxy. Each dnscrypt instance uses different credentials for circuit isolation.
+proxy = 'socks5://@SOCKS_USER@:@SOCKS_PASS@@tor:9050'
+
+# Listen inside the container
+listen_addresses = ['0.0.0.0:5053']
+
+# Resolver selection (TOML array). Example: ['cloudflare-security','quad9-dnscrypt-ip4-filter-pri']
+server_names = @RESOLVERS@
+
+# Load balancing strategy
+lb_strategy = 'p2'
+
+# Cache: huge impact on perceived latency
+cache = true
+cache_size = @CACHE_SIZE@
+cache_min_ttl = @CACHE_MIN_TTL@
+cache_max_ttl = @CACHE_MAX_TTL@
+cache_neg_min_ttl = @CACHE_NEG_MIN_TTL@
+cache_neg_max_ttl = @CACHE_NEG_MAX_TTL@
+
+# Resolver list sources — REQUIRED: without [sources], server_names cannot
+# match anything and dnscrypt-proxy exits FATAL ("None of the servers listed
+# in the server_names list were found in the configured sources").
+# cache_file lives on the container tmpfs (/tmp) since the image is scratch.
+# Downloads go through the Tor SOCKS proxy configured above.
+[sources]
+
+  [sources.'public-resolvers']
+  urls = [
+    'https://raw.githubusercontent.com/DNSCrypt/dnscrypt-resolvers/master/v3/public-resolvers.md',
+    'https://download.dnscrypt.info/resolvers-list/v3/public-resolvers.md'
+  ]
+  minisign_key = 'RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3' # gitleaks:allow -- public dnscrypt-resolvers verification key
+  cache_file = '/tmp/public-resolvers.md'

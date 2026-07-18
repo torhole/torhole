@@ -1,0 +1,418 @@
+{
+  "uid": "pidns-platform",
+  "title": "Pi DNS Warden - Edge & Egress",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 3,
+  "refresh": "15s",
+  "tags": [
+    "dns",
+    "edge",
+    "caddy",
+    "egress",
+    "observability"
+  ],
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Reverse proxy edge",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PROM"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "avg_over_time(probe_success{job=\"blackbox-monitoring-tcp\",instance=\"reverse-proxy:443\"}[5m]) * 100",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "piechart",
+      "title": "HTTPS request share by host",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PROM"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (host) (rate(caddy_http_requests_total{host!=\"\"}[5m]))",
+          "legendFormat": "{{host}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "displayLabels": [
+          "name",
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right"
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "HTTPS request rate by host",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PROM"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (host) (rate(caddy_http_requests_total{host!=\"\"}[5m]))",
+          "legendFormat": "{{host}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Proxy latency p95 by host",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PROM"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, host) (rate(caddy_http_request_duration_seconds_bucket{host!=\"\"}[5m])))",
+          "legendFormat": "{{host}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Core services reachability",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PROM"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "avg_over_time(up{job=~\"node|cadvisor|prometheus|blackbox-exporter|caddy\"}[5m]) * 100",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        },
+        {
+          "expr": "avg_over_time(probe_success{job=\"blackbox-monitoring-tcp\",instance=~\"reverse-proxy:443|grafana:3000|alertmanager:9093|dockhand:3000\"}[5m]) * 100",
+          "legendFormat": "{{instance}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 18,
+      "type": "gauge",
+      "title": "Proxy upstream health floor",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PROM"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "min(caddy_reverse_proxy_upstreams_healthy)",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Tor node and edge traffic",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PROM"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(container_network_receive_bytes_total{name=\"reverse-proxy\"}[5m]))",
+          "legendFormat": "Reverse proxy RX",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(container_network_transmit_bytes_total{name=\"reverse-proxy\"}[5m]))",
+          "legendFormat": "Reverse proxy TX",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(container_network_receive_bytes_total{name=\"tor\"}[5m]))",
+          "legendFormat": "Tor RX",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(rate(container_network_transmit_bytes_total{name=\"tor\"}[5m]))",
+          "legendFormat": "Tor TX",
+          "refId": "D"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps"
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Reverse proxy upstream health",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PROM"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "caddy_reverse_proxy_upstreams_healthy",
+          "refId": "A",
+          "legendFormat": "{{upstream}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Per-upstream health as reported by Caddy's active health checks. 1 = healthy, 0 = marked down. Shows which specific backend is unreachable, not just the aggregate floor."
+    }
+  ],
+  "links": [
+    {
+      "title": "Control Room",
+      "type": "link",
+      "url": "/d/pidns-control",
+      "targetBlank": false,
+      "keepTime": true,
+      "includeVars": true,
+      "asDropdown": false
+    },
+    {
+      "title": "DNS Path",
+      "type": "link",
+      "url": "/d/pidns-path",
+      "targetBlank": false,
+      "keepTime": true,
+      "includeVars": true,
+      "asDropdown": false
+    },
+    {
+      "title": "Tor Flow",
+      "type": "link",
+      "url": "/d/pidns-torflow",
+      "targetBlank": false,
+      "keepTime": true,
+      "includeVars": true,
+      "asDropdown": false
+    },
+    {
+      "title": "Edge & Egress",
+      "type": "link",
+      "url": "/d/pidns-platform",
+      "targetBlank": false,
+      "keepTime": true,
+      "includeVars": true,
+      "asDropdown": false
+    },
+    {
+      "title": "Visibility & Logs",
+      "type": "link",
+      "url": "/d/pidns-visibility",
+      "targetBlank": false,
+      "keepTime": true,
+      "includeVars": true,
+      "asDropdown": false
+    },
+    {
+      "title": "Host Infrastructure",
+      "type": "link",
+      "url": "/d/pidns-host",
+      "targetBlank": false,
+      "keepTime": true,
+      "includeVars": true,
+      "asDropdown": false
+    }
+  ]
+}

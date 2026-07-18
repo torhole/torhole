@@ -1,0 +1,41 @@
+# dnscrypt-proxy configuration (Tor upstream)
+# Tuned for performance with caching. TCP-only is required when using Tor SOCKS.
+
+ipv4_servers = true
+ipv6_servers = false
+
+# Enable both protocols; the resolver list decides what is used.
+dnscrypt_servers = true
+doh_servers = true
+odoh_servers = false
+
+# Preferences
+require_dnssec = false
+require_nolog = true
+require_nofilter = true
+
+# Tor: TCP only
+force_tcp = true
+
+# Timeouts and connection reuse
+timeout = 5000
+keepalive = 30
+
+# Tor SOCKS5 proxy
+# The username/password is used for stream isolation when Tor has IsolateSOCKSAuth enabled.
+proxy = 'socks5://@SOCKS_USER@:@SOCKS_PASS@@tor:9050'
+
+# Listen inside the container
+listen_addresses = ['0.0.0.0:5053']
+
+# Resolver selection
+# This must match names in dnscrypt-proxy's public resolvers list.
+server_names = @RESOLVER_LIST@
+
+# Performance: cache to reduce Tor round-trips
+cache = true
+cache_size = @CACHE_SIZE@
+cache_min_ttl = 60
+cache_max_ttl = 86400
+cache_neg_min_ttl = 60
+cache_neg_max_ttl = 600

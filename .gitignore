@@ -1,0 +1,67 @@
+# Personal backup archives and legacy snapshots — never commit these.
+# History note (audit M3.5, 2026-07-13): the pihole-tor-dnscrypt-v1 snapshot
+# was untracked from the current tree; git history keeps it (no rewrite —
+# the pre-split state is preserved by tag archive/pre-split-snapshot).
+backups/
+
+# Runtime secrets
+pi-dns-warden/.env
+pi-dns-warden/run/
+
+# OS
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Node
+node_modules/
+dist/
+.next/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Docker volumes / local data
+pi-dns-warden/pihole/*/etc-pihole/
+pi-dns-warden/pihole/*/etc-dnsmasq.d/
+
+# remember plugin session state
+.remember/
+
+# Claude Code local state (agent settings, worktrees, scheduler locks)
+.claude/
+
+# Local SSL certs to trust on client devices (not committed)
+certs/
+
+# Local deployment env files with secrets (staging.env etc.)
+scratch/
+
+# Internal operational docs — kept local, never committed. They carry the
+# operator's live topology (LAN IPs, VLANs, chat ids) and the security audit
+# (which lists not-yet-fixed findings). Not for the public/OSS repo.
+journal.md
+AUDIT-*.md
+HANDOFF-*.md
+TASK.md
+pi-dns-warden/docs/plans/
+
+# Deployment-specific Ansible state. Public examples use the .example suffix.
+ansible/inventory*.ini
+!ansible/inventory*.ini.example
+ansible/group_vars/*.yml
+!ansible/group_vars/*.yml.example
+
+# Generated local Caddy CA certificate. Never publish deployment PKI material.
+pi-dns-warden/monitoring/caddy/root.crt
+
+# Playwright MCP session state
+.playwright-mcp/

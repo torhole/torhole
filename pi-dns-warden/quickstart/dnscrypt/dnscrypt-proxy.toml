@@ -1,0 +1,45 @@
+# torhole quickstart — dnscrypt-proxy over Tor (single instance, static).
+# TCP-only is required when tunnelling through Tor's SOCKS proxy.
+
+ipv4_servers = true
+ipv6_servers = false
+dnscrypt_servers = true
+doh_servers = true
+odoh_servers = false
+
+# Malware-blocking resolvers filter by design, so require_nofilter must be off.
+require_dnssec = false
+require_nolog = false
+require_nofilter = false
+
+# Tor uses TCP; enforce it.
+force_tcp = true
+timeout = 5000
+keepalive = 30
+
+# All upstream DNS exits through the Tor SOCKS proxy — the core guarantee.
+proxy = 'socks5://tor:9050'
+
+listen_addresses = ['0.0.0.0:53']
+server_names = ['cloudflare-security', 'quad9-dnscrypt-ip4-filter-pri']
+lb_strategy = 'p2'
+
+cache = true
+cache_size = 4096
+cache_min_ttl = 60
+cache_max_ttl = 86400
+cache_neg_min_ttl = 60
+cache_neg_max_ttl = 600
+
+# REQUIRED: without [sources] the server_names above can't resolve and
+# dnscrypt-proxy exits fatal. cache_file lives on the container tmpfs;
+# the resolver list is fetched (and minisign-verified) through Tor.
+[sources]
+
+  [sources.'public-resolvers']
+  urls = [
+    'https://raw.githubusercontent.com/DNSCrypt/dnscrypt-resolvers/master/v3/public-resolvers.md',
+    'https://download.dnscrypt.info/resolvers-list/v3/public-resolvers.md'
+  ]
+  minisign_key = 'RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3' # gitleaks:allow -- public dnscrypt-resolvers verification key
+  cache_file = '/tmp/public-resolvers.md'

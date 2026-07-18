@@ -1,0 +1,31 @@
+# Rendered by Ansible
+ipv4_servers = true
+ipv6_servers = false
+dnscrypt_servers = true
+doh_servers = true
+odoh_servers = false
+require_dnssec = false
+require_nolog = false
+require_nofilter = false
+force_tcp = true
+timeout = {{ dnscrypt_timeout_ms|default(5000) }}
+keepalive = {{ dnscrypt_keepalive_s|default(30) }}
+proxy = 'socks5://{{ dnscrypt_socks[item+'_user'] | default('') }}:{{ dnscrypt_socks[item+'_pass'] | default('') }}@tor:9050'
+listen_addresses = ['0.0.0.0:5053']
+server_names = [{% for r in dnscrypt_resolvers %}'{{ r }}'{% if not loop.last %}, {% endif %}{% endfor %}]
+lb_strategy = 'p2'
+cache = true
+cache_size = {{ dnscrypt_cache_size|default(8192) }}
+cache_min_ttl = {{ dnscrypt_cache_min_ttl|default(60) }}
+cache_max_ttl = {{ dnscrypt_cache_max_ttl|default(86400) }}
+cache_neg_min_ttl = 60
+cache_neg_max_ttl = 600
+
+[sources]
+  [sources.'public-resolvers']
+  urls = [
+    'https://raw.githubusercontent.com/DNSCrypt/dnscrypt-resolvers/master/v3/public-resolvers.md',
+    'https://download.dnscrypt.info/resolvers-list/v3/public-resolvers.md'
+  ]
+  minisign_key = 'RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3' # gitleaks:allow -- public dnscrypt-resolvers verification key
+  cache_file = '/tmp/public-resolvers.md'

@@ -1,0 +1,50 @@
+# Copy to dns_warden.yml and replace every CHANGE_ME value before deployment.
+
+parent_iface: eth0
+
+trusted_vlan_id: 1
+iot_vlan_id: 50
+
+trusted_subnet_cidr: 192.168.1.0/24
+trusted_gateway: 192.168.1.1
+iot_subnet_cidr: 192.168.50.0/24
+iot_gateway: 192.168.50.1
+
+pihole_trusted_ip: 192.168.1.53
+pihole_iot_ip: 192.168.50.53
+pihole_trusted_web_port: 8080
+
+timezone: UTC
+host_mgmt_ip: 192.168.1.10
+
+tags:
+  dnscrypt_image: klutchell/dnscrypt-proxy:latest
+  pihole_image: pihole/pihole:latest
+  prometheus_image: prom/prometheus:latest
+  grafana_image: grafana/grafana:latest
+  node_exporter_image: prom/node-exporter:latest
+  cadvisor_image: gcr.io/cadvisor/cadvisor:latest
+  blackbox_image: prom/blackbox-exporter:latest
+
+publish_monitoring: true
+publish_dockhand: false
+
+# Store production values in Ansible Vault.
+pihole_passwords:
+  trusted: CHANGE_ME
+  iot: CHANGE_ME
+
+dnscrypt_socks:
+  trusted_user: trusted
+  trusted_pass: CHANGE_ME
+  iot_user: iot
+  iot_pass: CHANGE_ME
+
+dnscrypt_resolvers:
+  - cloudflare-security
+  - quad9-dnscrypt-ip4-filter-pri
+  - mullvad-doh
+  - adguard-dns-unfiltered-doh
+
+project_src: "{{ playbook_dir | dirname }}/pi-dns-warden"
+project_dest: /opt/pi-dns-warden

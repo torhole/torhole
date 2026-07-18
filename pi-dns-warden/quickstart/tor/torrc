@@ -1,0 +1,21 @@
+# torhole quickstart — minimal Tor config.
+#
+# Static (no render step): SOCKS is reachable only on the internal
+# quickstart bridge (172.28.0.0/16), never published to the host, so
+# accepting the bridge subnet is safe. The full torhole setup renders this
+# from .env with per-plane SOCKS isolation and a control port; the quickstart
+# keeps it deliberately simple.
+SocksPort 0.0.0.0:9050
+SocksPolicy accept 127.0.0.1
+SocksPolicy accept 172.28.0.0/16
+SocksPolicy reject *
+AvoidDiskWrites 1
+HardwareAccel 1
+GeoIPFile /usr/share/tor/geoip
+GeoIPv6File /usr/share/tor/geoip6
+
+# A local Unix control socket lets Torhole inspect the active circuit and
+# request a fresh identity. It is shared only with the private control helper.
+ControlSocket /var/lib/tor/control.sock
+CookieAuthentication 1
+CookieAuthFile /var/lib/tor/control.authcookie

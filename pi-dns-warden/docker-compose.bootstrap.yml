@@ -1,0 +1,23 @@
+services:
+  bootstrap:
+    build:
+      context: .
+      dockerfile: bootstrap/Dockerfile
+    container_name: torhole-bootstrap
+    # The bootstrap service holds the temporary installer token and Docker
+    # socket access. Do not bring it back automatically after a reboot.
+    restart: "no"
+    environment:
+      TORHOLE_ROOT_DIR: ${TORHOLE_REPO_PATH}
+      TORHOLE_BOOTSTRAP_TOKEN: ${TORHOLE_BOOTSTRAP_TOKEN}
+      TORHOLE_HOST_ADDRESS: ${TORHOLE_HOST_ADDRESS}
+      TORHOLE_OWNER_UID: ${TORHOLE_OWNER_UID:-0}
+      TORHOLE_OWNER_GID: ${TORHOLE_OWNER_GID:-0}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ${TORHOLE_REPO_PATH}:${TORHOLE_REPO_PATH}
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "${TORHOLE_BOOTSTRAP_PORT:-8099}:8099/tcp"
+    security_opt:
+      - no-new-privileges:true

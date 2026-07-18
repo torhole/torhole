@@ -1,0 +1,10 @@
+[Unit]
+Description=Pi-hole Tor Prometheus external watchdog
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=@ROOT_DIR@
+ExecStart=@ROOT_DIR@/ops/scripts/18-prometheus-watchdog.sh
+

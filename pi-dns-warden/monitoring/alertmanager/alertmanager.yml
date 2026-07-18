@@ -1,0 +1,16 @@
+route:
+  receiver: default
+  group_by: ['alertname']
+  repeat_interval: 1h
+
+receivers:
+  - name: default
+    # Safe default: start Alertmanager without requiring secrets.
+    # Replace this receiver with slack_configs/email_configs once real values exist.
+
+inhibit_rules:
+  - source_match:
+      severity: critical
+    target_match:
+      severity: warning
+    equal: ['alertname']

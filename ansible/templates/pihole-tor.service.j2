@@ -1,0 +1,17 @@
+[Unit]
+Description=Pi-hole Tor DNS stack (Docker Compose)
+Requires=docker.service pihole-tor-vlans.service
+After=docker.service pihole-tor-vlans.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory={{ project_dest }}
+Environment="COMPOSE_FILE=docker-compose.yml:docker-compose.monitoring.yml"
+RemainAfterExit=yes
+ExecStart=/usr/bin/docker compose --env-file .env up -d
+ExecStop=/usr/bin/docker compose --env-file .env down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

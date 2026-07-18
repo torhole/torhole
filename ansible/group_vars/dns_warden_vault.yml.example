@@ -1,0 +1,10 @@
+# Encrypt this file with ansible-vault (ansible-vault encrypt dns_warden_vault.yml)
+pihole_passwords:
+  trusted: "changeme-secret"
+  iot: "changeme-secret"
+
+dnscrypt_socks:
+  trusted_user: trusted
+  trusted_pass: "changeme-secret"
+  iot_user: iot
+  iot_pass: "changeme-secret"

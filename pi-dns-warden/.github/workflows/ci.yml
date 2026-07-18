@@ -1,0 +1,128 @@
+# Torhole continuous integration.
+#
+# Scope:
+#   - Typecheck and production build the v2 admin UI (monitoring/torhole-ui-v2/)
+#   - Verify Grafana dashboard JSON files are well-formed
+#   - Lint the Caddyfile
+#
+# Explicitly NOT running:
+#   - Playwright end-to-end tests. They need the full Docker stack (Pi-hole
+#     × 3 planes, dnscrypt-proxy × 3, Tor, Authelia, Caddy, Prometheus,
+#     Grafana, Loki, Alloy, backup-manager) running and reachable via a real
+#     hostname behind Authelia. Spinning that up in a hosted GitHub runner
+#     isn't practical; a dedicated self-hosted runner against a test VM is
+#     the right home for E2E and will land in a future session.
+#
+#   - Python lint / backup-manager tests. The backup-manager server.py has
+#     no test suite yet; when one exists it should be wired in as a separate
+#     job here.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ui:
+    name: v2 UI — typecheck + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: monitoring/torhole-ui-v2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: monitoring/torhole-ui-v2/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck (tsc --noEmit)
+        run: npm run typecheck
+
+      - name: Production build (vite build)
+        run: npm run build
+
+      - name: Verify build output exists
+        run: |
+          test -f ../caddy/v2/index.html || {
+            echo "::error::monitoring/caddy/v2/index.html missing after build"
+            exit 1
+          }
+          test -d ../caddy/v2/assets || {
+            echo "::error::monitoring/caddy/v2/assets/ missing after build"
+            exit 1
+          }
+
+  dashboards:
+    name: Grafana dashboards — JSON validity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate dashboard JSON
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in monitoring/grafana/dashboards/*.json; do
+            if ! python3 -m json.tool "$f" > /dev/null; then
+              echo "::error file=$f::invalid JSON"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Verify dashboard UIDs are unique
+        run: |
+          python3 <<'PY'
+          import json, sys, pathlib
+          dash_dir = pathlib.Path("monitoring/grafana/dashboards")
+          seen = {}
+          for f in sorted(dash_dir.glob("*.json")):
+              if ".bak-" in f.name:
+                  continue
+              d = json.loads(f.read_text())
+              uid = d.get("uid")
+              if not uid:
+                  print(f"::error file={f}::dashboard missing uid")
+                  sys.exit(1)
+              if uid in seen:
+                  print(f"::error file={f}::duplicate uid '{uid}' (also in {seen[uid]})")
+                  sys.exit(1)
+              seen[uid] = f.name
+          print(f"OK — {len(seen)} unique UIDs across {len(seen)} dashboards")
+          PY
+
+  caddyfile:
+    name: Caddyfile — syntax check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Caddyfile
+        # GITHUB_WORKSPACE is set by the Actions runner to the checkout path.
+        # We mount only the caddy directory read-only into an ephemeral caddy
+        # container and run its own `caddy validate` to check syntax.
+        #
+        # REVERSE_PROXY_DOMAIN is a template variable the real Caddyfile reads
+        # from .env at deploy time; pass a placeholder here so validate can
+        # substitute it into the site-block hostnames (th-auth.<domain>, etc.)
+        # without tripping "empty hostname" errors.
+        run: |
+          docker run --rm \
+            -e REVERSE_PROXY_DOMAIN=example.test \
+            -v "$GITHUB_WORKSPACE/monitoring/caddy:/etc/caddy:ro" \
+            caddy:latest \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile

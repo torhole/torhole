@@ -1,0 +1,28 @@
+---
+- name: Install pihole-tor-vlans.service
+  ansible.builtin.template:
+    src: pihole-tor-vlans.service.j2
+    dest: /etc/systemd/system/pihole-tor-vlans.service
+    mode: '0644'
+
+- name: Install pihole-tor.service
+  ansible.builtin.template:
+    src: pihole-tor.service.j2
+    dest: /etc/systemd/system/pihole-tor.service
+    mode: '0644'
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: Enable VLAN prep unit
+  ansible.builtin.systemd:
+    name: pihole-tor-vlans.service
+    enabled: yes
+    state: started
+
+- name: Enable stack unit
+  ansible.builtin.systemd:
+    name: pihole-tor.service
+    enabled: yes
+    state: started

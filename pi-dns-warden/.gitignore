@@ -1,0 +1,56 @@
+# Secrets
+.env
+.env.*
+!.env.example
+!.env.quickstart.example
+
+# Pi-hole data
+pihole/*/etc-pihole/
+pihole/*/etc-dnsmasq.d/
+
+# Prometheus/Grafana persistent data (named volumes not stored here)
+
+# v2 UI — built output lives at monitoring/caddy/v2/ but is regenerated from
+# source at deploy time. Keep it out of the repo so PRs don't churn on bundle
+# hashes.
+monitoring/caddy/v2/
+
+# Node / Vite / Playwright (monitoring/torhole-ui-v2/)
+monitoring/torhole-ui-v2/node_modules/
+monitoring/torhole-ui-v2/.playwright-browsers/
+monitoring/torhole-ui-v2/test-results/
+monitoring/torhole-ui-v2/playwright-report/
+monitoring/torhole-ui-v2/dist/
+monitoring/torhole-ui-v2/.vite/
+
+# Dashboard / Caddyfile rollback snapshots (.bak-YYYYMMDD...) produced by
+# edit scripts during iteration. Kept locally for rollback, never committed.
+monitoring/grafana/dashboards/*.bak-*.json
+monitoring/caddy/*.bak-*
+monitoring/caddy/Caddyfile.bak-*
+
+# Recovery state written by backup-manager at runtime
+restore-safety/
+run/
+
+# Runtime backup archives (large tarballs)
+backups/
+
+# OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Logs
+*.log
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Rendered auth config
+monitoring/authelia/configuration.yml
+monitoring/authelia/users_database.yml
+monitoring/caddy/auth-snippets.caddy

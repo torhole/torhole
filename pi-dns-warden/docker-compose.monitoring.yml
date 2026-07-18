@@ -1,0 +1,300 @@
+services:
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:latest}
+    container_name: prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      dns_int:
+        ipv4_address: 172.30.0.30
+      mgmt_net:
+
+  loki:
+    image: ${LOKI_IMAGE:-grafana/loki:latest}
+    container_name: loki
+    restart: unless-stopped
+    command:
+      - "-config.file=/etc/loki/config.yml"
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    networks:
+      dns_int:
+        ipv4_address: 172.30.0.38
+
+  # Docker API gatekeeper for read-only consumers (audit M1.4 / T-055).
+  # A :ro socket bind protects the socket file, not the API — any client
+  # can still POST privileged operations. This proxy allowlists
+  # GET /containers/* (discovery + log streaming) and denies POST outright.
+  # It lives on an internal-only network with no route to dns_int.
+  docker-socket-proxy:
+    image: ${DOCKER_SOCKET_PROXY_IMAGE:-tecnativa/docker-socket-proxy:latest}
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      NETWORKS: 1 # discovery.docker computes network labels from GET /networks
+      EVENTS: 1
+      PING: 1
+      VERSION: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      docker_sock_net:
+
+  alloy:
+    image: ${ALLOY_IMAGE:-grafana/alloy:latest}
+    container_name: alloy
+    restart: unless-stopped
+    command:
+      - "run"
+      - "--server.http.listen-addr=0.0.0.0:12345"
+      - "--storage.path=/var/lib/alloy"
+      - "/etc/alloy/config.alloy"
+    volumes:
+      - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy_data:/var/lib/alloy
+      - /var/log:/var/log:ro
+    networks:
+      dns_int:
+        ipv4_address: 172.30.0.39
+      docker_sock_net:
+    depends_on:
+      - loki
+      - docker-socket-proxy
+
+  pihole-exporter:
+    build:
+      context: ./monitoring/pihole-exporter
+    container_name: pihole-exporter
+    restart: unless-stopped
+    environment:
+      PIHOLE_TRUSTED_URL: https://pihole_trusted/api
+      PIHOLE_TRUSTED_PASSWORD: ${PIHOLE_TRUSTED_PASSWORD}
+      PIHOLE_IOT_URL: https://pihole_iot/api
+      PIHOLE_IOT_PASSWORD: ${PIHOLE_IOT_PASSWORD}
+    networks:
+      dns_int:
+        ipv4_address: 172.30.0.40
+    depends_on:
+      - pihole_trusted
+      - pihole_iot
+
+  backup-manager:
+    build:
+      context: ./monitoring/backup-manager
+    image: ${BACKUP_MANAGER_IMAGE:-pi-dns-warden-backup-manager}
+    container_name: backup-manager
+    restart: unless-stopped
+    environment:
+      TORHOLE_ROOT_DIR: /workspace
+      TORHOLE_HOST_ROOT_DIR: ${BACKUP_MANAGER_ROOT_DIR:-/opt/pi-dns-warden}
+      TORHOLE_PROJECT_NAME: ${BACKUP_MANAGER_PROJECT_NAME:-pi-dns-warden}
+      BACKUP_MANAGER_IMAGE: ${BACKUP_MANAGER_IMAGE:-pi-dns-warden-backup-manager}
+      BACKUP_MANAGER_API_TOKEN: ${BACKUP_MANAGER_API_TOKEN:-}
+    volumes:
+      - .:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      dns_int:
+        ipv4_address: 172.30.0.41
+
+  authelia:
+    image: ${AUTHELIA_IMAGE:-authelia/authelia:latest}
+    container_name: authelia
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/authelia/configuration.yml:/config/configuration.yml:ro
+      - ./monitoring/authelia/users_database.yml:/config/users_database.yml:ro
+      - ./monitoring/authelia/assets:/config/assets:ro
+      - authelia_data:/var/lib/authelia
+    networks:
+      dns_int:
+        ipv4_address: 172.30.0.42
+
+  grafana:
+    image: ${GRAFANA_IMAGE:-grafana/grafana:latest}
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ}
+      - GF_SERVER_ROOT_URL=https://${TORHOLE_HOST_GRAFANA:-grafana}.${REVERSE_PROXY_DOMAIN}
+      - GF_AUTH_BASIC_ENABLED=false
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_AUTH_PROXY_ENABLED=true
+      - GF_AUTH_PROXY_HEADER_NAME=X-WEBAUTH-USER
+      - GF_AUTH_PROXY_HEADER_PROPERTY=username
+      - GF_AUTH_PROXY_AUTO_SIGN_UP=true
+      - GF_AUTH_PROXY_ENABLE_LOGIN_TOKEN=true
+      - GF_AUTH_PROXY_HEADERS=Name:X-WEBAUTH-NAME Email:X-WEBAUTH-EMAIL
+      - GF_AUTH_PROXY_WHITELIST=172.30.0.37
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      dns_int:
+        ipv4_address: 172.30.0.31
+      mgmt_net:
+    depends_on:
+      - prometheus
+      - loki
+      - backup-manager
+
+  reverse-proxy:
+    image: ${REVERSE_PROXY_IMAGE:-caddy:latest}
+    container_name: reverse-proxy
+    restart: unless-stopped
+    environment:
+      - REVERSE_PROXY_DOMAIN=${REVERSE_PROXY_DOMAIN}
+      - TORHOLE_ADMIN_USER=${TORHOLE_ADMIN_USER}
+      - BACKUP_MANAGER_API_TOKEN=${BACKUP_MANAGER_API_TOKEN:-}
+      - TORHOLE_HOST_TORHOLE=${TORHOLE_HOST_TORHOLE:-torhole}
+      - TORHOLE_HOST_AUTH=${TORHOLE_HOST_AUTH:-auth}
+      - TORHOLE_HOST_GRAFANA=${TORHOLE_HOST_GRAFANA:-grafana}
+      - TORHOLE_HOST_PROMETHEUS=${TORHOLE_HOST_PROMETHEUS:-prometheus}
+      - TORHOLE_HOST_ALERTMANAGER=${TORHOLE_HOST_ALERTMANAGER:-alertmanager}
+      - TORHOLE_HOST_DOCKHAND=${TORHOLE_HOST_DOCKHAND:-dockhand}
+      - TORHOLE_HOST_PIHOLE_TRUSTED=${TORHOLE_HOST_PIHOLE_TRUSTED:-pihole-trusted}
+      - TORHOLE_HOST_PIHOLE_IOT=${TORHOLE_HOST_PIHOLE_IOT:-pihole-iot}
+      - TORHOLE_ALIAS_TORHOLE=${TORHOLE_ALIAS_TORHOLE:-th}
+      - TORHOLE_ALIAS_GRAFANA=${TORHOLE_ALIAS_GRAFANA:-gf}
+      - TORHOLE_ALIAS_PROMETHEUS=${TORHOLE_ALIAS_PROMETHEUS:-prom}
+      - TORHOLE_ALIAS_ALERTMANAGER=${TORHOLE_ALIAS_ALERTMANAGER:-am}
+      - TORHOLE_ALIAS_DOCKHAND=${TORHOLE_ALIAS_DOCKHAND:-dh}
+      - TORHOLE_ALIAS_PIHOLE_TRUSTED=${TORHOLE_ALIAS_PIHOLE_TRUSTED:-pt}
+      - TORHOLE_ALIAS_PIHOLE_IOT=${TORHOLE_ALIAS_PIHOLE_IOT:-pi}
+    volumes:
+      # Mount the whole monitoring/caddy directory at /etc/caddy rather
+      # than bind-mounting Caddyfile + auth-snippets.caddy as single
+      # files. Docker's single-file bind mounts are resolved to an inode
+      # at container start and do NOT follow inode changes; when rsync
+      # or similar tools do a "write-to-temp-then-rename" update, the
+      # container keeps reading the orphaned old inode even after a
+      # `docker exec caddy reload`. Mounting the directory means the
+      # container sees current on-disk files on every read.
+      #
+      # Caddy only reads files it references (Caddyfile and its imports),
+      # so the extra files that end up under /etc/caddy (root.crt, v2/
+      # assets) are harmless. The v2/ assets are also mounted at /srv
+      # below for the file_server directive to serve.
+      - ./monitoring/caddy:/etc/caddy:ro
+      - ./monitoring/caddy:/srv:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      dns_int:
+        ipv4_address: 172.30.0.37
+      mgmt_net:
+      admin_net:
+    ports:
+      - "${REVERSE_PROXY_HTTP_PORT:-80}:80"
+      - "443:443"
+    depends_on:
+      - grafana
+      - prometheus
+      - alertmanager
+      - dockhand
+      - backup-manager
+      - authelia
+
+  node-exporter:
+    image: ${NODE_EXPORTER_IMAGE:-prom/node-exporter:latest}
+    container_name: node-exporter
+    restart: unless-stopped
+    pid: host
+    command:
+      - "--path.rootfs=/host"
+    volumes:
+      - "/:/host:ro,rslave"
+    networks:
+      dns_int:
+        ipv4_address: 172.30.0.34
+
+  cadvisor:
+    image: ${CADVISOR_IMAGE:-gcr.io/cadvisor/cadvisor:latest}
+    container_name: cadvisor
+    restart: unless-stopped
+    # Unprivileged (audit M1.4 / T-055): the documented mounts + /dev/kmsg
+    # cover cAdvisor's needs; privileged:true granted full host device and
+    # capability access it never required. /var/run is :ro — cAdvisor only
+    # reads the Docker socket for container metadata.
+    devices:
+      - /dev/kmsg
+    networks:
+      dns_int:
+        ipv4_address: 172.30.0.32
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+
+  blackbox-exporter:
+    image: ${BLACKBOX_IMAGE:-prom/blackbox-exporter:latest}
+    container_name: blackbox-exporter
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    networks:
+      dns_int:
+        ipv4_address: 172.30.0.33
+      mgmt_net:
+
+  alertmanager:
+    image: ${ALERTMANAGER_IMAGE:-prom/alertmanager:latest}
+    container_name: alertmanager
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    networks:
+      dns_int:
+        ipv4_address: 172.30.0.36
+      mgmt_net:
+
+  dockhand:
+    image: ${DOCKHAND_IMAGE:-fnsys/dockhand:latest}
+    container_name: dockhand
+    restart: unless-stopped
+    user: "0:0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - dockhand_data:/app/data
+    networks:
+      admin_net:
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+  alloy_data:
+  dockhand_data:
+  alertmanager_data:
+  caddy_data:
+  caddy_config:
+  authelia_data:
+
+networks:
+  mgmt_net:
+    driver: bridge
+  admin_net:
+    driver: bridge
+    internal: true
+  # Carries only proxied Docker API traffic (docker-socket-proxy <-> alloy).
+  docker_sock_net:
+    driver: bridge
+    internal: true

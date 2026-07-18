@@ -1,0 +1,28 @@
+# Tor SOCKS proxy for dnscrypt-proxy
+# Listens only inside Docker network (no host port publishing).
+# Use SOCKS-auth-based isolation so each dnscrypt-proxy instance can get its own circuits.
+SocksPort 0.0.0.0:9050 IsolateSOCKSAuth
+SocksPolicy accept 127.0.0.1
+SocksPolicy accept 172.30.0.11
+SocksPolicy accept 172.30.0.12
+SocksPolicy accept 172.30.0.33
+SocksPolicy accept 172.30.0.41
+SocksPolicy reject *
+
+# Control port — used by backup-manager to read live circuit info via the
+# Tor control protocol. Bound to all interfaces (the dns_int network is
+# internal so external access is blocked at the docker level), authenticated
+# via HashedControlPassword. The plain password lives in .env as
+# TOR_CONTROL_PASSWORD and the hashed form below is generated at deploy
+# time by ops/scripts/20-render-torrc.sh. Do not edit the line between
+# the markers by hand — it will be overwritten on next deploy.
+ControlPort 0.0.0.0:9051
+# BEGIN HASHED_CONTROL_PASSWORD (generated)
+# HashedControlPassword is rendered during deployment.
+# END HASHED_CONTROL_PASSWORD
+
+# Reduce SD writes
+AvoidDiskWrites 1
+
+# Allow hardware crypto acceleration if available
+HardwareAccel 1

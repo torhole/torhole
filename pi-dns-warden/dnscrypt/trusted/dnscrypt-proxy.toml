@@ -1,0 +1,59 @@
+# dnscrypt-proxy configuration (Tor upstream)
+# TCP-only is required when using Tor SOCKS.
+
+ipv4_servers = true
+ipv6_servers = false
+
+# Enable both; your resolver choice decides what gets used.
+dnscrypt_servers = true
+doh_servers = true
+odoh_servers = false
+
+# Privacy preferences (best effort)
+# NOTE: for malware-blocking resolvers, filtering is expected -> require_nofilter must be false.
+require_dnssec = false
+require_nolog = false
+require_nofilter = false
+
+# Tor uses TCP; enforce TCP upstream.
+force_tcp = true
+
+# Timeouts for Tor
+timeout = 5000
+keepalive = 30
+
+# Tor SOCKS proxy. Each dnscrypt instance uses different credentials for circuit isolation.
+proxy = 'socks5://trusted:EwYEL6ihS4phlVJuOkJ4yLpSQWqRUsPe@tor:9050'
+
+# Listen inside the container
+listen_addresses = ['0.0.0.0:5053']
+
+# Resolver selection (TOML array). Example: ['cloudflare-security','quad9-dnscrypt-ip4-filter-pri']
+server_names = [
+  'cloudflare-security',
+  'quad9-doh-ip4-port443-filter-pri',
+  'mullvad-doh',
+  'adguard-dns-unfiltered-doh'
+]
+
+# Load balancing strategy
+lb_strategy = 'p2'
+
+# Cache: huge impact on perceived latency
+cache = true
+cache_size = 8192
+cache_min_ttl = 60
+cache_max_ttl = 86400
+cache_neg_min_ttl = 60
+cache_neg_max_ttl = 600
+
+# --- Resolver sources (v3) ---
+[sources]
+
+  [sources.'public-resolvers']
+  urls = [
+    'https://raw.githubusercontent.com/DNSCrypt/dnscrypt-resolvers/master/v3/public-resolvers.md',
+    'https://download.dnscrypt.info/resolvers-list/v3/public-resolvers.md'
+  ]
+  minisign_key = 'RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3' # gitleaks:allow -- public dnscrypt-resolvers verification key
+  cache_file = '/tmp/public-resolvers.md'

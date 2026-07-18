@@ -1,0 +1,28 @@
+---
+- name: Ensure 8021q module is loaded
+  ansible.builtin.modprobe:
+    name: 8021q
+    state: present
+
+- name: Create VLAN interfaces
+  ansible.builtin.command: >
+    ip link add link {{ parent_iface }} name {{ item.name }} type vlan id {{ item.vid }}
+  args:
+    creates: "/sys/class/net/{{ item.name }}"
+  loop:
+    - { name: "{{ parent_iface }}.{{ trusted_vlan_id }}", vid: "{{ trusted_vlan_id }}" }
+    - { name: "{{ parent_iface }}.{{ iot_vlan_id }}", vid: "{{ iot_vlan_id }}" }
+  when: item.name is search('\.')
+
+- name: Bring VLAN interfaces up
+  ansible.builtin.command: ip link set {{ item }} up
+  loop:
+    - "{{ parent_iface }}.{{ trusted_vlan_id }}"
+    - "{{ parent_iface }}.{{ iot_vlan_id }}"
+  ignore_errors: yes
+
+- name: Persist 8021q load
+  ansible.builtin.lineinfile:
+    path: /etc/modules-load.d/8021q.conf
+    line: 8021q
+    create: yes

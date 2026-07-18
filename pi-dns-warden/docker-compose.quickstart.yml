@@ -1,0 +1,170 @@
+# torhole — QUICK START (single host, no VLANs, no render scripts).
+#
+#   cp .env.quickstart.example .env
+#   docker compose -f docker-compose.quickstart.yml up -d
+#
+# Brings up the privacy core only: Pi-hole -> dnscrypt-proxy -> Tor. Every
+# upstream DNS query exits through Tor. Point a device's DNS at this host to
+# use it. For the full multi-plane / VLAN / SSO product, see deploy.sh and
+# the Ansible playbooks (README-ANSIBLE.md).
+
+services:
+  tor:
+    build:
+      context: ./tor-image
+    container_name: torhole-qs-tor
+    restart: unless-stopped
+    command: ["tor", "-f", "/etc/tor/torrc"]
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ./quickstart/tor/torrc:/etc/tor/torrc:ro
+      - tor_state:/var/lib/tor
+    networks:
+      dns_int:
+        ipv4_address: 172.28.0.10
+      tor_out:
+        gw_priority: 1
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl --silent --fail --socks5-hostname 127.0.0.1:9050 https://check.torproject.org/api/ip | grep -q '\"IsTor\":true'",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  dnscrypt:
+    image: ${DNSCRYPT_IMAGE:-klutchell/dnscrypt-proxy:latest}
+    container_name: torhole-qs-dnscrypt
+    restart: unless-stopped
+    depends_on:
+      tor:
+        condition: service_healthy
+    tmpfs:
+      - /tmp:rw,mode=1777
+    volumes:
+      - ./quickstart/dnscrypt/dnscrypt-proxy.toml:/config/dnscrypt-proxy.toml:ro
+    command: ["-config", "/config/dnscrypt-proxy.toml", "-netprobe-timeout", "0"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "dnscrypt-proxy",
+          "-config",
+          "/config/dnscrypt-proxy.toml",
+          "-resolve",
+          "example.com,127.0.0.1:53",
+        ]
+      interval: 10s
+      timeout: 30s
+      retries: 12
+    networks:
+      dns_int:
+        ipv4_address: 172.28.0.11
+
+  pihole:
+    image: ${PIHOLE_IMAGE:-pihole/pihole:latest}
+    container_name: torhole-qs-pihole
+    restart: unless-stopped
+    depends_on:
+      dnscrypt:
+        condition: service_healthy
+    environment:
+      TZ: ${TZ:-UTC}
+      FTLCONF_webserver_api_password: ${PIHOLE_PASSWORD:-changeme}
+      # All resolution goes to dnscrypt (which exits via Tor). No fallback
+      # resolver — fail closed, never leak around Tor.
+      FTLCONF_dns_upstreams: "172.28.0.11"
+      FTLCONF_dns_listeningMode: all
+      FTLCONF_dns_cache_size: 10000
+      ALL_PROXY: socks5h://tor:9050
+      HTTP_PROXY: socks5h://tor:9050
+      HTTPS_PROXY: socks5h://tor:9050
+      all_proxy: socks5h://tor:9050
+      http_proxy: socks5h://tor:9050
+      https_proxy: socks5h://tor:9050
+      NO_PROXY: localhost,127.0.0.1,172.28.0.0/24
+      no_proxy: localhost,127.0.0.1,172.28.0.0/24
+    # Pi-hole's first-run gravity update happens before FTL is listening.
+    # Resolve that bootstrap traffic through dnscrypt rather than Docker's
+    # external resolver; the container still has no direct egress route.
+    dns:
+      - 172.28.0.11
+    networks:
+      dns_int:
+        ipv4_address: 172.28.0.12
+      lan_access:
+        ipv4_address: 172.29.0.12
+    ports:
+      # DNS for your devices. Host 53 is often taken by systemd-resolved on
+      # Linux — override with DNS_PORT in .env (e.g. 5353) if bring-up fails
+      # with "address already in use".
+      - "${BIND_ADDRESS:-0.0.0.0}:${DNS_PORT:-53}:53/tcp"
+      - "${BIND_ADDRESS:-0.0.0.0}:${DNS_PORT:-53}:53/udp"
+      # Pi-hole is the advanced interface; Torhole Home owns port 8080.
+      - "${PIHOLE_WEB_PORT:-8081}:80/tcp"
+
+  torhole-home:
+    build:
+      context: .
+      dockerfile: home-dashboard/Dockerfile
+    container_name: torhole-home
+    restart: unless-stopped
+    depends_on:
+      tor:
+        condition: service_healthy
+      pihole:
+        condition: service_started
+      control-helper:
+        condition: service_started
+    environment:
+      TOR_HOST: tor
+      DNS_HOST: pihole
+      CONTROL_HELPER_URL: http://control-helper:8090
+      CONTROL_HELPER_TOKEN: ${CONTROL_HELPER_TOKEN}
+      CONTROL_PIN: ${CONTROL_PIN}
+    networks:
+      dns_int:
+        ipv4_address: 172.28.0.20
+      lan_access:
+        ipv4_address: 172.29.0.20
+    ports:
+      - "${WEB_PORT:-8080}:8080/tcp"
+
+  control-helper:
+    build:
+      context: ./control-helper
+    container_name: torhole-control-helper
+    restart: unless-stopped
+    environment:
+      CONTROL_HELPER_TOKEN: ${CONTROL_HELPER_TOKEN}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - tor_state:/var/lib/tor
+    networks:
+      dns_int:
+        ipv4_address: 172.28.0.21
+
+networks:
+  dns_int:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+  tor_out:
+    driver: bridge
+  lan_access:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+    ipam:
+      config:
+        - subnet: 172.29.0.0/24
+
+volumes:
+  tor_state:

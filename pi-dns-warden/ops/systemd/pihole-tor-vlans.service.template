@@ -1,0 +1,13 @@
+[Unit]
+Description=Pi-hole Tor DNS stack - VLAN interfaces
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=@ROOT_DIR@
+ExecStart=@ROOT_DIR@/ops/scripts/10-vlan-interfaces.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

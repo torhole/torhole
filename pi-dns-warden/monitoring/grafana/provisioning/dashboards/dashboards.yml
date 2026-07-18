@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: "Pi-hole Tor DNS"
+    orgId: 1
+    folder: "Pi-hole Tor DNS"
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

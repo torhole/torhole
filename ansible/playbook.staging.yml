@@ -1,0 +1,85 @@
+---
+# Hybrid staging deploy: Ansible provisions the host + syncs the project + drops
+# the staging .env, then hands off to the maintained deploy.sh for all
+# torhole-specific rendering (Authelia/Caddy/torrc/secrets) and bring-up.
+#
+# Run:
+#   ansible-playbook -i inventory.staging.ini playbook.staging.yml \
+#     -e staging_env_file=/abs/path/to/staging.env
+- name: Deploy torhole to staging (Ansible provisions, deploy.sh renders + brings up)
+  hosts: dns_warden_staging
+  become: true
+  gather_facts: true
+  vars:
+    timezone: UTC
+    project_dest: /opt/pi-dns-warden
+    project_src: "{{ playbook_dir }}/../pi-dns-warden"
+  pre_tasks:
+    - name: Assert Debian-family
+      ansible.builtin.assert:
+        that: ansible_facts.os_family == 'Debian'
+        fail_msg: "Only Debian/Ubuntu supported."
+    - name: Require staging_env_file to be provided
+      ansible.builtin.assert:
+        that: staging_env_file is defined
+        fail_msg: "Pass -e staging_env_file=/path/to/staging.env"
+    - name: Assert CPU meets x86-64-v2 (amd64 images, e.g. dockhand, require it)
+      ansible.builtin.assert:
+        that: >-
+          ['cx16', 'lahf_lm', 'popcnt', 'sse4_1', 'sse4_2', 'ssse3']
+          | difference(ansible_facts.processor_flags | default([])) | length == 0
+        fail_msg: >-
+          Guest vCPU is below x86-64-v2 — dockhand et al. will crash-loop with a
+          fatal glibc error. On Proxmox: qm set <vmid> --cpu x86-64-v2-AES, then
+          COLD-restart the VM (in-guest reboot does not change the CPU type).
+      when: ansible_facts.architecture == 'x86_64'
+  roles:
+    - base
+  tasks:
+    - name: Create project dir (owned by connection user so the sync can write)
+      ansible.builtin.file:
+        path: "{{ project_dest }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0755"
+
+    - name: Sync project tree from control node
+      ansible.posix.synchronize:
+        src: "{{ project_src }}/"
+        dest: "{{ project_dest }}/"
+        archive: true
+        delete: false
+        rsync_opts:
+          - "--exclude=.git"
+          - "--exclude=node_modules"
+          - "--exclude=backups"
+          - "--exclude=__pycache__"
+          - "--exclude=.env"
+          - "--exclude=.env.bak-*"
+      become: false
+
+    - name: Install staging .env (0600)
+      ansible.builtin.copy:
+        src: "{{ staging_env_file }}"
+        dest: "{{ project_dest }}/.env"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Ensure scripts are executable
+      ansible.builtin.shell: "chmod +x deploy.sh ops/scripts/*.sh ops/lib/*.sh"
+      args:
+        chdir: "{{ project_dest }}"
+      changed_when: false
+
+    - name: Run torhole deploy.sh (Docker + VLANs + renders + bring-up)
+      ansible.builtin.command: ./deploy.sh
+      args:
+        chdir: "{{ project_dest }}"
+      register: deploy_result
+      changed_when: true
+
+    - name: Deploy tail
+      ansible.builtin.debug:
+        msg: "{{ deploy_result.stdout_lines[-18:] }}"

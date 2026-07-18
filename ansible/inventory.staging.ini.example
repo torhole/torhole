@@ -1,0 +1,2 @@
+[dns_warden_staging]
+staging ansible_host=192.168.1.60 ansible_user=debian ansible_python_interpreter=/usr/bin/python3

@@ -1,0 +1,137 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alert.rules.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["prometheus:9090"]
+
+  - job_name: "node"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  - job_name: "cadvisor"
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  - job_name: "blackbox-exporter"
+    static_configs:
+      - targets: ["blackbox-exporter:9115"]
+
+  - job_name: "caddy"
+    static_configs:
+      - targets: ["reverse-proxy:2019"]
+
+  - job_name: "loki"
+    static_configs:
+      - targets: ["loki:3100"]
+
+  - job_name: "alloy"
+    static_configs:
+      - targets: ["alloy:12345"]
+
+  - job_name: "pihole-exporter"
+    static_configs:
+      - targets: ["pihole-exporter:9617"]
+
+  - job_name: "blackbox-tor-socks"
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets:
+          - "tor:9050"
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: "blackbox-monitoring-tcp"
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets:
+          - "reverse-proxy:443"
+          - "grafana:3000"
+          - "alertmanager:9093"
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: "blackbox-dns-udp-pihole"
+    metrics_path: /probe
+    params:
+      module: [dns_udp]
+    static_configs:
+      - targets:
+          - "pihole_trusted:53"
+          - "pihole_iot:53"
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: "blackbox-dns-tcp-dnscrypt"
+    metrics_path: /probe
+    params:
+      module: [dns_tcp]
+    static_configs:
+      - targets:
+          - "dnscrypt_trusted:5053"
+          - "dnscrypt_iot:5053"
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: "torhole-tor"
+    # Tor runtime + circuit metrics exposed by the backup-manager at
+    # /api/metrics/tor. The backup-manager authenticates to tor:9051 via the
+    # control password on every scrape, runs a batch of GETINFO commands,
+    # and renders the result as Prometheus text format. See the helper
+    # functions `get_tor_runtime_info` and `render_tor_metrics_prom` in
+    # monitoring/backup-manager/server.py.
+    metrics_path: /api/metrics/tor
+    static_configs:
+      - targets: ["backup-manager:8080"]
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  - job_name: "blackbox-pihole-http"
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - "http://pihole_trusted/admin/"
+          - "http://pihole_iot/admin/"
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

@@ -1,0 +1,17 @@
+---
+- hosts: dns_warden
+  become: yes
+  vars_files:
+    - group_vars/dns_warden.yml
+    - group_vars/dns_warden_vault.yml
+  pre_tasks:
+    - name: Assert Debian-family
+      ansible.builtin.assert:
+        that: ansible_facts.os_family == 'Debian'
+        fail_msg: "Only Debian/Ubuntu/Raspbian are supported by this playbook right now."
+  roles:
+    - base
+    - docker
+    - networking
+    - pihole_dns
+    - systemd

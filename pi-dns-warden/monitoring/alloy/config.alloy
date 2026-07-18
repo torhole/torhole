@@ -1,0 +1,56 @@
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// Docker API via the allowlisting socket proxy (GET-only) — alloy no longer
+// mounts the raw socket (audit M1.4 / T-055).
+discovery.docker "containers" {
+  host = "tcp://docker-socket-proxy:2375"
+}
+
+discovery.relabel "docker_logs" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "compose_service"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label  = "compose_project"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "tcp://docker-socket-proxy:2375"
+  targets    = discovery.relabel.docker_logs.output
+  forward_to = [loki.write.local.receiver]
+}
+
+local.file_match "host_logs" {
+  path_targets = [
+    {"__path__" = "/var/log/syslog", "job" = "host-logs", "host" = "torhole", "log_file" = "syslog"},
+    {"__path__" = "/var/log/auth.log", "job" = "host-logs", "host" = "torhole", "log_file" = "auth.log"},
+    {"__path__" = "/var/log/kern.log", "job" = "host-logs", "host" = "torhole", "log_file" = "kern.log"},
+    {"__path__" = "/var/log/daemon.log", "job" = "host-logs", "host" = "torhole", "log_file" = "daemon.log"},
+  ]
+}
+
+loki.source.file "host_logs" {
+  targets    = local.file_match.host_logs.targets
+  forward_to = [loki.write.local.receiver]
+}

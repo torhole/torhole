@@ -1,0 +1,103 @@
+# Torhole end-to-end tests.
+#
+# This workflow runs the full Playwright suite against a LIVE Torhole stack.
+# Unlike ci.yml (which uses hosted Ubuntu runners for typecheck + build +
+# Caddyfile validate), this workflow needs:
+#
+#   - a reachable Torhole deployment (Authelia behind Caddy, backup-manager,
+#     Pi-hole x 3, dnscrypt x 3, Tor, Prometheus, Grafana, Loki, Alloy,
+#     alertmanager) at a hostname the runner can resolve
+#   - the test user credentials for Authelia SSO
+#   - a self-hosted GitHub runner registered on a VM that has network
+#     reachability to the stack (typically the same LAN segment)
+#
+# Until you have a runner registered with the 'torhole-e2e' label, this
+# workflow will be skipped on every PR — GitHub just won't dispatch it.
+#
+# See docs/self-hosted-runner.md for the VM + runner setup. Secrets used:
+#
+#   - TORHOLE_BASE_URL       https URL of the reverse proxy
+#   - TORHOLE_TEST_USER      Authelia test account username
+#   - TORHOLE_TEST_PASSWORD  Authelia test account password
+#
+# These are referenced via ${{ secrets.* }} which are trusted GitHub-managed
+# values, not user-controllable PR input. Workflow is still guarded by
+# concurrency + manual-dispatch-only by default.
+
+name: e2e
+
+on:
+  # Manual dispatch only by default — uncomment the pull_request trigger
+  # once the runner is registered and the stack is stable enough that you
+  # trust every PR to exercise it.
+  workflow_dispatch:
+  # pull_request:
+  #   branches: [main]
+  #   paths:
+  #     - "monitoring/torhole-ui-v2/**"
+  #     - "monitoring/backup-manager/**"
+  #     - "monitoring/caddy/Caddyfile"
+  #     - ".github/workflows/e2e.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Playwright against live stack
+    # Requires a registered self-hosted runner with the 'torhole-e2e' label.
+    # See docs/self-hosted-runner.md. Until one is registered, this job will
+    # show as "Queued" indefinitely on PRs that trigger it.
+    runs-on: [self-hosted, torhole-e2e]
+    defaults:
+      run:
+        working-directory: monitoring/torhole-ui-v2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: monitoring/torhole-ui-v2/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        # Pinned to chromium only — the suite only runs that project. First
+        # install can be slow; subsequent runs use the project-local cache
+        # (PLAYWRIGHT_BROWSERS_PATH=./.playwright-browsers in package.json).
+        run: npm run test:e2e:install
+
+      - name: Write tests/.env.test from secrets
+        # All three values come from GitHub Secrets (set at the repo or
+        # environment level by a maintainer). They are NOT sourced from PR
+        # metadata, so there is no command-injection surface even though we
+        # write them into a file via here-doc. Using explicit env: block
+        # with shell variable expansion rather than ${{ ... }} inline in
+        # the script body keeps GitHub Actions's own escape layer between
+        # the secret value and the shell.
+        env:
+          TORHOLE_BASE_URL: ${{ secrets.TORHOLE_BASE_URL }}
+          TORHOLE_TEST_USER: ${{ secrets.TORHOLE_TEST_USER }}
+          TORHOLE_TEST_PASSWORD: ${{ secrets.TORHOLE_TEST_PASSWORD }}
+        run: |
+          {
+            printf 'TORHOLE_BASE_URL=%s\n' "$TORHOLE_BASE_URL"
+            printf 'TORHOLE_TEST_USER=%s\n' "$TORHOLE_TEST_USER"
+            printf 'TORHOLE_TEST_PASSWORD=%s\n' "$TORHOLE_TEST_PASSWORD"
+          } > tests/.env.test
+
+      - name: Run Playwright suite
+        run: npm run test:e2e
+
+      - name: Upload trace on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-trace
+          path: monitoring/torhole-ui-v2/test-results/
+          retention-days: 7
