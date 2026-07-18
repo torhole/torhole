@@ -17,6 +17,9 @@ import {
   Check,
   Circle,
   CircleCheck,
+  Copy,
+  Eye,
+  EyeOff,
   Globe,
   Lock,
   Network,
@@ -356,11 +359,70 @@ function StepHeader({
 
 function KV({ label, value }: { label: string; value: string | undefined }) {
   return (
-    <div className="flex flex-col gap-0.5 px-3 py-2.5 bg-th-bg/40 border border-th-line/60 rounded">
+    <div className="flex min-w-0 flex-col gap-0.5 px-3 py-2.5 bg-th-bg/40 border border-th-line/60 rounded">
       <div className="text-[9.5px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono">
         {label}
       </div>
-      <div className="text-[12.5px] font-mono text-th-text-mono">{value || "—"}</div>
+      <div className="break-all text-[12.5px] font-mono text-th-text-mono">
+        {value || "—"}
+      </div>
+    </div>
+  );
+}
+
+async function copyText(value: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
+}
+
+function SecretKV({ label, value }: { label: string; value: string | undefined }) {
+  const [visible, setVisible] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const secret = value || "";
+  const copy = async () => {
+    if (!secret) return;
+    await copyText(secret);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1_500);
+  };
+  return (
+    <div className="flex min-w-0 flex-col gap-1 px-3 py-2.5 bg-th-bg/40 border border-th-line/60 rounded">
+      <div className="text-[9.5px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono">
+        {label}
+      </div>
+      <div className="flex items-center gap-2 min-w-0">
+        <div className="text-[12.5px] font-mono text-th-text-mono flex-1 truncate">
+          {secret ? (visible ? secret : "••••••••••••") : "—"}
+        </div>
+        <button
+          type="button"
+          onClick={() => setVisible((current) => !current)}
+          disabled={!secret}
+          aria-label={`${visible ? "Hide" : "Show"} ${label}`}
+          className="p-1.5 text-th-text-muted hover:text-th-primary disabled:opacity-30"
+        >
+          {visible ? <EyeOff size={14} /> : <Eye size={14} />}
+        </button>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          disabled={!secret}
+          aria-label={`Copy ${label}`}
+          className="p-1.5 text-th-text-muted hover:text-th-primary disabled:opacity-30"
+        >
+          {copied ? <Check size={14} className="text-th-primary" /> : <Copy size={14} />}
+        </button>
+      </div>
     </div>
   );
 }
@@ -425,7 +487,7 @@ function WelcomeStep() {
       <StepHeader
         eyebrow="Welcome"
         title="Set up a privacy-first DNS gateway in about 5 minutes"
-        body="Torhole runs Pi-hole behind an encrypted DNS-over-HTTPS resolver, which in turn routes every query through Tor. This wizard walks through the pieces you need to configure once."
+        body="Torhole runs Pi-hole behind an encrypted DNS resolver, which in turn routes upstream DNS through Tor. This wizard walks through the pieces you need to configure once."
       />
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <FeatureTile
@@ -441,7 +503,7 @@ function WelcomeStep() {
         <FeatureTile
           icon={ShieldCheck}
           title="Verify everything"
-          body="Run a DNS leak test at the end so you know Tor egress is actually intact before you depend on it."
+          body="Run DNS, Tor egress, and bypass checks at the end before you depend on the service."
         />
       </div>
       <Note>
@@ -913,26 +975,42 @@ function TestStep({ bootstrap }: { bootstrap: boolean }) {
     <div>
       <StepHeader
         eyebrow="Test"
-        title="Verify the privacy guarantee before you rely on it"
-        body="Run a DNS leak test from the Privacy screen. It opens a real SOCKS5 tunnel through tor:9050 and verifies that check.torproject.org sees a Tor exit IP. If it passes, every DNS query the stack handles exits via Tor."
+        title={bootstrap ? "What the installer will verify" : "Verify the privacy path"}
+        body={
+          bootstrap
+            ? "Installation happens on the next step. Torhole will report success only after these three independent checks pass."
+            : "Use the Privacy screen to test the running Tor path and inspect its current exit relay."
+        }
       />
-      <div className="bg-th-primary/[0.04] border border-th-primary/30 rounded-md p-5 flex items-start gap-3">
-        <div className="w-10 h-10 rounded-lg bg-th-primary/15 text-th-primary flex items-center justify-center shrink-0">
-          <ShieldCheck size={18} strokeWidth={1.8} />
+      {bootstrap ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <FeatureTile
+            icon={Globe}
+            title="DNS resolution"
+            body="Resolve example.com through Pi-hole and dnscrypt-proxy—not through the host resolver."
+          />
+          <FeatureTile
+            icon={ShieldCheck}
+            title="Tor egress"
+            body="Open a SOCKS5 connection through Tor and require the Tor Project to return IsTor=true."
+          />
+          <FeatureTile
+            icon={Lock}
+            title="No DNS bypass"
+            body="Confirm dnscrypt-proxy is attached only to an internal network and cannot reach the internet directly."
+          />
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[14px] font-semibold text-th-text">Run the leak test</div>
-          <div className="text-[11.5px] text-th-text-muted mt-1 leading-relaxed">
-            Head over to <span className="font-mono text-th-text-mono">Privacy → DNS leak test</span>{" "}
-            and click <span className="font-mono text-th-text-mono">run leak test now</span>. You
-            should see a green <span className="font-mono text-th-primary">PASS</span> block with a
-            Tor exit IP in ~500ms.
+      ) : (
+        <div className="bg-th-primary/[0.04] border border-th-primary/30 rounded-md p-5 flex items-start gap-3">
+          <div className="w-10 h-10 rounded-lg bg-th-primary/15 text-th-primary flex items-center justify-center shrink-0">
+            <ShieldCheck size={18} strokeWidth={1.8} />
           </div>
-          {bootstrap ? (
-            <div className="mt-3 text-[10.5px] font-mono text-th-primary">
-              The installer runs this check automatically before reporting success.
+          <div className="flex-1 min-w-0">
+            <div className="text-[14px] font-semibold text-th-text">Run the live Tor egress test</div>
+            <div className="text-[11.5px] text-th-text-muted mt-1 leading-relaxed">
+              The Privacy screen opens a real SOCKS5 connection through Tor and asks the Tor
+              Project whether it sees a Tor exit IP.
             </div>
-          ) : (
             <a
               href="#/privacy"
               className="inline-flex items-center gap-1.5 mt-3 px-3 py-2 rounded-md text-[11px] font-mono uppercase tracking-[0.14em] bg-th-bg/60 border border-th-line text-th-text hover:border-th-primary/40 hover:bg-th-primary/[0.06] transition-colors min-h-[44px]"
@@ -940,13 +1018,13 @@ function TestStep({ bootstrap }: { bootstrap: boolean }) {
               <ShieldCheck size={12} />
               open privacy screen
             </a>
-          )}
+          </div>
         </div>
-      </div>
+      )}
       <Note kind="warn">
-        If the leak test <strong>fails</strong>, do NOT use the DNS until you know why. A failed
-        test means something is bypassing the privacy stack. Check the Tor container health,
-        the dnscrypt upstream config, and the torrc SocksPolicy.
+        These checks cover <strong>DNS handled by Torhole</strong>. They do not turn the device
+        into a VPN and do not hide web traffic, app traffic, or DNS that a client sends to a
+        different resolver.
       </Note>
     </div>
   );
@@ -970,6 +1048,7 @@ function BootstrapDoneStep({
   });
   const [starting, setStarting] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const [copiedReceipt, setCopiedReceipt] = useState(false);
 
   useEffect(() => {
     if (install.status !== "running") return;
@@ -1000,6 +1079,21 @@ function BootstrapDoneStep({
   };
 
   const advancedBlocked = edition === "advanced";
+  const copyReceipt = async () => {
+    if (!install.home_url) return;
+    const dnsServer = new URL(install.home_url).hostname;
+    await copyText(
+      [
+        `Torhole Home: ${install.home_url}`,
+        `Pi-hole settings: ${install.pihole_url || ""}`,
+        `Pi-hole admin password: ${install.pihole_password || ""}`,
+        `Control PIN: ${install.control_pin || ""}`,
+        `DNS server: ${dnsServer}`,
+      ].join("\n"),
+    );
+    setCopiedReceipt(true);
+    window.setTimeout(() => setCopiedReceipt(false), 1_500);
+  };
   const finish = async () => {
     if (!install.home_url) return;
     setFinishing(true);
@@ -1022,8 +1116,8 @@ function BootstrapDoneStep({
         title={install.status === "success" ? "Torhole Home is ready" : "Review and install"}
         body={
           install.status === "success"
-            ? "The privacy stack passed its installer checks. Open Torhole, then point your router's DNS setting at this host."
-            : "The installer will generate local secrets, build the selected profile, start it, and verify a real DNS lookup before reporting success."
+            ? "The privacy stack passed all three installer checks. Open Torhole, then point your router's DNS setting at this host."
+            : "The installer will generate local secrets, build the selected profile, start it, and verify DNS resolution, Tor egress, and bypass protection before reporting success."
         }
       />
 
@@ -1031,13 +1125,42 @@ function BootstrapDoneStep({
         <div className="space-y-4">
           <div className="p-5 rounded-md border border-th-primary/40 bg-th-primary/[0.06]">
             <div className="flex items-center gap-2 text-th-primary font-semibold">
-              <CircleCheck size={16} /> Installation verified
+              <CircleCheck size={16} /> Privacy path verified
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+              <KV label="DNS query" value={install.verification?.dns.answer ? `PASS · ${install.verification.dns.answer}` : "PASS"} />
+              <KV label="Tor egress" value={install.verification?.tor.exit_ip ? `PASS · ${install.verification.tor.exit_ip}` : "PASS"} />
+              <KV label="Bypass protection" value="PASS · internal-only" />
+            </div>
+          </div>
+          <div className="p-5 rounded-md border border-th-line bg-th-bg/30">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-[14px] font-semibold text-th-text">Save your access details</div>
+                <div className="text-[11px] text-th-text-muted mt-1">
+                  The Pi-hole password is masked below. Reveal it or copy it before closing setup.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void copyReceipt()}
+                className="inline-flex min-h-[40px] px-3 items-center gap-2 rounded-md border border-th-line text-th-text-muted hover:text-th-primary hover:border-th-primary/40 text-[10px] uppercase tracking-[0.14em] font-mono"
+              >
+                {copiedReceipt ? <Check size={13} /> : <Copy size={13} />}
+                {copiedReceipt ? "copied" : "copy all"}
+              </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
               <KV label="Torhole Home" value={install.home_url} />
               <KV label="Pi-hole settings" value={install.pihole_url} />
-              <KV label="Control PIN" value={install.control_pin} />
+              <SecretKV label="Pi-hole admin password" value={install.pihole_password} />
+              <SecretKV label="Control PIN" value={install.control_pin} />
               <KV label="DNS server" value={new URL(install.home_url || window.location.href).hostname} />
+            </div>
+            <div className="mt-3 text-[10.5px] text-th-text-muted">
+              Missed them? On the Torhole host, run{" "}
+              <span className="font-mono text-th-text-mono">./install.sh credentials</span>{" "}
+              from the cloned repository.
             </div>
           </div>
           {install.home_url && (

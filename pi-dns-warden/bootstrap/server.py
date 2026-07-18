@@ -109,8 +109,125 @@ def install_result():
         "edition": "home",
         "home_url": f"http://{HOST_ADDRESS}:{web_port}/",
         "pihole_url": f"http://{HOST_ADDRESS}:{pihole_port}/admin/",
+        "pihole_password": values.get("PIHOLE_PASSWORD", ""),
         "control_pin": values.get("CONTROL_PIN", ""),
     }
+
+
+def container_command(args, timeout=20):
+    result = subprocess.run(
+        ["docker", *args],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or f"docker exited with status {result.returncode}")
+    return result.stdout.strip()
+
+
+def runtime_verification():
+    verification = {
+        "tor": {
+            "ok": False,
+            "exit_ip": "",
+            "detail": "Tor egress check did not run.",
+        },
+        "dns": {
+            "ok": False,
+            "answer": "",
+            "detail": "DNS path check did not run.",
+        },
+        "isolation": {
+            "ok": False,
+            "detail": "Network isolation check did not run.",
+        },
+    }
+
+    try:
+        raw = container_command(
+            [
+                "exec",
+                "torhole-qs-tor",
+                "curl",
+                "--silent",
+                "--fail",
+                "--socks5-hostname",
+                "127.0.0.1:9050",
+                "https://check.torproject.org/api/ip",
+            ],
+            timeout=30,
+        )
+        result = json.loads(raw)
+        is_tor = result.get("IsTor") is True
+        verification["tor"] = {
+            "ok": is_tor,
+            "exit_ip": result.get("IP", ""),
+            "detail": (
+                "Tor Project confirmed this SOCKS connection used Tor."
+                if is_tor
+                else "Tor Project did not identify this SOCKS connection as Tor."
+            ),
+        }
+    except Exception as exc:
+        verification["tor"]["detail"] = f"Tor egress check failed: {exc}"
+
+    try:
+        answers = container_command(
+            [
+                "exec",
+                "torhole-qs-pihole",
+                "dig",
+                "+short",
+                "+time=5",
+                "+tries=1",
+                "@127.0.0.1",
+                "example.com",
+            ]
+        ).splitlines()
+        answer = next((line.strip() for line in answers if line.strip()), "")
+        verification["dns"] = {
+            "ok": bool(answer),
+            "answer": answer,
+            "detail": (
+                "A real query resolved through Pi-hole and dnscrypt-proxy."
+                if answer
+                else "The DNS query returned no answer."
+            ),
+        }
+    except Exception as exc:
+        verification["dns"]["detail"] = f"DNS path check failed: {exc}"
+
+    try:
+        raw_networks = container_command(
+            [
+                "inspect",
+                "torhole-qs-dnscrypt",
+                "--format",
+                "{{json .NetworkSettings.Networks}}",
+            ]
+        )
+        network_names = list(json.loads(raw_networks))
+        internal = [
+            container_command(["network", "inspect", name, "--format", "{{.Internal}}"]).lower()
+            == "true"
+            for name in network_names
+        ]
+        isolated = len(network_names) == 1 and all(internal)
+        verification["isolation"] = {
+            "ok": isolated,
+            "detail": (
+                "dnscrypt-proxy has only an internal Docker network, so it cannot bypass Tor."
+                if isolated
+                else "dnscrypt-proxy has a network path that is not internal-only."
+            ),
+        }
+    except Exception as exc:
+        verification["isolation"]["detail"] = f"Network isolation check failed: {exc}"
+
+    return verification
 
 
 def run_home_install(timezone):
@@ -144,9 +261,21 @@ def run_home_install(timezone):
                 os.chown(env_path, OWNER_UID, OWNER_GID)
             except OSError as exc:
                 append_log(f"Warning: could not restore config ownership: {exc}")
+        verification = runtime_verification()
+        failed = [name for name, check in verification.items() if not check["ok"]]
+        if failed:
+            for name in failed:
+                append_log(f"{name.title()} verification failed: {verification[name]['detail']}")
+            set_status(
+                "error",
+                "Installation started, but privacy verification failed: " + ", ".join(failed),
+                verification=verification,
+            )
+            return
         set_status(
             "success",
-            "Torhole Home installed and private DNS verified.",
+            "Torhole Home installed; DNS, Tor egress, and network isolation verified.",
+            verification=verification,
             **install_result(),
         )
     except Exception as exc:

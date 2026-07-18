@@ -16,6 +16,7 @@ Torhole installer
 Usage:
   ./install.sh             Open the guided Home / Advanced installer
   ./install.sh install     Open the guided installer
+  ./install.sh credentials Show the local URLs and generated credentials
   ./install.sh status      Show service health
   ./install.sh logs        Follow service logs
   ./install.sh stop        Stop Torhole without deleting its data
@@ -284,13 +285,33 @@ show_success() {
   echo "Torhole Home is starting. Tor usually needs about a minute to connect."
   echo
   echo "Open:     http://${address}:$(env_value WEB_PORT)/"
-  echo "Password: ${password}"
+  echo "Pi-hole admin password: ${password}"
   echo "Control PIN: ${control_pin}"
   echo "DNS:      ${address}"
   echo "Advanced: http://${address}:$(env_value PIHOLE_WEB_PORT)/admin/"
   echo
   echo "Next: set your router's DNS server to ${address}."
   echo "Run './install.sh status' at any time to check Torhole."
+}
+
+show_credentials() {
+  if [[ ! -f "$ENV_FILE" ]]; then
+    echo "No Torhole Home credentials were found."
+    echo "Run './install.sh' to install Torhole first."
+    exit 1
+  fi
+
+  local address password control_pin
+  address="$(host_address)"
+  password="$(env_value PIHOLE_PASSWORD)"
+  control_pin="$(env_value CONTROL_PIN)"
+  echo "Torhole Home access details (keep this output private):"
+  echo
+  echo "Torhole Home:           http://${address}:$(env_value WEB_PORT)/"
+  echo "Pi-hole settings:       http://${address}:$(env_value PIHOLE_WEB_PORT)/admin/"
+  echo "Pi-hole admin password: ${password}"
+  echo "Control PIN:            ${control_pin}"
+  echo "DNS server:             ${address}"
 }
 
 verify_dns() {
@@ -338,6 +359,9 @@ case "$command" in
     ;;
   wizard|install)
     start_wizard
+    ;;
+  credentials)
+    show_credentials
     ;;
   install-home)
     need_docker

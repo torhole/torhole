@@ -38,6 +38,11 @@ jobs:
       - name: Backend characterization tests
         run: python3 monitoring/backup-manager/test_characterization.py
 
+      - name: Bootstrap and Home backend tests
+        run: |
+          python3 bootstrap/test_server.py
+          python3 home-dashboard/test_server.py
+
       - name: Shell tests (env loader + compose hardening)
         run: |
           bash ops/tests/test-load-env.sh

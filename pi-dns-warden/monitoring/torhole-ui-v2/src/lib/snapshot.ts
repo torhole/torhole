@@ -716,7 +716,13 @@ export interface BootstrapInstallStatus {
   edition?: "home" | "advanced";
   home_url?: string;
   pihole_url?: string;
+  pihole_password?: string;
   control_pin?: string;
+  verification?: {
+    tor: { ok: boolean; exit_ip?: string; detail: string };
+    dns: { ok: boolean; answer?: string; detail: string };
+    isolation: { ok: boolean; detail: string };
+  };
 }
 
 export async function startBootstrapInstall(

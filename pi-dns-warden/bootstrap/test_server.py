@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -53,6 +54,51 @@ class PublicConfigTests(unittest.TestCase):
         self.assertEqual(config["TZ"], "Europe/London")
         self.assertEqual(config["PIHOLE_PASSWORD"], "***")
         self.assertNotIn("CONTROL_PIN", config)
+
+    def test_install_result_returns_credentials_only_for_success_handoff(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app = root / "pi-dns-warden"
+            app.mkdir()
+            (app / ".env.quickstart.local").write_text(
+                "WEB_PORT=8080\nPIHOLE_WEB_PORT=8081\nPIHOLE_PASSWORD=secret\nCONTROL_PIN=123456\n",
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.object(server, "ROOT_DIR", root),
+                mock.patch.object(server, "HOST_ADDRESS", "192.0.2.10"),
+            ):
+                result = server.install_result()
+
+        self.assertEqual(result["pihole_password"], "secret")
+        self.assertEqual(result["control_pin"], "123456")
+        self.assertEqual(result["home_url"], "http://192.0.2.10:8080/")
+
+
+class RuntimeVerificationTests(unittest.TestCase):
+    def test_collects_tor_dns_and_isolation_evidence(self):
+        outputs = [
+            json.dumps({"IsTor": True, "IP": "203.0.113.7"}),
+            "93.184.216.34\n",
+            json.dumps({"torhole_qs_dns_int": {}}),
+            "true",
+        ]
+        with mock.patch.object(server, "container_command", side_effect=outputs):
+            result = server.runtime_verification()
+
+        self.assertTrue(result["tor"]["ok"])
+        self.assertEqual(result["tor"]["exit_ip"], "203.0.113.7")
+        self.assertTrue(result["dns"]["ok"])
+        self.assertEqual(result["dns"]["answer"], "93.184.216.34")
+        self.assertTrue(result["isolation"]["ok"])
+
+    def test_failed_probe_is_reported_without_raising(self):
+        with mock.patch.object(server, "container_command", side_effect=RuntimeError("unavailable")):
+            result = server.runtime_verification()
+
+        self.assertFalse(result["tor"]["ok"])
+        self.assertFalse(result["dns"]["ok"])
+        self.assertFalse(result["isolation"]["ok"])
 
 
 if __name__ == "__main__":
