@@ -96,6 +96,73 @@ These are not separate products or installers. Both use the same Torhole code
 and guided setup. Start with Home unless you already know why you need the
 Advanced capabilities.
 
+## Prepare a host
+
+Torhole should run on a dedicated, always-on 64-bit Linux host connected to
+your network by Ethernet. The values below are practical starting points, not
+hard minimums:
+
+| Profile | CPU | Memory | Storage | Network |
+|---|---:|---:|---:|---|
+| Home | 2 cores | 2 GB | 16 GB | One wired LAN interface |
+| Advanced | 2 or more cores | 4 GB or more | 32 GB or more; SSD recommended | Wired interface plus VLAN-capable router/switch when using segmentation |
+
+Before installation:
+
+1. Give the host a DHCP reservation or static address. Other devices will use
+   this address for DNS, so it must not change.
+2. Confirm the host can reach the Internet and resolve `github.com`.
+3. Make sure you have a user with `sudo` access.
+4. Do not install another DNS server first. Existing Pi-hole, AdGuard Home,
+   dnsmasq, or another service using port 53 will conflict with Torhole.
+5. Keep the Torhole dashboard and administration ports on the trusted LAN; do
+   not forward them from the public Internet.
+
+### Raspberry Pi
+
+A Raspberry Pi 5 with a proper power supply and wired Ethernet is the reference
+small-device platform. Use Raspberry Pi Imager to install the current 64-bit
+Raspberry Pi OS Lite. In Imager, set a hostname, create your user, enable SSH,
+and add your SSH public key before writing the card. Raspberry Pi maintains the
+[official Imager and OS installation guide](https://www.raspberrypi.com/documentation/computers/os.html).
+
+A good-quality SD card is sufficient for Home. An SSD is preferable for
+Advanced because metrics, logs, and backups create more sustained writes. Boot
+the Pi, connect it by Ethernet, reserve its address in the router, then update
+it before installing Torhole:
+
+```bash
+sudo apt update
+sudo apt full-upgrade -y
+sudo reboot
+```
+
+### Debian or Ubuntu virtual machine
+
+Create a 64-bit Debian stable or Ubuntu Server LTS VM. Use a **bridged** network
+adapter so routers and LAN devices can reach the VM directly; NAT-only
+networking is usually unsuitable for a network DNS server. Assign the resources
+from the table above, install the SSH server, and reserve the VM's address.
+
+The maintained installation references are the
+[Debian stable installer](https://www.debian.org/releases/stable/debian-installer/)
+and the [Ubuntu Server installation guide](https://documentation.ubuntu.com/server/tutorial/basic-installation/).
+Taking a clean VM snapshot after the OS is updated, but before running Torhole,
+makes repeated installation testing and recovery straightforward.
+
+### Mini PC or repurposed computer
+
+Install 64-bit Debian stable or Ubuntu Server LTS directly on the machine. A
+small Intel or AMD mini PC with wired Ethernet makes a strong Advanced host;
+the same preparation as a VM applies, except its network interface is already
+on the physical LAN. Back up anything important before replacing an existing
+operating system, use an SSD when possible, enable SSH, update the OS, and give
+the machine a reserved address.
+
+For Advanced VLAN isolation, the physical NIC, switch port, and router must all
+support the intended tagged VLANs. If that sentence is unfamiliar, start with
+Home; VLANs are not required for the DNS privacy path.
+
 ## Install
 
 Torhole is intended for a Raspberry Pi 5 or a Debian/Ubuntu host or VM. Docker
