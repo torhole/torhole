@@ -47,6 +47,7 @@ jobs:
         run: |
           bash ops/tests/test-load-env.sh
           bash ops/tests/test-security-compose.sh
+          bash ops/tests/test-get-torhole.sh
 
       - name: Validate dnscrypt configs (TOML)
         run: |

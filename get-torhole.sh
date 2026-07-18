@@ -65,7 +65,15 @@ download_torhole() {
         ;;
     esac
     say "Updating Torhole in ${INSTALL_DIR}..."
-    git -C "$INSTALL_DIR" fetch --depth=1 origin "$REPO_REF"
+    # A second depth-1 fetch can leave the old and new tips as unrelated
+    # shallow boundaries. Git then cannot prove that --ff-only is safe even
+    # when the remote branch is a direct descendant. Convert the existing
+    # shallow clone once, then keep all later updates as ordinary fast-forwards.
+    if [[ -f "$INSTALL_DIR/.git/shallow" ]]; then
+      git -C "$INSTALL_DIR" fetch --unshallow origin "$REPO_REF"
+    else
+      git -C "$INSTALL_DIR" fetch origin "$REPO_REF"
+    fi
     git -C "$INSTALL_DIR" merge --ff-only FETCH_HEAD
   else
     say "Downloading Torhole to ${INSTALL_DIR}..."
