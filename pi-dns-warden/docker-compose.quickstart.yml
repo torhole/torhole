@@ -94,6 +94,8 @@ services:
     # external resolver; the container still has no direct egress route.
     dns:
       - 172.28.0.11
+    volumes:
+      - pihole_data:/etc/pihole
     networks:
       dns_int:
         ipv4_address: 172.28.0.12
@@ -168,3 +170,5 @@ networks:
 
 volumes:
   tor_state:
+  pihole_data:
+    name: pi-dns-warden_pihole_data

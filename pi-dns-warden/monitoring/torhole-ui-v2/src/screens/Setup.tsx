@@ -107,6 +107,64 @@ const STEP_ICONS: Record<StepId, React.ComponentType<{ size?: number; className?
 
 type Topology = "single-lan" | "vlan";
 type Edition = "home" | "advanced";
+type BlocklistId = "stevenblack" | "oisd" | "adguard";
+type AdvancedConfig = {
+  PARENT_IF: string;
+  HOST_MGMT_IP: string;
+  REVERSE_PROXY_DOMAIN: string;
+  TRUSTED_PARENT: string;
+  TRUSTED_VLAN_ID: string;
+  TRUSTED_SUBNET_CIDR: string;
+  TRUSTED_GATEWAY: string;
+  PIHOLE_TRUSTED_IP: string;
+  IOT_PARENT: string;
+  IOT_VLAN_ID: string;
+  IOT_SUBNET_CIDR: string;
+  IOT_GATEWAY: string;
+  PIHOLE_IOT_IP: string;
+};
+
+const DEFAULT_ADVANCED_CONFIG: AdvancedConfig = {
+  PARENT_IF: "eth0",
+  HOST_MGMT_IP: "",
+  REVERSE_PROXY_DOMAIN: "home.arpa",
+  TRUSTED_PARENT: "eth0",
+  TRUSTED_VLAN_ID: "1",
+  TRUSTED_SUBNET_CIDR: "",
+  TRUSTED_GATEWAY: "",
+  PIHOLE_TRUSTED_IP: "",
+  IOT_PARENT: "eth0.50",
+  IOT_VLAN_ID: "50",
+  IOT_SUBNET_CIDR: "",
+  IOT_GATEWAY: "",
+  PIHOLE_IOT_IP: "",
+};
+
+const CURATED_BLOCKLISTS: Array<{
+  id: BlocklistId;
+  name: string;
+  url: string;
+  desc: string;
+}> = [
+  {
+    id: "stevenblack",
+    name: "StevenBlack hosts",
+    url: "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+    desc: "The default. Merges unified adblock, malware, and phishing lists.",
+  },
+  {
+    id: "oisd",
+    name: "OISD Basic",
+    url: "https://big.oisd.nl",
+    desc: "Community-curated; balanced blocking with a low false-positive rate.",
+  },
+  {
+    id: "adguard",
+    name: "AdGuard DNS filter",
+    url: "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt",
+    desc: "AdGuard's own filter. Good for ad-heavy blocking.",
+  },
+];
 
 export default function SetupScreen({ bootstrap = false }: { bootstrap?: boolean }) {
   const { state } = useSnapshot();
@@ -120,6 +178,12 @@ export default function SetupScreen({ bootstrap = false }: { bootstrap?: boolean
   // .env to build a per-key change list for the Apply button.
   const [adminUser, setAdminUser] = useState<string>("");
   const [timezone, setTimezone] = useState<string>("");
+  const [selectedBlocklists, setSelectedBlocklists] = useState<BlocklistId[]>([
+    "stevenblack",
+  ]);
+  const [advancedConfig, setAdvancedConfig] = useState<AdvancedConfig>(
+    DEFAULT_ADVANCED_CONFIG,
+  );
 
   useEffect(() => {
     fetchConfig()
@@ -129,6 +193,20 @@ export default function SetupScreen({ bootstrap = false }: { bootstrap?: boolean
         // starts from the live values rather than empty strings.
         setAdminUser(d.config.TORHOLE_ADMIN_USER || "");
         setTimezone(d.config.TZ || "");
+        const configuredBlocklists = (d.config.TORHOLE_BLOCKLISTS || "stevenblack")
+          .split(",")
+          .filter((id): id is BlocklistId =>
+            CURATED_BLOCKLISTS.some((list) => list.id === id),
+          );
+        if (configuredBlocklists.length > 0) setSelectedBlocklists(configuredBlocklists);
+        setAdvancedConfig((current) =>
+          Object.fromEntries(
+            Object.keys(current).map((key) => [
+              key,
+              d.config[key] || current[key as keyof AdvancedConfig],
+            ]),
+          ) as AdvancedConfig,
+        );
         // Auto-detect: if both VLAN IDs are set and not trivially "1",
         // assume the existing install is VLAN mode.
         const ids = [d.config.TRUSTED_VLAN_ID, d.config.IOT_VLAN_ID];
@@ -161,6 +239,7 @@ export default function SetupScreen({ bootstrap = false }: { bootstrap?: boolean
   const chooseEdition = (nextEdition: Edition) => {
     setEdition(nextEdition);
     if (nextEdition === "home") setTopology("single-lan");
+    if (nextEdition === "advanced") setTopology("vlan");
   };
 
   const goNext = () => {
@@ -185,7 +264,7 @@ export default function SetupScreen({ bootstrap = false }: { bootstrap?: boolean
               <EditionStep edition={edition} setEdition={chooseEdition} />
             )}
             {step === "topology" && (
-              <TopologyStep topology={topology} setTopology={setTopology} />
+              <TopologyStep edition={edition} topology={topology} setTopology={setTopology} />
             )}
             {step === "network" && (
               <NetworkStep
@@ -193,6 +272,10 @@ export default function SetupScreen({ bootstrap = false }: { bootstrap?: boolean
                 topology={topology}
                 timezone={timezone}
                 setTimezone={setTimezone}
+                bootstrap={bootstrap}
+                edition={edition}
+                advancedConfig={advancedConfig}
+                setAdvancedConfig={setAdvancedConfig}
               />
             )}
             {step === "admin" && (
@@ -200,19 +283,29 @@ export default function SetupScreen({ bootstrap = false }: { bootstrap?: boolean
                 config={config}
                 adminUser={adminUser}
                 setAdminUser={setAdminUser}
+                bootstrap={bootstrap}
+                edition={edition}
               />
             )}
-            {step === "blocklists" && <BlocklistsStep edition={edition} />}
-            {step === "tor" && <TorStep config={config} />}
+            {step === "blocklists" && (
+              <BlocklistsStep
+                interactive={bootstrap && edition === "home"}
+                selected={selectedBlocklists}
+                setSelected={setSelectedBlocklists}
+              />
+            )}
+            {step === "tor" && <TorStep config={config} bootstrap={bootstrap} edition={edition} />}
             {step === "alerts" && <AlertsStep config={config} />}
-            {step === "test" && <TestStep bootstrap={bootstrap} />}
+            {step === "test" && <TestStep bootstrap={bootstrap} edition={edition} />}
             {step === "done" && (
               bootstrap ? (
                 <BootstrapDoneStep
                   edition={edition}
                   topology={topology}
                   adminUser={adminUser}
-                  timezone={timezone}
+                timezone={timezone}
+                blocklists={selectedBlocklists}
+                advancedConfig={advancedConfig}
                 />
               ) : (
                 <DoneStep
@@ -447,6 +540,7 @@ function EditableKV({
       </div>
       <input
         type="text"
+        aria-label={label}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -640,9 +734,11 @@ function EditionCard({
 }
 
 function TopologyStep({
+  edition,
   topology,
   setTopology,
 }: {
+  edition: Edition;
   topology: Topology;
   setTopology: (t: Topology) => void;
 }) {
@@ -651,7 +747,11 @@ function TopologyStep({
       <StepHeader
         eyebrow="Topology"
         title="Single-LAN or segmented VLANs?"
-        body="Pick the network layout that matches your home setup. You can switch later by re-running the wizard."
+        body={
+          edition === "advanced"
+            ? "The proven Advanced deployment currently uses two VLAN-backed DNS planes. Single-LAN Advanced is a planned capability, not something this installer will pretend to support."
+            : "Home uses one LAN, one Pi-hole, and one private DNS path."
+        }
       />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <TopologyCard
@@ -659,7 +759,9 @@ function TopologyStep({
           title="Single LAN"
           badge="recommended"
           selected={topology === "single-lan"}
-          onSelect={() => setTopology("single-lan")}
+          onSelect={() => {
+            if (edition === "home") setTopology("single-lan");
+          }}
           body="One network, one Pi-hole, one DNS path. Works on any home router. No VLAN configuration required."
           diagram={[
             "clients ─┐",
@@ -667,6 +769,7 @@ function TopologyStep({
             "         ▼",
             "   [pi-hole] ─▶ [dnscrypt] ─▶ [tor:9050] ─▶ exit",
           ]}
+          disabled={edition === "advanced"}
         />
         <TopologyCard
           id="vlan"
@@ -693,6 +796,7 @@ function TopologyCard({
   onSelect,
   body,
   diagram,
+  disabled = false,
 }: {
   id: Topology;
   title: string;
@@ -701,16 +805,18 @@ function TopologyCard({
   onSelect: () => void;
   body: string;
   diagram: string[];
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onSelect}
+      disabled={disabled}
       className={`text-left p-5 rounded-md border transition-colors ${
         selected
           ? "bg-th-primary/[0.05] border-th-primary/50 ring-1 ring-th-primary/30"
           : "bg-th-bg/40 border-th-line hover:border-th-primary/30"
-      }`}
+      } ${disabled ? "opacity-45 cursor-not-allowed" : ""}`}
     >
       <div className="flex items-start justify-between mb-3">
         <div>
@@ -741,12 +847,73 @@ function NetworkStep({
   topology,
   timezone,
   setTimezone,
+  bootstrap,
+  edition,
+  advancedConfig,
+  setAdvancedConfig,
 }: {
   config: Record<string, string> | null;
   topology: Topology;
   timezone: string;
   setTimezone: (v: string) => void;
+  bootstrap: boolean;
+  edition: Edition;
+  advancedConfig: AdvancedConfig;
+  setAdvancedConfig: (config: AdvancedConfig) => void;
 }) {
+  const advancedBootstrap = bootstrap && edition === "advanced";
+  const updateAdvanced = (key: keyof AdvancedConfig, value: string) => {
+    setAdvancedConfig({ ...advancedConfig, [key]: value });
+  };
+  if (advancedBootstrap) {
+    return (
+      <div>
+        <StepHeader
+          eyebrow="Advanced network"
+          title="Define both DNS planes"
+          body="These values must already match your router and managed-switch configuration. Torhole validates addresses and writes .env here; the host deployment still requires your explicit sudo approval."
+        />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+          <EditableKV label="Host management IP" value={advancedConfig.HOST_MGMT_IP} onChange={(v) => updateAdvanced("HOST_MGMT_IP", v)} placeholder="192.168.1.10" />
+          <EditableKV label="Physical parent interface" value={advancedConfig.PARENT_IF} onChange={(v) => updateAdvanced("PARENT_IF", v)} placeholder="eth0" />
+          <EditableKV label="Reverse proxy domain" value={advancedConfig.REVERSE_PROXY_DOMAIN} onChange={(v) => updateAdvanced("REVERSE_PROXY_DOMAIN", v)} placeholder="home.arpa" />
+          <EditableKV label="Timezone" value={timezone} onChange={setTimezone} placeholder="Europe/Zurich" />
+        </div>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <AdvancedPlaneFields
+            label="Trusted"
+            parent={advancedConfig.TRUSTED_PARENT}
+            vlan={advancedConfig.TRUSTED_VLAN_ID}
+            cidr={advancedConfig.TRUSTED_SUBNET_CIDR}
+            gateway={advancedConfig.TRUSTED_GATEWAY}
+            pihole={advancedConfig.PIHOLE_TRUSTED_IP}
+            onParent={(v) => updateAdvanced("TRUSTED_PARENT", v)}
+            onVlan={(v) => updateAdvanced("TRUSTED_VLAN_ID", v)}
+            onCidr={(v) => updateAdvanced("TRUSTED_SUBNET_CIDR", v)}
+            onGateway={(v) => updateAdvanced("TRUSTED_GATEWAY", v)}
+            onPihole={(v) => updateAdvanced("PIHOLE_TRUSTED_IP", v)}
+          />
+          <AdvancedPlaneFields
+            label="IoT"
+            parent={advancedConfig.IOT_PARENT}
+            vlan={advancedConfig.IOT_VLAN_ID}
+            cidr={advancedConfig.IOT_SUBNET_CIDR}
+            gateway={advancedConfig.IOT_GATEWAY}
+            pihole={advancedConfig.PIHOLE_IOT_IP}
+            onParent={(v) => updateAdvanced("IOT_PARENT", v)}
+            onVlan={(v) => updateAdvanced("IOT_VLAN_ID", v)}
+            onCidr={(v) => updateAdvanced("IOT_SUBNET_CIDR", v)}
+            onGateway={(v) => updateAdvanced("IOT_GATEWAY", v)}
+            onPihole={(v) => updateAdvanced("PIHOLE_IOT_IP", v)}
+          />
+        </div>
+        <Note kind="warn">
+          Advanced changes host VLAN interfaces and systemd services. Review these values carefully;
+          the browser will save configuration but will not silently change the host network.
+        </Note>
+      </div>
+    );
+  }
   return (
     <div>
       <StepHeader
@@ -807,15 +974,63 @@ function NetworkStep({
   );
 }
 
+function AdvancedPlaneFields({
+  label,
+  parent,
+  vlan,
+  cidr,
+  gateway,
+  pihole,
+  onParent,
+  onVlan,
+  onCidr,
+  onGateway,
+  onPihole,
+}: {
+  label: string;
+  parent: string;
+  vlan: string;
+  cidr: string;
+  gateway: string;
+  pihole: string;
+  onParent: (value: string) => void;
+  onVlan: (value: string) => void;
+  onCidr: (value: string) => void;
+  onGateway: (value: string) => void;
+  onPihole: (value: string) => void;
+}) {
+  return (
+    <div className="bg-th-bg/30 border border-th-line/60 rounded-md p-4 mb-4">
+      <div className="text-[10px] uppercase tracking-[0.16em] text-th-primary/80 font-mono mb-3">
+        {label} plane
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <EditableKV label="Parent interface" value={parent} onChange={onParent} placeholder="eth0 or eth0.10" />
+        <EditableKV label="VLAN ID" value={vlan} onChange={onVlan} placeholder="10" />
+        <EditableKV label="Subnet CIDR" value={cidr} onChange={onCidr} placeholder="192.168.10.0/24" />
+        <EditableKV label="Gateway" value={gateway} onChange={onGateway} placeholder="192.168.10.1" />
+        <div className="md:col-span-2">
+          <EditableKV label="Static Pi-hole IP" value={pihole} onChange={onPihole} placeholder="192.168.10.53" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminStep({
   config,
   adminUser,
   setAdminUser,
+  bootstrap,
+  edition,
 }: {
   config: Record<string, string> | null;
   adminUser: string;
   setAdminUser: (v: string) => void;
+  bootstrap: boolean;
+  edition: Edition;
 }) {
+  const advancedBootstrap = bootstrap && edition === "advanced";
   return (
     <div>
       <StepHeader
@@ -832,75 +1047,120 @@ function AdminStep({
         />
         <KV
           label="Admin password"
-          value={config?.TORHOLE_ADMIN_PASSWORD === "***" ? "(set — masked)" : "(not set)"}
+          value={
+            config?.TORHOLE_ADMIN_PASSWORD === "***"
+              ? "(existing — kept)"
+              : advancedBootstrap
+                ? "(generated securely on save)"
+                : "(not set)"
+          }
         />
       </div>
       <Note>
-        Only the <strong className="text-th-text">admin user</strong> can be changed
-        from this wizard — the password has its own flow in{" "}
-        <span className="font-mono text-th-text-mono">Configure › Identity</span> because
-        changing it restarts Authelia immediately. Apply the user change on the Done
-        step, then <span className="font-mono text-th-text-mono">sudo ./deploy.sh</span>{" "}
-        on the host so the new user lands in the Authelia database.
+        {advancedBootstrap
+          ? "On a new installation, Torhole generates the Authelia, Pi-hole, Tor control, and per-plane circuit passwords. The final screen reveals the new login credentials once. Existing secrets are preserved."
+          : "Only the admin user is changed here. Password rotation remains in Configure › Identity so an existing Authelia session is not unexpectedly invalidated."}
       </Note>
     </div>
   );
 }
 
-function BlocklistsStep({ edition }: { edition: Edition }) {
-  const curated = [
-    {
-      name: "StevenBlack hosts",
-      url: "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
-      desc: "The default. Merges unified adblock, malware, and phishing lists.",
-    },
-    {
-      name: "OISD Basic",
-      url: "https://big.oisd.nl",
-      desc: "Community-curated; balanced blocking with a low false-positive rate.",
-    },
-    {
-      name: "AdGuard DNS filter",
-      url: "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt",
-      desc: "AdGuard's own filter. Good for ad-heavy blocking.",
-    },
-  ];
+function BlocklistsStep({
+  interactive,
+  selected,
+  setSelected,
+}: {
+  interactive: boolean;
+  selected: BlocklistId[];
+  setSelected: (selected: BlocklistId[]) => void;
+}) {
+  const toggle = (id: BlocklistId) => {
+    if (!interactive) return;
+    if (selected.includes(id)) {
+      if (selected.length === 1) return;
+      setSelected(selected.filter((item) => item !== id));
+      return;
+    }
+    const next = new Set([...selected, id]);
+    setSelected(CURATED_BLOCKLISTS.filter((list) => next.has(list.id)).map((list) => list.id));
+  };
   return (
     <div>
       <StepHeader
         eyebrow="Blocklists"
-        title="What do you want Pi-hole to block?"
-        body="Torhole ships with a default gravity list, but you can add more curated sources. Blocklists are loaded on first run and refreshed on a schedule."
+        title={interactive ? "Choose the lists Pi-hole will install" : "Blocklists are managed per Pi-hole"}
+        body={
+          interactive
+            ? "Select one or more curated sources. The installer writes the exact selection to Pi-hole and refreshes gravity before reporting success."
+            : "Advanced has independent Trusted and IoT Pi-hole instances. Curated list selection is shown for reference and is managed per plane after deployment."
+        }
       />
       <div className="space-y-2">
-        {curated.map((list) => (
-          <div
-            key={list.url}
-            className="flex items-start gap-3 p-3 bg-th-bg/40 border border-th-line/60 rounded"
-          >
-            <div className="w-7 h-7 rounded bg-th-primary/10 border border-th-primary/20 flex items-center justify-center shrink-0">
-              <Zap size={13} className="text-th-primary" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-[12.5px] font-semibold text-th-text">{list.name}</div>
-              <div className="text-[10.5px] font-mono text-th-text-mono/70 truncate">
-                {list.url}
+        {CURATED_BLOCKLISTS.map((list) => {
+          const isSelected = selected.includes(list.id);
+          return (
+            <button
+              type="button"
+              key={list.url}
+              role={interactive ? "checkbox" : undefined}
+              aria-checked={interactive ? isSelected : undefined}
+              onClick={() => toggle(list.id)}
+              disabled={!interactive}
+              className={`w-full text-left flex items-start gap-3 p-3 border rounded transition-colors ${
+                interactive && isSelected
+                  ? "bg-th-primary/[0.06] border-th-primary/40"
+                  : "bg-th-bg/40 border-th-line/60"
+              } ${interactive ? "hover:border-th-primary/40" : "cursor-default"}`}
+            >
+              <div
+                className={`w-7 h-7 rounded border flex items-center justify-center shrink-0 ${
+                  interactive && isSelected
+                    ? "bg-th-primary/15 border-th-primary/40 text-th-primary"
+                    : "bg-th-bg/50 border-th-line text-th-text-muted"
+                }`}
+              >
+                {interactive && isSelected ? <Check size={14} /> : <Zap size={13} />}
               </div>
-              <div className="text-[11px] text-th-text-muted mt-1">{list.desc}</div>
-            </div>
-          </div>
-        ))}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <div className="text-[12.5px] font-semibold text-th-text">{list.name}</div>
+                  <span className="text-[9px] uppercase tracking-[0.14em] font-mono text-th-text-muted">
+                    {interactive
+                      ? isSelected
+                        ? "selected"
+                        : "optional"
+                      : list.id === "stevenblack"
+                        ? "default"
+                        : "optional"}
+                  </span>
+                </div>
+                <div className="text-[10.5px] font-mono text-th-text-mono/70 truncate">
+                  {list.url}
+                </div>
+                <div className="text-[11px] text-th-text-muted mt-1">{list.desc}</div>
+              </div>
+            </button>
+          );
+        })}
       </div>
       <Note>
-        Pi-hole manages the gravity list via its admin UI. For now, add these URLs in
-        Pi-hole {edition === "advanced" ? "behind Authelia " : ""}and run{" "}
-        <span className="font-mono text-th-text-mono">pihole -g</span>.
+        {interactive
+          ? "At least one list is required. Your selection is retained in Pi-hole data and can be changed later from Pi-hole settings."
+          : "Configure lists separately for each Advanced DNS plane in its Pi-hole interface after deployment."}
       </Note>
     </div>
   );
 }
 
-function TorStep({ config }: { config: Record<string, string> | null }) {
+function TorStep({
+  config,
+  bootstrap,
+  edition,
+}: {
+  config: Record<string, string> | null;
+  bootstrap: boolean;
+  edition: Edition;
+}) {
   return (
     <div>
       <StepHeader
@@ -914,7 +1174,13 @@ function TorStep({ config }: { config: Record<string, string> | null }) {
         <KV label="Isolation" value="IsolateSOCKSAuth (per-plane)" />
         <KV
           label="Control password"
-          value={config?.TOR_CONTROL_PASSWORD === "***" ? "(set — masked)" : "(not set)"}
+          value={
+            config?.TOR_CONTROL_PASSWORD === "***"
+              ? "(existing — kept)"
+              : bootstrap && edition === "advanced"
+                ? "(generated securely on save)"
+                : "(not set)"
+          }
         />
       </div>
       <Note>
@@ -970,14 +1236,23 @@ function ChannelStatus({ label, configured }: { label: string; configured: boole
   );
 }
 
-function TestStep({ bootstrap }: { bootstrap: boolean }) {
+function TestStep({ bootstrap, edition }: { bootstrap: boolean; edition: Edition }) {
+  const advancedHandoff = bootstrap && edition === "advanced";
   return (
     <div>
       <StepHeader
         eyebrow="Test"
-        title={bootstrap ? "What the installer will verify" : "Verify the privacy path"}
+        title={
+          advancedHandoff
+            ? "What the Advanced deployer will verify"
+            : bootstrap
+              ? "What the installer will verify"
+              : "Verify the privacy path"
+        }
         body={
-          bootstrap
+          advancedHandoff
+            ? "The next step validates and saves configuration. After you approve the host command, the existing Advanced deployer validates rendered configuration before starting the stack."
+            : bootstrap
             ? "Installation happens on the next step. Torhole will report success only after these three independent checks pass."
             : "Use the Privacy screen to test the running Tor path and inspect its current exit relay."
         }
@@ -1035,11 +1310,15 @@ function BootstrapDoneStep({
   topology,
   adminUser,
   timezone,
+  blocklists,
+  advancedConfig,
 }: {
   edition: Edition;
   topology: Topology;
   adminUser: string;
   timezone: string;
+  blocklists: BlocklistId[];
+  advancedConfig: AdvancedConfig;
 }) {
   const [install, setInstall] = useState<BootstrapInstallStatus>({
     status: "idle",
@@ -1070,7 +1349,16 @@ function BootstrapDoneStep({
   const begin = async () => {
     setStarting(true);
     try {
-      setInstall(await startBootstrapInstall(edition, adminUser || "admin", timezone || "UTC"));
+      setInstall(
+        await startBootstrapInstall(
+          edition,
+          adminUser || "admin",
+          timezone || "UTC",
+          blocklists,
+          topology,
+          advancedConfig,
+        ),
+      );
     } catch (error) {
       setInstall({ status: "error", message: (error as Error).message, logs: [] });
     } finally {
@@ -1078,7 +1366,6 @@ function BootstrapDoneStep({
     }
   };
 
-  const advancedBlocked = edition === "advanced";
   const copyReceipt = async () => {
     if (!install.home_url) return;
     const dnsServer = new URL(install.home_url).hostname;
@@ -1089,6 +1376,7 @@ function BootstrapDoneStep({
         `Pi-hole admin password: ${install.pihole_password || ""}`,
         `Control PIN: ${install.control_pin || ""}`,
         `DNS server: ${dnsServer}`,
+        `Blocklists: ${(install.blocklists || blocklists).join(", ")}`,
       ].join("\n"),
     );
     setCopiedReceipt(true);
@@ -1113,15 +1401,29 @@ function BootstrapDoneStep({
     <div>
       <StepHeader
         eyebrow="Install"
-        title={install.status === "success" ? "Torhole Home is ready" : "Review and install"}
+        title={
+          install.status === "success" && install.handoff
+            ? "Advanced configuration is ready"
+            : install.status === "success"
+              ? "Torhole Home is ready"
+              : edition === "advanced"
+                ? "Review and prepare deployment"
+                : "Review and install"
+        }
         body={
-          install.status === "success"
+          install.status === "success" && install.handoff
+            ? "The network values passed validation and .env was written securely. One explicit host command remains because Advanced changes host networking and system services."
+            : install.status === "success"
             ? "The privacy stack passed all three installer checks. Open Torhole, then point your router's DNS setting at this host."
-            : "The installer will generate local secrets, build the selected profile, start it, and verify DNS resolution, Tor egress, and bypass protection before reporting success."
+            : edition === "advanced"
+              ? "Torhole will validate both VLAN planes, generate missing secrets, and write the Advanced .env. It will not silently grant this web container root control over the host."
+              : "The installer will generate local secrets, build Home, start it, and verify DNS resolution, Tor egress, and bypass protection before reporting success."
         }
       />
 
-      {install.status === "success" ? (
+      {install.status === "success" && install.handoff ? (
+        <AdvancedHandoffReceipt install={install} />
+      ) : install.status === "success" ? (
         <div className="space-y-4">
           <div className="p-5 rounded-md border border-th-primary/40 bg-th-primary/[0.06]">
             <div className="flex items-center gap-2 text-th-primary font-semibold">
@@ -1156,6 +1458,12 @@ function BootstrapDoneStep({
               <SecretKV label="Pi-hole admin password" value={install.pihole_password} />
               <SecretKV label="Control PIN" value={install.control_pin} />
               <KV label="DNS server" value={new URL(install.home_url || window.location.href).hostname} />
+              <KV
+                label="Blocklists installed"
+                value={(install.blocklists || blocklists)
+                  .map((id) => CURATED_BLOCKLISTS.find((list) => list.id === id)?.name || id)
+                  .join(", ")}
+              />
             </div>
             <div className="mt-3 text-[10.5px] text-th-text-muted">
               Missed them? On the Torhole host, run{" "}
@@ -1181,15 +1489,24 @@ function BootstrapDoneStep({
             <KV label="Edition" value={edition === "home" ? "Torhole Home" : "Torhole Advanced"} />
             <KV label="Topology" value={topology} />
             <KV label="Timezone" value={timezone || "UTC"} />
+            <KV
+              label="Blocklists"
+              value={
+                edition === "advanced"
+                  ? "Managed per Pi-hole after deployment"
+                  : blocklists
+                      .map((id) => CURATED_BLOCKLISTS.find((list) => list.id === id)?.name || id)
+                      .join(", ")
+              }
+            />
             {edition === "advanced" && <KV label="Admin user" value={adminUser || "admin"} />}
           </div>
 
-          {advancedBlocked && (
+          {edition === "advanced" && (
             <Note kind="warn">
-              Advanced activation is not enabled in this checkpoint. The wizard must capture
-              and validate VLAN interfaces, CIDRs, gateways, static Pi-hole addresses, SSO,
-              and alerting values before it can safely run the existing Advanced deployer.
-              Choose Home for the clean-install rehearsal.
+              This button validates and saves Advanced configuration. It does not change host
+              VLAN interfaces from a Docker-socket-enabled browser service. The next screen
+              gives you the exact sudo command for explicit host approval.
             </Note>
           )}
 
@@ -1213,12 +1530,18 @@ function BootstrapDoneStep({
 
           <button
             type="button"
-            disabled={advancedBlocked || starting || install.status === "running"}
+            disabled={starting || install.status === "running"}
             onClick={() => void begin()}
             className="min-h-[46px] px-5 rounded-md bg-th-primary/15 border border-th-primary/40 text-th-primary hover:bg-th-primary/25 disabled:opacity-35 disabled:cursor-not-allowed flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] font-mono"
           >
             <Play size={13} />
-            {starting || install.status === "running" ? "installing…" : `install Torhole ${edition}`}
+            {starting || install.status === "running"
+              ? edition === "advanced"
+                ? "validating…"
+                : "installing…"
+              : edition === "advanced"
+                ? "validate and save Advanced config"
+                : "install Torhole Home"}
           </button>
           <div className="text-[10.5px] text-th-text-muted font-mono">
             Existing Torhole data is never deleted by this action. A failed attempt keeps its
@@ -1226,6 +1549,86 @@ function BootstrapDoneStep({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function AdvancedHandoffReceipt({ install }: { install: BootstrapInstallStatus }) {
+  const [copied, setCopied] = useState(false);
+  const command = install.deployment_command || "sudo ./deploy.sh";
+  const credentials = install.generated_credentials || {};
+  const credentialLabels: Record<string, string> = {
+    TORHOLE_ADMIN_PASSWORD: "Torhole / SSO admin password",
+    PIHOLE_TRUSTED_PASSWORD: "Trusted Pi-hole password",
+    PIHOLE_IOT_PASSWORD: "IoT Pi-hole password",
+  };
+  const visibleCredentials = Object.entries(credentials).filter(([key]) => key in credentialLabels);
+  const copyHandoff = async () => {
+    await copyText(
+      [
+        `Advanced environment: ${install.env_path || "pi-dns-warden/.env"}`,
+        `Deploy: ${command}`,
+        ...visibleCredentials.map(([key, value]) => `${credentialLabels[key]}: ${value}`),
+      ].join("\n"),
+    );
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1_500);
+  };
+  return (
+    <div className="space-y-4">
+      <div className="p-5 rounded-md border border-th-primary/40 bg-th-primary/[0.06]">
+        <div className="flex items-center gap-2 text-th-primary font-semibold">
+          <CircleCheck size={16} /> Configuration validated and saved
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+          <KV label="Environment file" value={install.env_path} />
+          <KV label="Host changes" value="Not started — awaiting sudo approval" />
+        </div>
+      </div>
+
+      <div className="p-5 rounded-md border border-th-line bg-th-bg/30">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-[14px] font-semibold text-th-text">Run this on the Torhole host</div>
+            <div className="text-[11px] text-th-text-muted mt-1">
+              Keep local console access: incorrect VLAN values can interrupt network connectivity.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void copyHandoff()}
+            className="inline-flex min-h-[40px] px-3 items-center gap-2 rounded-md border border-th-line text-th-text-muted hover:text-th-primary hover:border-th-primary/40 text-[10px] uppercase tracking-[0.14em] font-mono"
+          >
+            {copied ? <Check size={13} /> : <Copy size={13} />}
+            {copied ? "copied" : "copy command + credentials"}
+          </button>
+        </div>
+        <pre className="mt-4 p-3 rounded border border-th-line/70 bg-th-bg/70 text-[11px] text-th-text-mono font-mono whitespace-pre-wrap break-all">
+          {command}
+        </pre>
+      </div>
+
+      {visibleCredentials.length > 0 ? (
+        <div className="p-5 rounded-md border border-th-warning/30 bg-th-warning/[0.04]">
+          <div className="text-[13px] font-semibold text-th-text mb-1">Save the generated logins</div>
+          <div className="text-[10.5px] text-th-text-muted mb-3">
+            These new credentials are shown in the setup receipt. They remain stored in the local .env file.
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {visibleCredentials.map(([key, value]) => (
+              <SecretKV key={key} label={credentialLabels[key]} value={value} />
+            ))}
+          </div>
+        </div>
+      ) : (
+        <Note>Existing Advanced secrets were preserved; no replacement credentials were generated.</Note>
+      )}
+
+      <Note kind="warn">
+        The deployment is not complete yet. Success means the configuration passed validation,
+        not that DNS privacy is active. Run the command above and wait for the Advanced deployer
+        to finish its own rendered-config and service checks.
+      </Note>
     </div>
   );
 }

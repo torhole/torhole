@@ -718,6 +718,11 @@ export interface BootstrapInstallStatus {
   pihole_url?: string;
   pihole_password?: string;
   control_pin?: string;
+  blocklists?: string[];
+  handoff?: boolean;
+  env_path?: string;
+  deployment_command?: string;
+  generated_credentials?: Record<string, string>;
   verification?: {
     tor: { ok: boolean; exit_ip?: string; detail: string };
     dns: { ok: boolean; answer?: string; detail: string };
@@ -729,8 +734,17 @@ export async function startBootstrapInstall(
   edition: "home" | "advanced",
   admin_user: string | null,
   timezone: string | null,
+  blocklists: string[],
+  topology?: "single-lan" | "vlan",
+  advanced_config?: Record<string, string>,
 ): Promise<BootstrapInstallStatus> {
-  const body: Record<string, string> = { confirm: "INSTALL", edition };
+  const body: Record<string, unknown> = {
+    confirm: "INSTALL",
+    edition,
+    blocklists,
+    topology,
+    advanced_config,
+  };
   if (admin_user?.trim()) body.admin_user = admin_user.trim();
   if (timezone?.trim()) body.timezone = timezone.trim();
   const response = await fetch("/api/bootstrap/install", {

@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
+import ipaddress
 import json
 import mimetypes
 import os
 import re
 import secrets
+import shlex
+import shutil
 import subprocess
 import threading
 import time
+from datetime import datetime, timezone
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -25,6 +29,37 @@ MAX_LOG_LINES = 300
 EDITION_RE = re.compile(r"^(home|advanced)$")
 ADMIN_RE = re.compile(r"^[A-Za-z][A-Za-z0-9._-]{0,63}$")
 TIMEZONE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_+\-/]{0,63}$")
+INTERFACE_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,15}$")
+DOMAIN_RE = re.compile(
+    r"^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
+)
+BLOCKLISTS = {
+    "stevenblack": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+    "oisd": "https://big.oisd.nl",
+    "adguard": "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt",
+}
+ADVANCED_DEFAULTS = {
+    "PARENT_IF": "eth0",
+    "TRUSTED_PARENT": "eth0",
+    "IOT_PARENT": "eth0.50",
+    "TRUSTED_VLAN_ID": "1",
+    "IOT_VLAN_ID": "50",
+    "TRUSTED_SUBNET_CIDR": "",
+    "TRUSTED_GATEWAY": "",
+    "IOT_SUBNET_CIDR": "",
+    "IOT_GATEWAY": "",
+    "PIHOLE_TRUSTED_IP": "",
+    "PIHOLE_IOT_IP": "",
+    "HOST_MGMT_IP": HOST_ADDRESS if HOST_ADDRESS != "localhost" else "",
+    "REVERSE_PROXY_DOMAIN": "home.arpa",
+}
+ADVANCED_PUBLIC_KEYS = tuple(ADVANCED_DEFAULTS)
+ADVANCED_SECRET_KEYS = (
+    "PIHOLE_TRUSTED_PASSWORD",
+    "PIHOLE_IOT_PASSWORD",
+    "TORHOLE_ADMIN_PASSWORD",
+    "TOR_CONTROL_PASSWORD",
+)
 
 _status_lock = threading.Lock()
 _status = {
@@ -70,14 +105,27 @@ def parse_env(path):
 
 
 def public_config():
-    values = parse_env(ROOT_DIR / "pi-dns-warden" / ".env.quickstart.local")
-    return {
-        "TORHOLE_EDITION": values.get("TORHOLE_EDITION", "home"),
-        "TZ": values.get("TZ", os.environ.get("TZ", "UTC")),
-        "TORHOLE_ADMIN_USER": values.get("TORHOLE_ADMIN_USER", "admin"),
-        "HOST_MGMT_IP": values.get("BIND_ADDRESS", HOST_ADDRESS),
-        "PIHOLE_PASSWORD": "***" if values.get("PIHOLE_PASSWORD") else "",
+    app_dir = ROOT_DIR / "pi-dns-warden"
+    quick = parse_env(app_dir / ".env.quickstart.local")
+    advanced = parse_env(app_dir / ".env")
+    result = {
+        "TORHOLE_EDITION": advanced.get(
+            "TORHOLE_EDITION", quick.get("TORHOLE_EDITION", "home")
+        ),
+        "TZ": advanced.get("TZ", quick.get("TZ", os.environ.get("TZ", "UTC"))),
+        "TORHOLE_ADMIN_USER": advanced.get(
+            "TORHOLE_ADMIN_USER", quick.get("TORHOLE_ADMIN_USER", "admin")
+        ),
+        "PIHOLE_PASSWORD": "***" if quick.get("PIHOLE_PASSWORD") else "",
+        "TORHOLE_BLOCKLISTS": quick.get("TORHOLE_BLOCKLISTS", "stevenblack"),
     }
+    for key, default in ADVANCED_DEFAULTS.items():
+        value = advanced.get(key, default)
+        result[key] = "" if value.startswith("CHANGE_ME") else value
+    for key in ADVANCED_SECRET_KEYS:
+        value = advanced.get(key, "")
+        result[key] = "***" if value and not value.startswith("CHANGE_ME") else ""
+    return result
 
 
 def status_snapshot():
@@ -87,7 +135,12 @@ def status_snapshot():
 
 def set_status(status, message, **extra):
     with _status_lock:
-        _status.update({"status": status, "message": message, **extra})
+        # A new install attempt must not inherit edition-specific receipt data
+        # (for example Advanced's handoff flag or Home's credentials). Keep the
+        # current log only when the caller does not explicitly replace it.
+        logs = extra.pop("logs", list(_status.get("logs", [])))
+        _status.clear()
+        _status.update({"status": status, "message": message, "logs": logs, **extra})
 
 
 def append_log(line):
@@ -111,6 +164,152 @@ def install_result():
         "pihole_url": f"http://{HOST_ADDRESS}:{pihole_port}/admin/",
         "pihole_password": values.get("PIHOLE_PASSWORD", ""),
         "control_pin": values.get("CONTROL_PIN", ""),
+        "blocklists": [
+            item
+            for item in values.get("TORHOLE_BLOCKLISTS", "stevenblack").split(",")
+            if item in BLOCKLISTS
+        ],
+    }
+
+
+def validated_blocklists(value):
+    if not isinstance(value, list) or not value:
+        raise ValueError("Select at least one blocklist.")
+    if any(not isinstance(item, str) or item not in BLOCKLISTS for item in value):
+        raise ValueError("Blocklist selection contains an unsupported value.")
+    if len(value) != len(set(value)):
+        raise ValueError("Blocklist selection contains duplicates.")
+    return [item for item in BLOCKLISTS if item in value]
+
+
+def _required_text(config, key):
+    value = config.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{key} is required.")
+    value = value.strip()
+    if "\n" in value or "\r" in value or "\x00" in value:
+        raise ValueError(f"{key} contains invalid characters.")
+    return value
+
+
+def validated_advanced_config(value):
+    if not isinstance(value, dict):
+        raise ValueError("Advanced network configuration is required.")
+    config = {key: _required_text(value, key) for key in ADVANCED_PUBLIC_KEYS}
+    for key in ("PARENT_IF", "TRUSTED_PARENT", "IOT_PARENT"):
+        if not INTERFACE_RE.fullmatch(config[key]):
+            raise ValueError(f"{key} is not a valid Linux interface name.")
+    vlan_ids = []
+    for key in ("TRUSTED_VLAN_ID", "IOT_VLAN_ID"):
+        try:
+            vlan = int(config[key])
+        except ValueError as exc:
+            raise ValueError(f"{key} must be a number from 1 to 4094.") from exc
+        if not 1 <= vlan <= 4094:
+            raise ValueError(f"{key} must be a number from 1 to 4094.")
+        config[key] = str(vlan)
+        vlan_ids.append(vlan)
+    if vlan_ids[0] == vlan_ids[1]:
+        raise ValueError("Trusted and IoT VLAN IDs must be different.")
+
+    planes = (
+        ("TRUSTED_SUBNET_CIDR", "TRUSTED_GATEWAY", "PIHOLE_TRUSTED_IP"),
+        ("IOT_SUBNET_CIDR", "IOT_GATEWAY", "PIHOLE_IOT_IP"),
+    )
+    for subnet_key, gateway_key, pihole_key in planes:
+        try:
+            network = ipaddress.ip_network(config[subnet_key], strict=True)
+            gateway = ipaddress.ip_address(config[gateway_key])
+            pihole = ipaddress.ip_address(config[pihole_key])
+        except ValueError as exc:
+            raise ValueError(f"Invalid IPv4 network values for {subnet_key}.") from exc
+        if network.version != 4 or gateway.version != 4 or pihole.version != 4:
+            raise ValueError("The Advanced deployer currently requires IPv4 network values.")
+        if gateway not in network or pihole not in network:
+            raise ValueError(f"{gateway_key} and {pihole_key} must be inside {subnet_key}.")
+        if gateway in {network.network_address, network.broadcast_address} or pihole in {
+            network.network_address,
+            network.broadcast_address,
+        }:
+            raise ValueError(f"{gateway_key} and {pihole_key} must be usable host addresses.")
+        if gateway == pihole:
+            raise ValueError(f"{gateway_key} and {pihole_key} must be different.")
+
+    try:
+        host_ip = ipaddress.ip_address(config["HOST_MGMT_IP"])
+    except ValueError as exc:
+        raise ValueError("HOST_MGMT_IP must be a valid IPv4 address.") from exc
+    if host_ip.version != 4:
+        raise ValueError("HOST_MGMT_IP must be a valid IPv4 address.")
+    if not DOMAIN_RE.fullmatch(config["REVERSE_PROXY_DOMAIN"]):
+        raise ValueError("REVERSE_PROXY_DOMAIN must be a domain such as home.arpa.")
+    return config
+
+
+def _replace_env_values(template, updates):
+    remaining = dict(updates)
+    lines = []
+    for line in template.splitlines():
+        match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)=", line)
+        if match and match.group(1) in remaining:
+            key = match.group(1)
+            lines.append(f"{key}={remaining.pop(key)}")
+        else:
+            lines.append(line)
+    if remaining:
+        lines.extend(f"{key}={value}" for key, value in remaining.items())
+    return "\n".join(lines) + "\n"
+
+
+def prepare_advanced_config(network_config, admin_user, timezone_name):
+    app_dir = ROOT_DIR / "pi-dns-warden"
+    env_path = app_dir / ".env"
+    template_path = app_dir / ".env.example"
+    existing = parse_env(env_path)
+    updates = {
+        "TORHOLE_EDITION": "advanced",
+        "TZ": timezone_name,
+        "TORHOLE_ADMIN_USER": admin_user,
+        **network_config,
+    }
+    generated = {}
+    for key in (
+        "PIHOLE_TRUSTED_PASSWORD",
+        "PIHOLE_IOT_PASSWORD",
+        "TORHOLE_ADMIN_PASSWORD",
+        "TOR_CONTROL_PASSWORD",
+        "DNSCRYPT_SOCKS_PASS_TRUSTED",
+        "DNSCRYPT_SOCKS_PASS_IOT",
+    ):
+        current = existing.get(key, "")
+        if current and not current.startswith("CHANGE_ME"):
+            updates[key] = current
+        else:
+            updates[key] = secrets.token_urlsafe(24)
+            generated[key] = updates[key]
+
+    source = env_path if env_path.exists() else template_path
+    if not source.exists():
+        raise RuntimeError("Advanced .env template is missing.")
+    if env_path.exists():
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        shutil.copy2(env_path, app_dir / f".env.bootstrap-backup-{stamp}")
+    temp_path = app_dir / f".env.bootstrap-{secrets.token_hex(6)}.tmp"
+    try:
+        temp_path.write_text(
+            _replace_env_values(source.read_text(encoding="utf-8"), updates),
+            encoding="utf-8",
+        )
+        os.chmod(temp_path, 0o600)
+        os.replace(temp_path, env_path)
+        if OWNER_UID or OWNER_GID:
+            os.chown(env_path, OWNER_UID, OWNER_GID)
+    finally:
+        temp_path.unlink(missing_ok=True)
+    return {
+        "env_path": str(env_path),
+        "deployment_command": f"cd {shlex.quote(str(app_dir))} && sudo ./deploy.sh",
+        "generated_credentials": generated,
     }
 
 
@@ -230,11 +429,12 @@ def runtime_verification():
     return verification
 
 
-def run_home_install(timezone):
+def run_home_install(timezone, blocklists):
     set_status("running", "Starting Torhole Home installation…", logs=[], edition="home")
     env = os.environ.copy()
     env["TORHOLE_INSTALL_ADDRESS"] = HOST_ADDRESS
     env["TORHOLE_INSTALL_TIMEZONE"] = timezone or env.get("TZ", "UTC")
+    env["TORHOLE_INSTALL_BLOCKLISTS"] = ",".join(blocklists)
     try:
         process = subprocess.Popen(
             [str(ROOT_DIR / "install.sh"), "install-home"],
@@ -424,16 +624,43 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "Invalid admin user."}, HTTPStatus.BAD_REQUEST)
         if not isinstance(timezone, str) or not TIMEZONE_RE.fullmatch(timezone):
             return self.send_json({"error": "Invalid timezone."}, HTTPStatus.BAD_REQUEST)
-        if edition != "home":
-            return self.send_json(
-                {"error": "Advanced activation is blocked until its network fields are complete."},
-                HTTPStatus.CONFLICT,
-            )
         current = status_snapshot()
         if current["status"] == "running":
             return self.send_json(current, HTTPStatus.CONFLICT)
+        if edition == "advanced":
+            if payload.get("topology") != "vlan":
+                return self.send_json(
+                    {"error": "The current Advanced deployer requires segmented VLANs."},
+                    HTTPStatus.BAD_REQUEST,
+                )
+            try:
+                network_config = validated_advanced_config(payload.get("advanced_config"))
+                handoff = prepare_advanced_config(network_config, admin_user, timezone)
+            except (ValueError, OSError, RuntimeError) as exc:
+                return self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            set_status(
+                "success",
+                "Advanced configuration saved. Approve the host deployment in your terminal.",
+                logs=[
+                    "Validated Advanced VLAN and addressing configuration.",
+                    "Wrote pi-dns-warden/.env with mode 0600.",
+                    "No host network or service changes were made by the web wizard.",
+                ],
+                edition="advanced",
+                handoff=True,
+                **handoff,
+            )
+            return self.send_json(status_snapshot(), HTTPStatus.OK)
+        try:
+            blocklists = validated_blocklists(payload.get("blocklists"))
+        except ValueError as exc:
+            return self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         set_status("running", "Installer queued…", logs=[], edition="home")
-        thread = threading.Thread(target=run_home_install, args=(timezone,), daemon=True)
+        thread = threading.Thread(
+            target=run_home_install,
+            args=(timezone, blocklists),
+            daemon=True,
+        )
         thread.start()
         return self.send_json(status_snapshot(), HTTPStatus.ACCEPTED)
 

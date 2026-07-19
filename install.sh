@@ -235,6 +235,11 @@ ensure_env() {
     if ! grep -q '^CONTROL_HELPER_TOKEN=' "$ENV_FILE"; then
       printf 'CONTROL_HELPER_TOKEN=%s\n' "$(random_password)$(random_password)" >>"$ENV_FILE"
     fi
+    if [[ -n "${TORHOLE_INSTALL_BLOCKLISTS:-}" ]]; then
+      set_env_value TORHOLE_BLOCKLISTS "$TORHOLE_INSTALL_BLOCKLISTS"
+    elif ! grep -q '^TORHOLE_BLOCKLISTS=' "$ENV_FILE"; then
+      printf 'TORHOLE_BLOCKLISTS=stevenblack\n' >>"$ENV_FILE"
+    fi
     return
   fi
 
@@ -245,6 +250,7 @@ ensure_env() {
   umask 077
   {
     printf 'TORHOLE_EDITION=home\n'
+    printf 'TORHOLE_BLOCKLISTS=%s\n' "${TORHOLE_INSTALL_BLOCKLISTS:-stevenblack}"
     printf 'PIHOLE_PASSWORD=%s\n' "$password"
     printf 'TZ=%s\n' "$timezone"
     printf 'DNS_PORT=53\n'
@@ -257,6 +263,23 @@ ensure_env() {
     fi
   } >"$ENV_FILE"
   echo "Created a secure local configuration."
+}
+
+set_env_value() {
+  local key="$1" value="$2" temp_file
+  temp_file="$(mktemp "${ENV_FILE}.XXXXXX")"
+  awk -v key="$key" -v value="$value" '
+    BEGIN { prefix = key "="; replaced = 0 }
+    index($0, prefix) == 1 {
+      if (!replaced) print prefix value
+      replaced = 1
+      next
+    }
+    { print }
+    END { if (!replaced) print prefix value }
+  ' "$ENV_FILE" >"$temp_file"
+  chmod 600 "$temp_file"
+  mv "$temp_file" "$ENV_FILE"
 }
 
 env_value() {
@@ -332,6 +355,40 @@ verify_dns() {
   return 1
 }
 
+configure_blocklists() {
+  local selection sql id
+  local -a blocklist_ids
+  selection="$(env_value TORHOLE_BLOCKLISTS)"
+  [[ -n "$selection" ]] || selection="stevenblack"
+  # Pi-hole's gravity tables reference adlist rows without ON DELETE CASCADE.
+  # Disable unselected curated rows instead of deleting them, then let
+  # `pihole -g` rebuild gravity safely. Unrelated user-managed rows are untouched.
+  sql="BEGIN; UPDATE adlist SET enabled=0 WHERE address IN ('https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts','https://big.oisd.nl','https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt');"
+  IFS=',' read -r -a blocklist_ids <<<"$selection"
+  for id in "${blocklist_ids[@]}"; do
+    case "$id" in
+      stevenblack)
+        sql+=" INSERT OR IGNORE INTO adlist(address,enabled,comment) VALUES('https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts',1,'Managed by Torhole Home'); UPDATE adlist SET enabled=1,comment='Managed by Torhole Home' WHERE address='https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts';"
+        ;;
+      oisd)
+        sql+=" INSERT OR IGNORE INTO adlist(address,enabled,comment) VALUES('https://big.oisd.nl',1,'Managed by Torhole Home'); UPDATE adlist SET enabled=1,comment='Managed by Torhole Home' WHERE address='https://big.oisd.nl';"
+        ;;
+      adguard)
+        sql+=" INSERT OR IGNORE INTO adlist(address,enabled,comment) VALUES('https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt',1,'Managed by Torhole Home'); UPDATE adlist SET enabled=1,comment='Managed by Torhole Home' WHERE address='https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt';"
+        ;;
+      *)
+        echo "Unsupported blocklist selection: $id"
+        return 1
+        ;;
+    esac
+  done
+  sql+=" COMMIT;"
+  echo "Applying selected Pi-hole blocklists: $selection"
+  compose exec -T pihole pihole-FTL sqlite3 /etc/pihole/gravity.db "$sql"
+  compose exec -T pihole pihole -g
+  echo "Selected blocklists installed and gravity refreshed."
+}
+
 migrate_legacy_network() {
   local legacy="pi-dns-warden_torhole_qs"
   if "${DOCKER[@]}" network inspect "$legacy" >/dev/null 2>&1; then
@@ -342,6 +399,49 @@ migrate_legacy_network() {
       "${DOCKER[@]}" network rm "$legacy" >/dev/null
     fi
   fi
+}
+
+migrate_pihole_volume() {
+  local volume="pi-dns-warden_pihole_data"
+  local container="torhole-qs-pihole"
+  local temp_dir image was_running="false"
+  if "${DOCKER[@]}" volume inspect "$volume" >/dev/null 2>&1; then
+    return
+  fi
+  if ! "${DOCKER[@]}" container inspect "$container" >/dev/null 2>&1; then
+    return
+  fi
+
+  echo "Preserving existing Pi-hole settings in a persistent volume..."
+  temp_dir="$(mktemp -d)"
+  image="$("${DOCKER[@]}" container inspect "$container" --format '{{.Config.Image}}')"
+  was_running="$("${DOCKER[@]}" container inspect "$container" --format '{{.State.Running}}')"
+  if [[ "$was_running" == "true" ]]; then
+    "${DOCKER[@]}" stop "$container" >/dev/null
+  fi
+  if ! "${DOCKER[@]}" cp "${container}:/etc/pihole/." "$temp_dir"; then
+    [[ "$was_running" == "true" ]] && "${DOCKER[@]}" start "$container" >/dev/null
+    rm -rf "$temp_dir"
+    echo "Could not copy the existing Pi-hole settings; the old container was kept."
+    return 1
+  fi
+  if ! "${DOCKER[@]}" volume create "$volume" >/dev/null; then
+    [[ "$was_running" == "true" ]] && "${DOCKER[@]}" start "$container" >/dev/null
+    rm -rf "$temp_dir"
+    echo "Could not create persistent Pi-hole storage; the old container was kept."
+    return 1
+  fi
+  if ! "${DOCKER[@]}" run --rm --entrypoint sh \
+    -v "${temp_dir}:/source:ro" -v "${volume}:/target" "$image" \
+    -c 'cp -a /source/. /target/'; then
+    "${DOCKER[@]}" volume rm "$volume" >/dev/null 2>&1 || true
+    [[ "$was_running" == "true" ]] && "${DOCKER[@]}" start "$container" >/dev/null
+    rm -rf "$temp_dir"
+    echo "Could not seed persistent Pi-hole storage; the old container was kept."
+    return 1
+  fi
+  rm -rf "$temp_dir"
+  echo "Existing Pi-hole settings preserved."
 }
 
 command="${1:-wizard}"
@@ -366,6 +466,7 @@ case "$command" in
   install-home)
     need_docker
     ensure_env
+    migrate_pihole_volume || exit 1
     migrate_legacy_network
     echo "Starting Torhole Home (Pi-hole + encrypted DNS + Tor)..."
     if ! compose up -d --build; then
@@ -376,6 +477,7 @@ case "$command" in
       exit 1
     fi
     verify_dns || exit 1
+    configure_blocklists || exit 1
     show_success
     ;;
   status)

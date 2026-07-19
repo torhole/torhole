@@ -213,6 +213,11 @@ installer prints:
 - the Pi-hole administration address and password;
 - the DNS address to configure in your router or device.
 
+The Blocklists step is an actual installer choice. Select one or more curated
+sources; Torhole enables that exact selection, refreshes Pi-hole gravity, and
+keeps Pi-hole's database in a persistent Docker volume. Lists added later in
+Pi-hole are not removed by the Torhole installer.
+
 After the stack starts, allow Tor a minute to establish a circuit. The Home
 dashboard then verifies DNS resolution, blocking, Tor routing, the current exit,
 and whether the resolver sees the Tor exit rather than the host's normal public
@@ -250,6 +255,24 @@ dig @<torhole-dns-address> example.com
 Choose **Advanced** in the same web installer. The wizard exposes the additional
 network planes and operational features, validates the configuration, and lets
 experienced users review or edit the generated environment values.
+
+The current proven Advanced deployer requires separate Trusted and IoT VLAN
+planes. The wizard therefore disables Single-LAN for Advanced instead of
+accepting a topology the deployer cannot safely build. Single-LAN Advanced is a
+planned capability; choose Home when VLANs are not available.
+
+After validation, the wizard writes `pi-dns-warden/.env` with mode `0600`,
+generates any missing local credentials, and shows the exact host command:
+
+```bash
+cd ~/torhole/pi-dns-warden
+sudo ./deploy.sh
+```
+
+That explicit terminal approval is intentional. Advanced creates host VLAN
+interfaces and systemd services; the temporary web installer is not granted
+root control of the host network. Keep console access available while applying
+new VLAN settings.
 
 Advanced can provide:
 
