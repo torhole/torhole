@@ -3,7 +3,7 @@
   "title": "Pi DNS Warden - Host Infrastructure",
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 4,
+  "version": 5,
   "refresh": "30s",
   "tags": [
     "host",
@@ -32,8 +32,10 @@
       },
       "targets": [
         {
-          "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
-          "refId": "A"
+          "expr": "(100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)) or on() vector(-1)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -52,7 +54,37 @@
         "defaults": {
           "unit": "percent",
           "min": 0,
-          "max": 100
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "UNKNOWN",
+                  "color": "gray",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "noValue": "UNKNOWN"
         }
       }
     },
@@ -72,8 +104,10 @@
       },
       "targets": [
         {
-          "expr": "100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))",
-          "refId": "A"
+          "expr": "(100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))) or on() vector(-1)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -92,7 +126,37 @@
         "defaults": {
           "unit": "percent",
           "min": 0,
-          "max": 100
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 75
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "UNKNOWN",
+                  "color": "gray",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "noValue": "UNKNOWN"
         }
       }
     },
@@ -112,8 +176,10 @@
       },
       "targets": [
         {
-          "expr": "100 * (1 - (node_filesystem_avail_bytes{mountpoint=\"/\",fstype!~\"tmpfs|overlay\"} / node_filesystem_size_bytes{mountpoint=\"/\",fstype!~\"tmpfs|overlay\"}))",
-          "refId": "A"
+          "expr": "(100 * (1 - (node_filesystem_avail_bytes{mountpoint=\"/\",fstype!~\"tmpfs|overlay\"} / node_filesystem_size_bytes{mountpoint=\"/\",fstype!~\"tmpfs|overlay\"}))) or on() vector(-1)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -132,9 +198,46 @@
         "defaults": {
           "unit": "percent",
           "min": 0,
-          "max": 100
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "UNKNOWN",
+                  "color": "gray",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "links": [
+        {
+          "title": "Open the operator guide",
+          "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md",
+          "targetBlank": true
+        }
+      ]
     },
     {
       "id": 4,
@@ -152,8 +255,10 @@
       },
       "targets": [
         {
-          "expr": "node_time_seconds - node_boot_time_seconds",
-          "refId": "A"
+          "expr": "(node_time_seconds - node_boot_time_seconds) or on() vector(-1)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -170,7 +275,20 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "s"
+          "unit": "s",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "UNKNOWN",
+                  "color": "gray",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "noValue": "UNKNOWN"
         }
       }
     },
@@ -190,8 +308,10 @@
       },
       "targets": [
         {
-          "expr": "avg_over_time(up{job=\"node\"}[5m]) * 100",
-          "refId": "A"
+          "expr": "(avg_over_time(up{job=\"node\"}[5m]) * 100) or on() vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -210,28 +330,48 @@
         "defaults": {
           "unit": "percent",
           "min": 0,
-          "max": 100
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 99
+              }
+            ]
+          },
+          "noValue": "UNKNOWN"
         }
       }
     },
     {
       "id": 6,
       "type": "gauge",
-      "title": "CPU pressure",
+      "title": "Load per CPU core",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 0,
-        "y": 4,
-        "w": 6,
-        "h": 8
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 4
       },
       "targets": [
         {
-          "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
-          "refId": "A"
+          "expr": "(100 * node_load1 / scalar(count(node_cpu_seconds_total{mode=\"idle\"}))) or on() vector(-1)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -267,88 +407,52 @@
                 "value": 85
               }
             ]
-          }
-        }
-      }
-    },
-    {
-      "id": 7,
-      "type": "piechart",
-      "title": "Memory split",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
-      },
-      "gridPos": {
-        "x": 6,
-        "y": 4,
-        "w": 9,
-        "h": 8
-      },
-      "targets": [
-        {
-          "expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes",
-          "legendFormat": "Used RAM",
-          "refId": "A"
-        },
-        {
-          "expr": "node_memory_MemAvailable_bytes",
-          "legendFormat": "Available RAM",
-          "refId": "B"
-        }
-      ],
-      "options": {
-        "displayLabels": [
-          "name",
-          "percent"
-        ],
-        "legend": {
-          "displayMode": "table",
-          "placement": "right"
-        },
-        "pieType": "donut",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "UNKNOWN",
+                  "color": "gray",
+                  "index": 0
+                }
+              }
+            }
           ],
-          "fields": "",
-          "values": false
+          "noValue": "UNKNOWN"
         }
       },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes"
-        }
-      }
+      "description": "One-minute load normalized by logical CPU count. Above 100% means more runnable work than CPU capacity."
     },
     {
       "id": 8,
       "type": "timeseries",
-      "title": "Host CPU and load",
+      "title": "Host load averages",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
         "x": 0,
-        "y": 12,
+        "y": 4,
         "w": 12,
         "h": 8
       },
       "targets": [
         {
-          "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
-          "legendFormat": "CPU used",
-          "refId": "A"
-        },
-        {
           "expr": "node_load1",
           "legendFormat": "Load 1m",
-          "refId": "B"
+          "refId": "A"
         },
         {
           "expr": "node_load5",
           "legendFormat": "Load 5m",
+          "refId": "B"
+        },
+        {
+          "expr": "node_load15",
+          "legendFormat": "Load 15m",
           "refId": "C"
         }
       ],
@@ -362,7 +466,8 @@
           "displayMode": "table",
           "placement": "bottom"
         }
-      }
+      },
+      "description": "Runnable and uninterruptible work over 1, 5, and 15 minutes. Compare with logical CPU count or Load per CPU core."
     },
     {
       "id": 9,
@@ -374,7 +479,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 12,
+        "y": 4,
         "w": 12,
         "h": 8
       },
@@ -414,7 +519,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 20,
+        "y": 12,
         "w": 12,
         "h": 8
       },
@@ -452,18 +557,18 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 20,
+        "y": 12,
         "w": 12,
         "h": 8
       },
       "targets": [
         {
-          "expr": "sum by (device) (rate(node_network_receive_bytes_total{device!~\"lo|veth.*\"}[5m]))",
+          "expr": "sum by (device) (rate(node_network_receive_bytes_total{device!~\"lo|veth.*|docker.*|br-.*\"}[5m]))",
           "legendFormat": "RX {{device}}",
           "refId": "A"
         },
         {
-          "expr": "sum by (device) (rate(node_network_transmit_bytes_total{device!~\"lo|veth.*\"}[5m]))",
+          "expr": "sum by (device) (rate(node_network_transmit_bytes_total{device!~\"lo|veth.*|docker.*|br-.*\"}[5m]))",
           "legendFormat": "TX {{device}}",
           "refId": "B"
         }
@@ -478,56 +583,8 @@
           "displayMode": "table",
           "placement": "bottom"
         }
-      }
-    },
-    {
-      "id": 12,
-      "type": "stat",
-      "title": "Load 1m",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
       },
-      "gridPos": {
-        "x": 20,
-        "y": 0,
-        "w": 4,
-        "h": 4
-      },
-      "targets": [
-        {
-          "expr": "node_load1",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "center"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "decimals": 2
-        }
-      },
-      "description": "System load average over 1 minute. Compare to number of CPU cores to gauge saturation."
+      "description": "Host traffic by non-loopback, non-Docker interface. Use the physical parent interface when diagnosing LAN or VLAN reachability."
     },
     {
       "id": 13,
@@ -538,9 +595,9 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 15,
-        "y": 4,
-        "w": 9,
+        "x": 0,
+        "y": 20,
+        "w": 24,
         "h": 8
       },
       "targets": [
@@ -548,7 +605,8 @@
           "expr": "100 * (1 - node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay|ramfs\",mountpoint!~\"/dev/.*|/proc/.*|/sys/.*\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|overlay|ramfs\",mountpoint!~\"/dev/.*|/proc/.*|/sys/.*\"})",
           "refId": "A",
           "legendFormat": "{{mountpoint}}",
-          "instant": true
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -585,7 +643,8 @@
                 "value": 90
               }
             ]
-          }
+          },
+          "noValue": "UNKNOWN"
         }
       },
       "description": "Per-mountpoint disk usage. Green < 70%, orange < 90%, red above. Excludes virtual filesystems."
@@ -650,6 +709,24 @@
       "targetBlank": false,
       "keepTime": true,
       "includeVars": true,
+      "asDropdown": false
+    },
+    {
+      "title": "Operator guide",
+      "type": "link",
+      "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md",
+      "targetBlank": true,
+      "keepTime": false,
+      "includeVars": false,
+      "asDropdown": false
+    },
+    {
+      "title": "Privacy model",
+      "type": "link",
+      "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/privacy-model.md#network-isolation-verification",
+      "targetBlank": true,
+      "keepTime": false,
+      "includeVars": false,
       "asDropdown": false
     }
   ]

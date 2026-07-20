@@ -3,7 +3,7 @@
   "title": "Pi DNS Warden - Control Room",
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 7,
+  "version": 8,
   "refresh": "15s",
   "tags": [
     "dns",
@@ -32,8 +32,10 @@
       },
       "targets": [
         {
-          "expr": "sum(ALERTS{alertstate=\"firing\"})",
-          "refId": "A"
+          "expr": "sum(ALERTS{alertstate=\"firing\"}) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -63,14 +65,23 @@
                 "value": 1
               }
             ]
-          }
+          },
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "Number of firing Prometheus alerts. Zero is clean; open the operator guide and Alertmanager when non-zero.",
+      "links": [
+        {
+          "title": "Open the operator guide",
+          "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md",
+          "targetBlank": true
+        }
+      ]
     },
     {
       "id": 2,
       "type": "stat",
-      "title": "Reverse proxy HTTPS",
+      "title": "Reverse proxy edge",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
@@ -83,8 +94,10 @@
       },
       "targets": [
         {
-          "expr": "avg_over_time(probe_success{job=\"blackbox-monitoring-tcp\",instance=\"reverse-proxy:443\"}[5m]) * 100",
-          "refId": "A"
+          "expr": "(avg_over_time(probe_success{job=\"blackbox-monitoring-tcp\",instance=~\"reverse-proxy:(80|443)\"}[5m]) * 100) or on() vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -121,14 +134,16 @@
                 "value": 99
               }
             ]
-          }
+          },
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "Five-minute TCP reachability for the configured HTTP or HTTPS reverse-proxy edge."
     },
     {
       "id": 3,
       "type": "stat",
-      "title": "DNS chain floor",
+      "title": "DNS availability floor",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
@@ -141,8 +156,10 @@
       },
       "targets": [
         {
-          "expr": "min(avg_over_time(probe_success{job=~\"blackbox-dns-udp-pihole|blackbox-dns-tcp-dnscrypt|blackbox-tor-socks\"}[5m])) * 100",
-          "refId": "A"
+          "expr": "(min(avg_over_time(probe_success{job=~\"blackbox-dns-udp-pihole|blackbox-dns-tcp-dnscrypt|blackbox-tor-socks\"}[5m])) * 100) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -179,9 +196,11 @@
                 "value": 99
               }
             ]
-          }
+          },
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "Worst configured DNS/SOCKS probe success. This measures availability, not Tor egress; see Tor egress verification."
     },
     {
       "id": 4,
@@ -199,8 +218,10 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(container_network_transmit_bytes_total{name=\"tor\"}[1h]))",
-          "refId": "A"
+          "expr": "sum(increase(container_network_transmit_bytes_total{name=\"tor\"}[1h])) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -217,7 +238,8 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes"
+          "unit": "bytes",
+          "noValue": "UNKNOWN"
         }
       }
     },
@@ -237,8 +259,10 @@
       },
       "targets": [
         {
-          "expr": "100 * (sum(increase(pihole_queries_blocked_total[15m])) / clamp_min(sum(increase(pihole_queries_total[15m])), 1))",
-          "refId": "A"
+          "expr": "(100 * (sum(increase(pihole_queries_blocked_total[15m])) / clamp_min(sum(increase(pihole_queries_total[15m])), 1))) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -263,21 +287,15 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
-              },
-              {
-                "color": "orange",
-                "value": 15
-              },
-              {
-                "color": "red",
-                "value": 35
               }
             ]
-          }
+          },
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "Traffic characteristic, not health: a high block ratio can be intentional and zero can mean either quiet traffic or disabled lists."
     },
     {
       "id": 6,
@@ -295,8 +313,10 @@
       },
       "targets": [
         {
-          "expr": "avg(up{job=~\"loki|alloy\"}) * 100",
-          "refId": "A"
+          "expr": "(min(up{job=~\"loki|alloy\"}) * 100) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -316,9 +336,28 @@
           "unit": "percent",
           "decimals": 1,
           "min": 0,
-          "max": 100
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 99
+              }
+            ]
+          },
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "Worst current scrape state across Alloy and Loki. This checks components; ingest volume is shown in Visibility & Logs."
     },
     {
       "id": 7,
@@ -331,13 +370,15 @@
       "gridPos": {
         "x": 0,
         "y": 4,
-        "w": 6,
-        "h": 8
+        "w": 4,
+        "h": 4
       },
       "targets": [
         {
-          "expr": "min(pihole_exporter_up) * 100",
-          "refId": "A"
+          "expr": "(min(pihole_exporter_up) * 100) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -371,57 +412,35 @@
               }
             ]
           },
-          "unit": "percent"
+          "unit": "percent",
+          "noValue": "UNKNOWN"
         }
       },
-      "description": "Worst-case Pi-hole exporter availability across the three planes. Red if any plane lost its scrape target."
+      "description": "Worst authenticated Pi-hole API scrape across active planes (one in single-LAN, two in VLAN mode). Missing telemetry is unhealthy."
     },
     {
       "id": 8,
-      "type": "piechart",
-      "title": "Traffic share now",
+      "type": "stat",
+      "title": "Tor egress verification",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 6,
+        "x": 4,
         "y": 4,
-        "w": 6,
-        "h": 8
+        "w": 4,
+        "h": 4
       },
       "targets": [
         {
-          "expr": "sum(rate(container_network_receive_bytes_total{name=\"reverse-proxy\"}[5m]))",
-          "legendFormat": "Edge ingress",
-          "refId": "A"
-        },
-        {
-          "expr": "sum(rate(container_network_receive_bytes_total{name=~\"pihole_(trusted|iot)\"}[5m]))",
-          "legendFormat": "Pi-hole ingress",
-          "refId": "B"
-        },
-        {
-          "expr": "sum(rate(container_network_transmit_bytes_total{name=~\"dnscrypt-(trusted|iot)\"}[5m]))",
-          "legendFormat": "Resolver to Tor",
-          "refId": "C"
-        },
-        {
-          "expr": "sum(rate(container_network_transmit_bytes_total{name=\"tor\"}[5m]))",
-          "legendFormat": "Tor egress",
-          "refId": "D"
+          "expr": "torhole_leak_test_pass or on() vector(-1)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
-        "displayLabels": [
-          "name",
-          "percent"
-        ],
-        "legend": {
-          "displayMode": "table",
-          "placement": "right"
-        },
-        "pieType": "donut",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -429,46 +448,82 @@
           "fields": "",
           "values": false
         },
-        "tooltip": {
-          "mode": "single",
-          "sort": "desc"
-        }
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "Bps"
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "FAIL",
+                  "color": "red",
+                  "index": 1
+                },
+                "1": {
+                  "text": "PASS · DNS exits via Tor",
+                  "color": "green",
+                  "index": 2
+                },
+                "-1": {
+                  "text": "UNKNOWN",
+                  "color": "gray",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "PASS means the scheduled compatibility-named leak test sent an independent request through Tor SOCKS and the remote IsTor check observed a Tor exit. It does not trace a DNS query through Pi-hole or dnscrypt. UNKNOWN is not healthy.",
+      "links": [
+        {
+          "title": "Verify the privacy path",
+          "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/privacy-model.md#network-isolation-verification",
+          "targetBlank": true
+        }
+      ]
     },
     {
       "id": 9,
       "type": "piechart",
-      "title": "DNS disposition now",
+      "title": "DNS disposition over selected range",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 12,
-        "y": 4,
-        "w": 6,
+        "x": 0,
+        "y": 8,
+        "w": 12,
         "h": 8
       },
       "targets": [
         {
-          "expr": "sum(rate(pihole_queries_cached_total[5m]))",
+          "expr": "sum(increase(pihole_queries_cached_total[$__range])) or vector(0)",
           "legendFormat": "Cached",
-          "refId": "A"
+          "refId": "A",
+          "instant": true,
+          "range": false
         },
         {
-          "expr": "sum(rate(pihole_queries_forwarded_total[5m]))",
+          "expr": "sum(increase(pihole_queries_forwarded_total[$__range])) or vector(0)",
           "legendFormat": "Forwarded",
-          "refId": "B"
+          "refId": "B",
+          "instant": true,
+          "range": false
         },
         {
-          "expr": "sum(rate(pihole_queries_blocked_total[5m]))",
+          "expr": "sum(increase(pihole_queries_blocked_total[$__range])) or vector(0)",
           "legendFormat": "Blocked",
-          "refId": "C"
+          "refId": "C",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -502,22 +557,24 @@
     {
       "id": 10,
       "type": "piechart",
-      "title": "HTTP status mix",
+      "title": "HTTP status mix over selected range",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 18,
-        "y": 4,
-        "w": 6,
+        "x": 12,
+        "y": 8,
+        "w": 12,
         "h": 8
       },
       "targets": [
         {
-          "expr": "sum by (code) (rate(caddy_http_request_duration_seconds_count[5m]))",
+          "expr": "sum by (code) (increase(caddy_http_request_duration_seconds_count[$__range]))",
           "legendFormat": "{{code}}",
-          "refId": "A"
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -558,14 +615,14 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 12,
-        "w": 12,
+        "y": 16,
+        "w": 24,
         "h": 8
       },
       "targets": [
         {
-          "expr": "avg_over_time(probe_success{job=\"blackbox-monitoring-tcp\",instance=\"reverse-proxy:443\"}[5m]) * 100",
-          "legendFormat": "Reverse proxy 443",
+          "expr": "avg_over_time(probe_success{job=\"blackbox-monitoring-tcp\",instance=~\"reverse-proxy:(80|443)\"}[5m]) * 100",
+          "legendFormat": "Reverse proxy edge",
           "refId": "A"
         },
         {
@@ -596,84 +653,91 @@
           "displayMode": "table",
           "placement": "bottom"
         }
-      }
+      },
+      "description": "Historical reachability for configured active targets. Port/DNS success is not a substitute for Tor egress verification."
     },
     {
       "id": 14,
-      "type": "timeseries",
-      "title": "Resolver demand vs Tor edge",
+      "type": "stat",
+      "title": "Tor egress verification age",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 12,
-        "y": 12,
-        "w": 12,
-        "h": 8
+        "x": 8,
+        "y": 4,
+        "w": 4,
+        "h": 4
       },
       "targets": [
         {
-          "expr": "sum(rate(container_network_transmit_bytes_total{name=~\"dnscrypt-(trusted|iot)\"}[5m]))",
-          "legendFormat": "dnscrypt to Tor",
-          "refId": "A"
-        },
-        {
-          "expr": "sum(rate(container_network_receive_bytes_total{name=\"tor\"}[5m]))",
-          "legendFormat": "Tor RX",
-          "refId": "B"
-        },
-        {
-          "expr": "sum(rate(container_network_transmit_bytes_total{name=\"tor\"}[5m]))",
-          "legendFormat": "Tor TX",
-          "refId": "C"
+          "expr": "torhole_leak_test_age_seconds or on() vector(-1)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "Bps"
+          "unit": "s",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "gray",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 3600
+              },
+              {
+                "color": "red",
+                "value": 7200
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "UNKNOWN",
+                  "color": "gray",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "noValue": "UNKNOWN"
         }
       },
       "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom"
-        }
-      }
-    },
-    {
-      "id": 16,
-      "type": "timeseries",
-      "title": "Critical stack restarts (24h)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center"
       },
-      "gridPos": {
-        "x": 0,
-        "y": 20,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
+      "description": "Age of the latest scheduled compatibility-named leak test. Red at two hours (four missed 30-minute runs). The test covers an independent SOCKS request, not DNS-path tracing; UNKNOWN means it has never completed.",
+      "links": [
         {
-          "expr": "sum by (name) (increase(container_restart_count_total{name=~\"tor|dnscrypt-(trusted|iot)|pihole_(trusted|iot)|prometheus|grafana|alertmanager|blackbox-exporter|dockhand|reverse-proxy|loki|alloy|pihole-exporter\"}[24h]))",
-          "legendFormat": "{{name}}",
-          "refId": "A"
+          "title": "Verify the privacy path",
+          "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/privacy-model.md#network-isolation-verification",
+          "targetBlank": true
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "min": 0
-        }
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom"
-        }
-      }
+      ]
     },
     {
       "id": 17,
@@ -685,13 +749,13 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 28,
+        "y": 24,
         "w": 24,
         "h": 8
       },
       "targets": [
         {
-          "expr": "probe_success{job=\"blackbox-monitoring-tcp\",instance=~\"reverse-proxy:443|grafana:3000|alertmanager:9093|dockhand:3000\"}",
+          "expr": "probe_success{job=\"blackbox-monitoring-tcp\",instance=~\"reverse-proxy:(80|443)|grafana:3000|alertmanager:9093\"}",
           "legendFormat": "{{instance}}",
           "refId": "A"
         },
@@ -738,26 +802,29 @@
             }
           ]
         }
-      }
+      },
+      "description": "Configured blackbox targets only. Missing rows are unknown, not healthy."
     },
     {
       "id": 18,
       "type": "stat",
-      "title": "Scrape freshness",
+      "title": "Core scrape freshness",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 0,
-        "y": 36,
-        "w": 6,
+        "x": 12,
+        "y": 4,
+        "w": 4,
         "h": 4
       },
       "targets": [
         {
-          "expr": "max(time() - timestamp(up{job=~\"pihole-exporter|node|cadvisor|caddy|loki|alloy|blackbox-exporter\"}))",
-          "refId": "A"
+          "expr": "max(((time() - timestamp(up{job=~\"pihole-exporter|node|cadvisor|caddy|loki|alloy|blackbox-exporter|torhole-tor\"})) + ((1 - up{job=~\"pihole-exporter|node|cadvisor|caddy|loki|alloy|blackbox-exporter|torhole-tor\"}) * 1000000000)) or vector((8 - scalar(count(count by (job) (up{job=~\"pihole-exporter|node|cadvisor|caddy|loki|alloy|blackbox-exporter|torhole-tor\"})))) * 1000000000)) or vector(1000000000)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -791,10 +858,18 @@
               }
             ]
           },
-          "unit": "s"
+          "unit": "s",
+          "noValue": "UNKNOWN"
         }
       },
-      "description": "Age of the oldest successful scrape across core targets. If this climbs, some scrape job is failing silently."
+      "description": "Maximum age of the latest scrape sample across core jobs. Any current up=0 or total absence is forced red rather than appearing fresh.",
+      "links": [
+        {
+          "title": "Open the operator guide",
+          "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md",
+          "targetBlank": true
+        }
+      ]
     },
     {
       "id": 19,
@@ -805,9 +880,9 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 12,
-        "y": 20,
-        "w": 12,
+        "x": 0,
+        "y": 32,
+        "w": 24,
         "h": 8
       },
       "targets": [
@@ -861,26 +936,29 @@
           ]
         }
       },
-      "description": "Which alert rules were firing when, over the last 24 hours. Empty strip means the stack was clean."
+      "description": "Prometheus firing-alert history over the last 24 hours. No data is unknown unless Active alerts is a current green zero.",
+      "timeFrom": "24h"
     },
     {
       "id": 20,
       "type": "stat",
-      "title": "Stack uptime",
+      "title": "Youngest core-container uptime",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 6,
-        "y": 36,
-        "w": 6,
+        "x": 16,
+        "y": 4,
+        "w": 4,
         "h": 4
       },
       "targets": [
         {
-          "expr": "time() - min(container_start_time_seconds{name=~\"tor|reverse-proxy|pihole_(trusted|iot)|dnscrypt-(trusted|iot)\"})",
-          "refId": "A"
+          "expr": "time() - max(container_start_time_seconds{name=~\"tor|reverse-proxy|pihole_(trusted|iot)|dnscrypt-(trusted|iot)\"})",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -906,29 +984,32 @@
                 "value": null
               }
             ]
-          }
+          },
+          "noValue": "UNKNOWN"
         }
       },
-      "description": "Minimum uptime across Torhole core containers. A low value means something just restarted."
+      "description": "Uptime of the most recently started active core container. A low value identifies a recent restart; No data is unknown."
     },
     {
       "id": 21,
       "type": "stat",
-      "title": "Scrape targets up",
+      "title": "Metrics targets up",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 12,
-        "y": 36,
-        "w": 6,
+        "x": 20,
+        "y": 4,
+        "w": 4,
         "h": 4
       },
       "targets": [
         {
-          "expr": "100 * sum(up) / count(up)",
-          "refId": "A"
+          "expr": "(100 * avg(up{job=~\"prometheus|node|cadvisor|caddy|loki|alloy|blackbox-exporter|pihole-exporter|torhole-tor\"})) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -962,58 +1043,11 @@
                 "value": 99
               }
             ]
-          }
+          },
+          "noValue": "UNKNOWN"
         }
       },
-      "description": "Percent of Prometheus scrape targets that are currently up."
-    },
-    {
-      "id": 22,
-      "type": "stat",
-      "title": "TSDB head series",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
-      },
-      "gridPos": {
-        "x": 18,
-        "y": 36,
-        "w": 6,
-        "h": 4
-      },
-      "targets": [
-        {
-          "expr": "prometheus_tsdb_head_series",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "center"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        }
-      },
-      "description": "Total time series in Prometheus's head block. Sudden growth can indicate label cardinality explosion."
+      "description": "Current scrape availability for core metric producers. Blackbox service outcomes are reported separately through probe_success."
     }
   ],
   "links": [
@@ -1069,6 +1103,24 @@
       "targetBlank": false,
       "keepTime": true,
       "includeVars": true,
+      "asDropdown": false
+    },
+    {
+      "title": "Operator guide",
+      "type": "link",
+      "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md",
+      "targetBlank": true,
+      "keepTime": false,
+      "includeVars": false,
+      "asDropdown": false
+    },
+    {
+      "title": "Privacy model",
+      "type": "link",
+      "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/privacy-model.md#network-isolation-verification",
+      "targetBlank": true,
+      "keepTime": false,
+      "includeVars": false,
       "asDropdown": false
     }
   ]

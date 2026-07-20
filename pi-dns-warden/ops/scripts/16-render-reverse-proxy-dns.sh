@@ -117,7 +117,11 @@ if [[ "${#DNS_LINES[@]}" -eq 0 ]]; then
   exit 0
 fi
 
-for role in trusted iot; do
+ROLES=(trusted)
+if [[ "${TORHOLE_TOPOLOGY:-vlan}" == "vlan" ]]; then
+  ROLES+=(iot)
+fi
+for role in "${ROLES[@]}"; do
   out="${ROOT_DIR}/pihole/${role}/etc-dnsmasq.d/98-reverse-proxy-hosts.conf"
   mkdir -p "$(dirname "$out")"
   {
@@ -128,4 +132,4 @@ EOF
   } >"$out"
 done
 
-echo "OK: reverse proxy DNS entries rendered for ${REVERSE_PROXY_DOMAIN} -> ${REVERSE_PROXY_TARGET_IP}"
+echo "OK: reverse proxy DNS entries rendered for ${REVERSE_PROXY_DOMAIN} -> ${REVERSE_PROXY_TARGET_IP} (${TORHOLE_TOPOLOGY:-vlan})"

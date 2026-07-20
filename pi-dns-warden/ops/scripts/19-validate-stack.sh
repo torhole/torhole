@@ -16,6 +16,9 @@ source "$ROOT_DIR/ops/scripts/_compose.sh"
 # shellcheck disable=SC1091
 source "$ROOT_DIR/ops/lib/torhole-hostnames.sh"
 
+bash "$ROOT_DIR/ops/scripts/13-render-prometheus.sh"
+bash "$ROOT_DIR/ops/scripts/14-render-caddy-topology.sh"
+
 PROMETHEUS_IMAGE="${PROMETHEUS_IMAGE:-prom/prometheus:latest}"
 ALERTMANAGER_IMAGE="${ALERTMANAGER_IMAGE:-prom/alertmanager:latest}"
 REVERSE_PROXY_IMAGE="${REVERSE_PROXY_IMAGE:-caddy:latest}"
@@ -28,7 +31,7 @@ echo "[validate] compose render"
 echo "[validate] prometheus config"
 docker run --rm \
   --entrypoint promtool \
-  -v "$HOST_ROOT/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
+  -v "$HOST_ROOT/monitoring/prometheus/prometheus.runtime.yml:/etc/prometheus/prometheus.yml:ro" \
   -v "$HOST_ROOT/monitoring/prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro" \
   "$PROMETHEUS_IMAGE" \
   check config /etc/prometheus/prometheus.yml
@@ -53,6 +56,8 @@ echo "[validate] caddy config"
 # at parse time and must be passed through for validate to succeed.
 docker run --rm \
   -e "REVERSE_PROXY_DOMAIN=${REVERSE_PROXY_DOMAIN:-validate.invalid}" \
+  -e "HOST_MGMT_IP=${HOST_MGMT_IP:-127.0.0.1}" \
+  -e "TORHOLE_WEB_SCHEME=${TORHOLE_WEB_SCHEME:-https}" \
   -e "TORHOLE_HOST_TORHOLE=${TORHOLE_HOST_TORHOLE}" \
   -e "TORHOLE_HOST_AUTH=${TORHOLE_HOST_AUTH}" \
   -e "TORHOLE_HOST_GRAFANA=${TORHOLE_HOST_GRAFANA}" \

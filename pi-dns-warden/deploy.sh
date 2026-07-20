@@ -92,6 +92,16 @@ if [[ "$TORHOLE_EDITION" != "advanced" ]]; then
   exit 1
 fi
 
+# Topology and capability are separate concerns. Advanced single-LAN runs
+# the same operational stack with one DNS plane; Advanced VLAN adds the IoT
+# plane. Missing topology preserves the historical two-plane deployment.
+TORHOLE_TOPOLOGY="${TORHOLE_TOPOLOGY:-vlan}"
+if [[ "$TORHOLE_TOPOLOGY" != "single-lan" && "$TORHOLE_TOPOLOGY" != "vlan" ]]; then
+  echo "ERROR: TORHOLE_TOPOLOGY must be single-lan or vlan."
+  exit 1
+fi
+export TORHOLE_TOPOLOGY
+
 need() {
   local v="$1"
   if [[ -z "${!v:-}" ]]; then
@@ -103,60 +113,75 @@ need() {
 need TZ
 need PARENT_IF
 need TRUSTED_PARENT
-need IOT_PARENT
-need TRUSTED_VLAN_ID
-need IOT_VLAN_ID
 need TRUSTED_SUBNET_CIDR
 need TRUSTED_GATEWAY
-need IOT_SUBNET_CIDR
-need IOT_GATEWAY
 need PIHOLE_TRUSTED_IP
-need PIHOLE_IOT_IP
 need PIHOLE_TRUSTED_PASSWORD
-need PIHOLE_IOT_PASSWORD
 need TORHOLE_ADMIN_USER
 need TORHOLE_ADMIN_PASSWORD
 need TOR_CONTROL_PASSWORD
+need HOST_MGMT_IP
+
+TORHOLE_WEB_MODE="${TORHOLE_WEB_MODE:-https-local}"
+case "$TORHOLE_WEB_MODE" in
+  http) TORHOLE_WEB_SCHEME="http" ;;
+  https-local|https-custom) TORHOLE_WEB_SCHEME="https" ;;
+  *)
+    echo "ERROR: TORHOLE_WEB_MODE must be http, https-local, or https-custom."
+    exit 1
+    ;;
+esac
+export TORHOLE_WEB_MODE TORHOLE_WEB_SCHEME
+
+if [[ "$TORHOLE_TOPOLOGY" == "vlan" ]]; then
+  need IOT_PARENT
+  need TRUSTED_VLAN_ID
+  need IOT_VLAN_ID
+  need IOT_SUBNET_CIDR
+  need IOT_GATEWAY
+  need PIHOLE_IOT_IP
+  need PIHOLE_IOT_PASSWORD
+fi
 
 # Optional but used for nicer output and for host firewall allow rules.
 HOST_MGMT_IP="${HOST_MGMT_IP:-}"
 
 if [[ $SKIP_PREREQS -eq 0 ]]; then
-  echo "[1/12] Installing prerequisites"
-  ./ops/scripts/00-prereqs.sh
+  echo "[1/13] Installing prerequisites"
+  bash ./ops/scripts/00-prereqs.sh
 else
-  echo "[1/12] Skipping prerequisites"
+  echo "[1/13] Skipping prerequisites"
 fi
 
 REBOOT_REQUIRED=0
 
 if [[ $HARDEN_HOST -eq 1 ]]; then
-  echo "[2/12] Hardening host (safe baseline)"
-  ./ops/scripts/06-harden-host.sh
+  echo "[2/13] Hardening host (safe baseline)"
+  bash ./ops/scripts/06-harden-host.sh
 else
-  echo "[2/12] Skipping host hardening"
+  echo "[2/13] Skipping host hardening"
 fi
 
 if [[ -n "$SET_HOSTNAME" ]]; then
-  echo "[3/12] Setting hostname: $SET_HOSTNAME"
+  echo "[3/13] Setting hostname: $SET_HOSTNAME"
   hostnamectl set-hostname "$SET_HOSTNAME"
   REBOOT_REQUIRED=1
 else
-  echo "[3/12] Skipping hostname set"
+  echo "[3/13] Skipping hostname set"
 fi
 
 if [[ $DISABLE_RADIOS -eq 1 ]]; then
-  echo "[4/12] Disabling Wi-Fi and Bluetooth"
-  ./ops/scripts/05-disable-radios.sh
+  echo "[4/13] Disabling Wi-Fi and Bluetooth"
+  bash ./ops/scripts/05-disable-radios.sh
   REBOOT_REQUIRED=1
 else
-  echo "[4/12] Skipping radio disable"
+  echo "[4/13] Skipping radio disable"
 fi
 
-echo "[5/12] Creating VLAN interfaces"
-./ops/scripts/10-vlan-interfaces.sh
+echo "[5/13] Preparing ${TORHOLE_TOPOLOGY} network interfaces"
+bash ./ops/scripts/10-vlan-interfaces.sh
 
-echo "[6/12] Installing systemd units (VLAN + stack autostart)"
+echo "[6/13] Installing systemd units (host network + stack autostart)"
 install_unit() {
   local template="$1"
   local unit_name="$2"
@@ -179,26 +204,28 @@ systemctl daemon-reload
 systemctl enable --now pihole-tor-vlans.service
 systemctl enable --now pihole-tor-prometheus-watchdog.timer
 
-echo "[7/12] Rendering dnscrypt-proxy configs"
-./ops/scripts/15-render-dnscrypt.sh
+echo "[7/13] Building Torhole admin UI"
+bash ./ops/scripts/14-build-admin-ui.sh
 
-echo "[8/12] Rendering reverse proxy DNS config"
-./ops/scripts/16-render-reverse-proxy-dns.sh
+echo "[8/13] Rendering dnscrypt-proxy configs"
+bash ./ops/scripts/15-render-dnscrypt.sh
 
-echo "[9/12] Rendering alertmanager config"
-./ops/scripts/17-render-alertmanager.sh
+echo "[9/13] Rendering reverse proxy DNS config"
+bash ./ops/scripts/16-render-reverse-proxy-dns.sh
 
-echo "[10/12] Rendering shared auth config"
-./ops/scripts/18-render-auth.sh
+echo "[10/13] Rendering alertmanager config"
+bash ./ops/scripts/17-render-alertmanager.sh
 
-echo "[11/12] Validating rendered config"
-./ops/scripts/19-validate-stack.sh
+echo "[11/13] Rendering shared auth config"
+bash ./ops/scripts/18-render-auth.sh
 
-echo "==> Rendering tor/torrc from .env (TOR_CONTROL_PASSWORD)..."
-bash "$ROOT_DIR/ops/scripts/20-render-torrc.sh"
+echo "[12/13] Validating rendered config"
+bash ./ops/scripts/19-validate-stack.sh
 
-echo "[12/12] Starting containers"
-./ops/scripts/20-up.sh
+echo "[13/13] Starting and verifying containers"
+bash ./ops/scripts/20-up.sh
+bash ./ops/scripts/24-configure-blocklists.sh
+bash ./ops/scripts/21-verify-privacy.sh
 
 echo
 echo "Enabling stack autostart (systemd): pihole-tor.service"
@@ -209,25 +236,40 @@ systemctl enable pihole-tor.service
 
 echo
 echo "=== Deployment complete ==="
-echo "Pi-hole endpoints"
-echo "  Trusted: ${PIHOLE_TRUSTED_IP}"
-echo "  IoT:     ${PIHOLE_IOT_IP}"
-echo
-echo "Web UIs"
-echo "  Trusted Pi-hole UI (direct VLAN IP): http://${PIHOLE_TRUSTED_IP}/admin"
-if [[ -n "${HOST_MGMT_IP}" ]]; then
-  echo "  Reverse proxy:      https://${TORHOLE_HOST_TORHOLE}.${REVERSE_PROXY_DOMAIN}"
-  echo "  Grafana:            https://${TORHOLE_HOST_GRAFANA}.${REVERSE_PROXY_DOMAIN}"
-  echo "  Prometheus:         https://${TORHOLE_HOST_PROMETHEUS}.${REVERSE_PROXY_DOMAIN}"
-  echo "  Alertmanager:       https://${TORHOLE_HOST_ALERTMANAGER}.${REVERSE_PROXY_DOMAIN}"
-  echo "  Dockhand:           https://${TORHOLE_HOST_DOCKHAND}.${REVERSE_PROXY_DOMAIN}"
-  echo "  Pi-hole Trusted:    https://${TORHOLE_HOST_PIHOLE_TRUSTED}.${REVERSE_PROXY_DOMAIN}/admin/"
-  echo "  Pi-hole IoT:        https://${TORHOLE_HOST_PIHOLE_IOT}.${REVERSE_PROXY_DOMAIN}/admin/"
+echo "Pi-hole DNS endpoints"
+if [[ "$TORHOLE_TOPOLOGY" == "single-lan" ]]; then
+  echo "  Flat LAN: ${PIHOLE_TRUSTED_IP}"
 else
-  echo "  Reverse proxy:      https://${TORHOLE_HOST_TORHOLE}.<your-domain>"
+  echo "  Trusted:  ${PIHOLE_TRUSTED_IP}"
+  echo "  IoT:      ${PIHOLE_IOT_IP}"
 fi
 echo
-echo "UniFi: set each VLAN DHCP DNS server to its Pi-hole IP above."
+echo "Web UIs"
+if [[ "$TORHOLE_TOPOLOGY" == "single-lan" ]]; then
+  echo "  Pi-hole UI (direct LAN IP): http://${PIHOLE_TRUSTED_IP}/admin"
+else
+  echo "  Trusted Pi-hole UI (direct VLAN IP): http://${PIHOLE_TRUSTED_IP}/admin"
+fi
+if [[ -n "${HOST_MGMT_IP}" ]]; then
+  echo "  Torhole by IP:      http://${HOST_MGMT_IP}/"
+  echo "  Reverse proxy:      ${TORHOLE_WEB_SCHEME}://${TORHOLE_HOST_TORHOLE}.${REVERSE_PROXY_DOMAIN}"
+  echo "  Grafana:            ${TORHOLE_WEB_SCHEME}://${TORHOLE_HOST_GRAFANA}.${REVERSE_PROXY_DOMAIN}"
+  echo "  Prometheus:         ${TORHOLE_WEB_SCHEME}://${TORHOLE_HOST_PROMETHEUS}.${REVERSE_PROXY_DOMAIN}"
+  echo "  Alertmanager:       ${TORHOLE_WEB_SCHEME}://${TORHOLE_HOST_ALERTMANAGER}.${REVERSE_PROXY_DOMAIN}"
+  echo "  Dockhand:           ${TORHOLE_WEB_SCHEME}://${TORHOLE_HOST_DOCKHAND}.${REVERSE_PROXY_DOMAIN}"
+  echo "  Pi-hole Trusted:    ${TORHOLE_WEB_SCHEME}://${TORHOLE_HOST_PIHOLE_TRUSTED}.${REVERSE_PROXY_DOMAIN}/admin/"
+  if [[ "$TORHOLE_TOPOLOGY" == "vlan" ]]; then
+    echo "  Pi-hole IoT:        ${TORHOLE_WEB_SCHEME}://${TORHOLE_HOST_PIHOLE_IOT}.${REVERSE_PROXY_DOMAIN}/admin/"
+  fi
+else
+  echo "  Reverse proxy:      ${TORHOLE_WEB_SCHEME}://${TORHOLE_HOST_TORHOLE}.<your-domain>"
+fi
+echo
+if [[ "$TORHOLE_TOPOLOGY" == "single-lan" ]]; then
+  echo "Router/DHCP: set the LAN DNS server to ${PIHOLE_TRUSTED_IP}."
+else
+  echo "Router/DHCP: set each VLAN DNS server to its matching Pi-hole IP above."
+fi
 
 if [[ $REBOOT_REQUIRED -eq 1 ]]; then
   echo

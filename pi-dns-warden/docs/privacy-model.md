@@ -8,9 +8,19 @@ This document explains what torhole protects against, what it does not protect a
 
 - `dns_int` is an `internal: true` bridge — containers on it have no default gateway to the internet.
 - Only the `tor` container is also attached to `tor_out`, the sole outbound bridge.
-- Tor's `SocksPolicy reject *` with an explicit allowlist means only the three dnscrypt container IPs can use the SOCKS port.
+- Tor's `SocksPolicy reject *` with an explicit allowlist means only the active
+  dnscrypt plane addresses can use the SOCKS port.
 
 If Tor is down, DNS resolution fails. There is no fallback to a cleartext or direct resolver. This is intentional.
+
+The guarantee comes from this enforced network path, not from any single health
+probe. Torhole's scheduled external verification confirms that a request made
+through Tor's SOCKS listener was observed as Tor egress. It is useful evidence
+that Tor is working, but it does **not** itself send a DNS query through
+Pi-hole and dnscrypt. The dashboards therefore present the network-isolation
+validation, DNS-hop probes, Tor control state, and recent Tor-egress
+verification as separate signals. A missing or stale signal is unknown/failing,
+never silently healthy.
 
 ## Threat model
 
@@ -34,6 +44,27 @@ If Tor is down, DNS resolution fails. There is no fallback to a cleartext or dir
 | Timing correlation attacks on Tor circuits | A sophisticated adversary watching both ends of a Tor circuit can correlate traffic over time. This is a known Tor limitation. |
 | A compromised Pi-hole or dnscrypt container | Container isolation limits blast radius, but a compromised container could observe or modify DNS responses for its VLAN. Keep images up to date. |
 | Local network traffic analysis beyond DNS | An adversary on your LAN can still observe connection metadata (destination IPs, timing, volume). DNS privacy does not hide what you connect to, only the name resolution step. |
+
+## Local observability data
+
+Advanced installs keep operational telemetry on the Torhole host. This data is
+not sent to Grafana Cloud or another hosted monitoring provider, but it can be
+sensitive to anyone who gains administrator access to the host:
+
+- Prometheus retains metrics for seven days. Pi-hole exporter metrics can
+  include local client names or IP addresses and upstream labels.
+- Loki retains allowlisted operational container logs for seven days. Resolver,
+  Pi-hole, and host authentication/system logs are excluded by default because
+  they can contain client, query, or account details.
+- Pi-hole maintains its own query history according to the Pi-hole settings.
+- Grafana, Prometheus, Loki, and the Torhole UI are protected by the local
+  management authentication boundary; they should not be exposed directly to
+  the public internet.
+
+Torhole dashboards avoid putting client identities and broad raw log streams on
+the default overview. Use Pi-hole or Grafana Explore deliberately when that
+level of diagnosis is needed. Treat monitoring volumes and backups as sensitive
+local data, and remove them during uninstall if the host is being repurposed.
 
 ## Why `require_nolog = false` and `require_nofilter = false`
 
@@ -75,9 +106,17 @@ docker inspect dnscrypt-trusted --format '{{json .NetworkSettings.Networks}}' | 
 docker inspect tor --format '{{json .NetworkSettings.Networks}}' | jq 'keys'
 # Should show: ["pi-dns-warden_dns_int", "pi-dns-warden_tor_out"]
 
-# 4. Confirm Tor is actually routing queries
-docker compose logs dnscrypt-trusted | grep -i "relay\|circuit\|tor"
+# 4. Validate the configured path and current Tor control state
+./ops/scripts/19-validate-stack.sh
+docker exec prometheus wget -qO- \
+  http://backup-manager:8080/api/metrics/tor | grep -E \
+  'tor_(control_port_up|bootstrap_percent|circuit_established)'
 
 # 5. Confirm SOCKS port is not exposed to the host
 ss -tlnp | grep 9050   # should return nothing
 ```
+
+The scheduled Tor-egress verification and its age are available as
+`torhole_leak_test_pass` and `torhole_leak_test_age_seconds`. Despite the
+historic metric name, this is an external Tor-egress check, not a DNS-path leak
+test.

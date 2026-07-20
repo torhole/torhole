@@ -19,13 +19,11 @@ jobs:
       - name: Copy env example
         run: cp .env.example .env
 
-      - name: Validate core compose
-        run: docker compose config --quiet
+      - name: Validate Advanced Single-LAN compose
+        run: TORHOLE_TOPOLOGY=single-lan docker compose -f docker-compose.yml -f docker-compose.monitoring.yml config --quiet
 
-      # Note: the monitoring compose is an overlay — its networks/deps live in
-      # the core file, so it is only validated combined, never standalone.
-      - name: Validate combined compose
-        run: docker compose -f docker-compose.yml -f docker-compose.monitoring.yml config --quiet
+      - name: Validate Advanced VLAN compose
+        run: TORHOLE_TOPOLOGY=vlan docker compose --profile vlan -f docker-compose.yml -f docker-compose.monitoring.yml config --quiet
 
       - name: Check Python syntax (all services)
         run: |
@@ -36,17 +34,24 @@ jobs:
         run: python3 monitoring/backup-manager/test_security.py
 
       - name: Backend characterization tests
-        run: python3 monitoring/backup-manager/test_characterization.py
+        run: |
+          python3 monitoring/backup-manager/test_characterization.py
+          python3 monitoring/pihole-exporter/test_exporter.py
+          python3 ops/tests/test-monitoring-dashboards.py
 
       - name: Bootstrap and Home backend tests
         run: |
           python3 bootstrap/test_server.py
+          python3 bootstrap/test_host_runner.py
           python3 home-dashboard/test_server.py
 
       - name: Shell tests (env loader + compose hardening)
         run: |
+          bash ops/tests/test-executable-modes.sh
           bash ops/tests/test-load-env.sh
           bash ops/tests/test-security-compose.sh
+          bash ops/tests/test-topology-compose.sh
+          bash ops/tests/test-prometheus-render.sh
           bash ops/tests/test-get-torhole.sh
 
       - name: Validate dnscrypt configs (TOML)
@@ -62,10 +67,11 @@ jobs:
       # promtool directly.
       - name: Validate Prometheus config
         run: |
+          TORHOLE_TOPOLOGY=vlan bash ops/scripts/13-render-prometheus.sh
           docker run --rm --entrypoint promtool \
             -v "$GITHUB_WORKSPACE/pi-dns-warden/monitoring/prometheus:/etc/prometheus:ro" \
             prom/prometheus:latest \
-            check config /etc/prometheus/prometheus.yml
+            check config /etc/prometheus/prometheus.runtime.yml
 
       - name: Validate Prometheus alert rules
         run: |
@@ -76,11 +82,15 @@ jobs:
 
       - name: Validate Caddy config
         run: |
-          # auth-snippets.caddy is rendered at deploy time (18-render-auth.sh);
-          # stub it so the top-level import resolves during static validation.
-          printf '# CI stub for the deploy-rendered auth snippet\n' \
+          # Access/TLS snippets are rendered at deploy time (18-render-auth.sh);
+          # stub them so the top-level imports resolve during static validation.
+          printf '(access_gate) { header X-Torhole-CI true }\n(ip_access_gate) { import access_gate }\n' \
             > monitoring/caddy/auth-snippets.caddy
+          printf '(tls_mode) { tls internal }\n' \
+            > monitoring/caddy/tls-snippets.caddy
           docker run --rm --env-file .env \
+            -e HOST_MGMT_IP=192.0.2.10 \
+            -e TORHOLE_WEB_SCHEME=https \
             -v "$GITHUB_WORKSPACE/pi-dns-warden/monitoring/caddy:/etc/caddy:ro" \
             caddy:latest \
             caddy validate --config /etc/caddy/Caddyfile
@@ -90,20 +100,24 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: pi-dns-warden/monitoring/torhole-ui-v2
+        working-directory: pi-dns-warden/monitoring/torhole-ui
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: pi-dns-warden/monitoring/torhole-ui-v2/package-lock.json
+          cache-dependency-path: pi-dns-warden/monitoring/torhole-ui/package-lock.json
       - name: Install deps
         run: npm ci
       - name: Typecheck
         run: npm run typecheck
       - name: Build
         run: npm run build
+      - name: Install Chromium for bootstrap option tests
+        run: PLAYWRIGHT_BROWSERS_PATH=./.playwright-browsers npx playwright install --with-deps chromium
+      - name: Test every bootstrap setup option
+        run: npm run test:e2e:bootstrap
 
   lint-shell:
     name: Lint shell scripts

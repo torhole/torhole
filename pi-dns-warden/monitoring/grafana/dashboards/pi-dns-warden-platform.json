@@ -3,7 +3,7 @@
   "title": "Pi DNS Warden - Edge & Egress",
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "15s",
   "tags": [
     "dns",
@@ -29,12 +29,14 @@
         "x": 0,
         "y": 0,
         "w": 8,
-        "h": 8
+        "h": 4
       },
       "targets": [
         {
-          "expr": "avg_over_time(probe_success{job=\"blackbox-monitoring-tcp\",instance=\"reverse-proxy:443\"}[5m]) * 100",
-          "refId": "A"
+          "expr": "(avg_over_time(probe_success{job=\"blackbox-monitoring-tcp\",instance=~\"reverse-proxy:(80|443)\"}[5m]) * 100) or on() vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -53,66 +55,111 @@
         "defaults": {
           "unit": "percent",
           "min": 0,
-          "max": 100
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 99
+              }
+            ]
+          },
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "Current five-minute TCP reachability for the configured HTTP or HTTPS edge."
     },
     {
       "id": 9,
-      "type": "piechart",
-      "title": "HTTPS request share by host",
+      "type": "stat",
+      "title": "Tor egress verification",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 16,
+        "x": 8,
         "y": 0,
         "w": 8,
-        "h": 8
+        "h": 4
       },
       "targets": [
         {
-          "expr": "sum by (host) (rate(caddy_http_requests_total{host!=\"\"}[5m]))",
-          "legendFormat": "{{host}}",
-          "refId": "A"
+          "expr": "torhole_leak_test_pass or on() vector(-1)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
-        "displayLabels": [
-          "name",
-          "percent"
-        ],
-        "legend": {
-          "displayMode": "table",
-          "placement": "right"
-        },
-        "pieType": "donut",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
           ],
           "fields": "",
           "values": false
-        }
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps"
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "FAIL",
+                  "color": "red",
+                  "index": 1
+                },
+                "1": {
+                  "text": "PASS · DNS exits via Tor",
+                  "color": "green",
+                  "index": 2
+                },
+                "-1": {
+                  "text": "UNKNOWN",
+                  "color": "gray",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "PASS means the scheduled compatibility-named leak test sent an independent request through Tor SOCKS and the remote IsTor check observed a Tor exit. It does not trace a DNS query through Pi-hole or dnscrypt. UNKNOWN is not healthy.",
+      "links": [
+        {
+          "title": "Verify the privacy path",
+          "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/privacy-model.md#network-isolation-verification",
+          "targetBlank": true
+        }
+      ]
     },
     {
       "id": 12,
       "type": "timeseries",
-      "title": "HTTPS request rate by host",
+      "title": "Edge request rate by host",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
         "x": 0,
-        "y": 8,
+        "y": 4,
         "w": 12,
         "h": 8
       },
@@ -133,7 +180,8 @@
           "displayMode": "table",
           "placement": "bottom"
         }
-      }
+      },
+      "description": "Caddy request rate for the configured edge. It represents HTTP or HTTPS according to deployment mode."
     },
     {
       "id": 13,
@@ -145,7 +193,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 8,
+        "y": 4,
         "w": 12,
         "h": 8
       },
@@ -166,7 +214,8 @@
           "displayMode": "table",
           "placement": "bottom"
         }
-      }
+      },
+      "description": "Five-minute p95 request latency per host. Interpret low-volume hosts cautiously because sparse histograms produce noisy quantiles."
     },
     {
       "id": 15,
@@ -178,8 +227,8 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 16,
-        "w": 24,
+        "y": 12,
+        "w": 12,
         "h": 8
       },
       "targets": [
@@ -189,7 +238,7 @@
           "refId": "A"
         },
         {
-          "expr": "avg_over_time(probe_success{job=\"blackbox-monitoring-tcp\",instance=~\"reverse-proxy:443|grafana:3000|alertmanager:9093|dockhand:3000\"}[5m]) * 100",
+          "expr": "avg_over_time(probe_success{job=\"blackbox-monitoring-tcp\",instance=~\"reverse-proxy:(80|443)|grafana:3000|alertmanager:9093\"}[5m]) * 100",
           "legendFormat": "{{instance}}",
           "refId": "B"
         }
@@ -206,7 +255,8 @@
           "displayMode": "table",
           "placement": "bottom"
         }
-      }
+      },
+      "description": "Metrics producer and configured blackbox-target reachability. Missing rows are unknown; use Control Room for current aggregate state."
     },
     {
       "id": 18,
@@ -217,15 +267,17 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 8,
+        "x": 16,
         "y": 0,
         "w": 8,
-        "h": 8
+        "h": 4
       },
       "targets": [
         {
-          "expr": "min(caddy_reverse_proxy_upstreams_healthy)",
-          "refId": "A"
+          "expr": "min(caddy_reverse_proxy_upstreams_healthy) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -257,9 +309,18 @@
                 "value": 1
               }
             ]
-          }
+          },
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "Worst current Caddy upstream state. This reflects Caddy health state, including passive failures; active health checks are not configured.",
+      "links": [
+        {
+          "title": "Open the operator guide",
+          "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md",
+          "targetBlank": true
+        }
+      ]
     },
     {
       "id": 19,
@@ -270,9 +331,9 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 0,
-        "y": 32,
-        "w": 24,
+        "x": 12,
+        "y": 12,
+        "w": 12,
         "h": 8
       },
       "targets": [
@@ -307,7 +368,8 @@
           "displayMode": "table",
           "placement": "bottom"
         }
-      }
+      },
+      "description": "Reverse-proxy and Tor container-interface traffic for correlation. These are separate workloads, not shares of one total."
     },
     {
       "id": 20,
@@ -319,7 +381,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 24,
+        "y": 20,
         "w": 24,
         "h": 8
       },
@@ -356,7 +418,7 @@
           "sort": "desc"
         }
       },
-      "description": "Per-upstream health as reported by Caddy's active health checks. 1 = healthy, 0 = marked down. Shows which specific backend is unreachable, not just the aggregate floor."
+      "description": "Per-upstream state reported by Caddy. 1 is available and 0 is marked down; current configuration relies on passive failure state."
     }
   ],
   "links": [
@@ -412,6 +474,24 @@
       "targetBlank": false,
       "keepTime": true,
       "includeVars": true,
+      "asDropdown": false
+    },
+    {
+      "title": "Operator guide",
+      "type": "link",
+      "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md",
+      "targetBlank": true,
+      "keepTime": false,
+      "includeVars": false,
+      "asDropdown": false
+    },
+    {
+      "title": "Privacy model",
+      "type": "link",
+      "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/privacy-model.md#network-isolation-verification",
+      "targetBlank": true,
+      "keepTime": false,
+      "includeVars": false,
       "asDropdown": false
     }
   ]

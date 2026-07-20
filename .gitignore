@@ -65,3 +65,6 @@ pi-dns-warden/monitoring/caddy/root.crt
 
 # Playwright MCP session state
 .playwright-mcp/
+
+# Browser binaries downloaded by the repository-level Playwright test runner
+.playwright-browsers/

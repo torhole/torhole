@@ -3,7 +3,7 @@
 # Run from the repo root: bash ops/scripts/70-deploy-dev.sh [host] [--sso]
 #
 # What this does:
-#   Phase 1 (always): build v2 UI, sync the built dist + backup-manager
+#   Phase 1 (always): build the admin UI, sync the build + backup-manager
 #                     server.py, rebuild backup-manager so COPY'd server.py
 #                     is picked up.
 #   Phase 2 (--sso):  sync Authelia config + Caddyfile, restart
@@ -21,30 +21,29 @@ SSO="${2:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-V2_SRC_DIR="$ROOT_DIR/monitoring/torhole-ui-v2"
-# Vite outDir is ../caddy/v2 (see vite.config.ts). This path lives under the
-# caddy dir because /v2 is served directly by Caddy from /srv/v2. Do NOT
-# change to dist/ — the dev workflow depends on this layout.
-V2_BUILD_DIR="$ROOT_DIR/monitoring/caddy/v2"
+UI_SRC_DIR="$ROOT_DIR/monitoring/torhole-ui"
+# Vite outDir is ../caddy/admin-ui (see vite.config.ts). This path lives under
+# the Caddy directory because it is served from /srv/admin-ui at the site root.
+# Do not change it to dist/; the development workflow depends on this layout.
+UI_BUILD_DIR="$ROOT_DIR/monitoring/caddy/admin-ui"
 
-echo "==> Building v2 UI (monitoring/torhole-ui-v2)..."
-if [[ ! -d "$V2_SRC_DIR" ]]; then
-  echo "ERROR: $V2_SRC_DIR not found. This script only targets the v2 UI;" >&2
-  echo "       the legacy torhole-ui tree was removed." >&2
+echo "==> Building admin UI (monitoring/torhole-ui)..."
+if [[ ! -d "$UI_SRC_DIR" ]]; then
+  echo "ERROR: $UI_SRC_DIR not found." >&2
   exit 1
 fi
-( cd "$V2_SRC_DIR" && npm run build --silent )
+( cd "$UI_SRC_DIR" && npm run build --silent )
 
-if [[ ! -f "$V2_BUILD_DIR/index.html" ]]; then
-  echo "ERROR: $V2_BUILD_DIR/index.html missing after build." >&2
+if [[ ! -f "$UI_BUILD_DIR/index.html" ]]; then
+  echo "ERROR: $UI_BUILD_DIR/index.html missing after build." >&2
   echo "       Refusing to deploy a stale artifact set." >&2
   exit 1
 fi
 
-echo "==> Phase 1: syncing v2 build + backup-manager..."
+echo "==> Phase 1: syncing admin UI build + backup-manager..."
 rsync -av --delete --checksum \
-  "$V2_BUILD_DIR/" \
-  "$REMOTE:$REMOTE_DIR/monitoring/caddy/v2/"
+  "$UI_BUILD_DIR/" \
+  "$REMOTE:$REMOTE_DIR/monitoring/caddy/admin-ui/"
 
 rsync -av --checksum \
   "$ROOT_DIR/monitoring/backup-manager/server.py" \
@@ -53,7 +52,7 @@ rsync -av --checksum \
 # backup-manager COPYs server.py into the image, so a plain restart
 # will not pick up changes. Rebuild.
 ssh "$REMOTE" "cd $REMOTE_DIR && docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d --build backup-manager"
-echo "==> Phase 1 done. v2 UI + new API endpoints live."
+echo "==> Phase 1 done. Admin UI + new API endpoints live."
 
 if [[ "$SSO" != "--sso" ]]; then
   echo

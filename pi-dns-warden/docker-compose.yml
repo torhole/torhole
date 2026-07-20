@@ -40,6 +40,7 @@ services:
         ipv4_address: 172.30.0.11
 
   dnscrypt_iot:
+    profiles: ["vlan"]
     image: ${DNSCRYPT_IMAGE:-klutchell/dnscrypt-proxy:latest}
     container_name: dnscrypt-iot
     restart: unless-stopped
@@ -81,6 +82,7 @@ services:
         ipv4_address: ${PIHOLE_TRUSTED_IP}
 
   pihole_iot:
+    profiles: ["vlan"]
     image: ${PIHOLE_IMAGE:-pihole/pihole:latest}
     container_name: pihole_iot
     hostname: pihole-iot
@@ -104,7 +106,10 @@ services:
         ipv4_address: 172.30.0.22
         gw_priority: 1
       macvlan_iot:
-        ipv4_address: ${PIHOLE_IOT_IP}
+        # The service is active only in the vlan profile. Documentation-range
+        # defaults keep `docker compose config` valid for single-LAN installs
+        # whose intentionally unused IoT values are blank or CHANGE_ME.
+        ipv4_address: ${PIHOLE_IOT_IP:-192.0.2.53}
 
 networks:
   dns_int:
@@ -133,9 +138,8 @@ networks:
   macvlan_iot:
     driver: macvlan
     driver_opts:
-      parent: ${IOT_PARENT}
+      parent: ${IOT_PARENT:-${TRUSTED_PARENT}}
     ipam:
       config:
-        - subnet: ${IOT_SUBNET_CIDR}
-          gateway: ${IOT_GATEWAY}
-
+        - subnet: ${IOT_SUBNET_CIDR:-192.0.2.0/24}
+          gateway: ${IOT_GATEWAY:-192.0.2.1}

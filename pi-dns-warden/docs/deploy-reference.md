@@ -1,6 +1,6 @@
-# Pi-hole per VLAN + dnscrypt-proxy over Tor + Monitoring (Raspberry Pi 5)
+# Advanced VLAN reference: Pi-hole + dnscrypt-proxy over Tor + Monitoring
 
-This project creates **2 local DNS endpoints** (one per VLAN): **Trusted** and **IoT**.
+This reference covers `TORHOLE_TOPOLOGY=vlan`, which creates **2 local DNS endpoints**: **Trusted** and **IoT**. For a flat network with the same Advanced SSO, monitoring, logging, alerting, backup, and control stack, choose `single-lan` in the web installer.
 
 Each VLAN uses its own Pi-hole container (static IP on that VLAN). Pi-hole forwards DNS to a dedicated **dnscrypt-proxy** instance, and dnscrypt-proxy resolves DNS **through Tor SOCKS** (TCP-only).
 
@@ -72,7 +72,7 @@ nano .env
 Optional alert delivery settings in `.env`:
 - Email: `ALERT_EMAIL_TO`, `ALERT_EMAIL_FROM`, `ALERT_EMAIL_SMARTHOST`, optional SMTP auth, and `ALERT_EMAIL_REQUIRE_TLS`
 - Telegram: `ALERT_TELEGRAM_BOT_TOKEN`, `ALERT_TELEGRAM_CHAT_ID`
-- External Prometheus watchdog: `PROMETHEUS_WATCHDOG_URL`, `PROMETHEUS_WATCHDOG_CONTAINER_NAME`, `PROMETHEUS_WATCHDOG_NETWORK`, `PROMETHEUS_WATCHDOG_PORT`, `PROMETHEUS_WATCHDOG_PATH`, `PROMETHEUS_WATCHDOG_TIMEOUT_S`
+- External Prometheus watchdog: `PROMETHEUS_WATCHDOG_URL`, `PROMETHEUS_WATCHDOG_CONTAINER_NAME`, `PROMETHEUS_WATCHDOG_NETWORK`, `PROMETHEUS_WATCHDOG_PORT`, `PROMETHEUS_WATCHDOG_PATH`, `PROMETHEUS_WATCHDOG_TIMEOUT_S`. It uses the same configured Telegram and/or email settings.
 - Reverse proxy: `REVERSE_PROXY_DOMAIN`, `REVERSE_PROXY_HTTP_PORT`
 - Edge auth: `TORHOLE_ADMIN_USER`, `TORHOLE_ADMIN_PASSWORD`
 - Torhole local DNS names: `TORHOLE_DNS_HOSTS`
@@ -107,37 +107,39 @@ sudo ./deploy.sh --harden-host
 
 ### Web UIs
 - Trusted Pi-hole direct VLAN IP: `http://192.168.1.53/admin`
-- Reverse-proxy landing page: `https://th-torhole.home.arpa`
-- Auth portal: `https://th-auth.home.arpa`
-- Grafana: `https://th-grafana.home.arpa`
-- Prometheus: `https://th-prometheus.home.arpa`
-- Alertmanager: `https://th-alertmanager.home.arpa`
-- Dockhand: `https://th-dockhand.home.arpa`
-- Pi-hole Trusted: `https://th-pihole-trusted.home.arpa/admin/`
-- Pi-hole IoT: `https://th-pihole-iot.home.arpa/admin/`
+- Reverse-proxy landing page: `https://torhole.lan.home.arpa`
+- Auth portal: `https://auth.lan.home.arpa`
+- Grafana: `https://grafana.lan.home.arpa`
+- Prometheus: `https://prometheus.lan.home.arpa`
+- Alertmanager: `https://alertmanager.lan.home.arpa`
+- Dockhand: `https://dockhand.lan.home.arpa`
+- Pi-hole Trusted: `https://pihole-trusted.lan.home.arpa/admin/`
+- Pi-hole IoT: `https://pihole-iot.lan.home.arpa/admin/`
 
 The Torhole landing page, recovery API, Prometheus, and Alertmanager now sit behind a shared Authelia session. Grafana and Dockhand still use their application logins. Caddy uses an internal CA for LAN HTTPS, so you need to trust its root certificate on your devices to avoid browser warnings.
 
 ### Reverse proxy
 The stack can also publish a single LAN reverse proxy with local hostnames:
-- `https://th-torhole.<your-domain>`
-- `https://th-auth.<your-domain>`
-- `https://th-grafana.<your-domain>`
-- `https://th-prometheus.<your-domain>`
-- `https://th-alertmanager.<your-domain>`
-- `https://th-dockhand.<your-domain>`
-- `https://th-pihole-trusted.<your-domain>/admin/`
-- `https://th-pihole-iot.<your-domain>/admin/`
+- `https://torhole.<your-domain>`
+- `https://auth.<your-domain>`
+- `https://grafana.<your-domain>`
+- `https://prometheus.<your-domain>`
+- `https://alertmanager.<your-domain>`
+- `https://dockhand.<your-domain>`
+- `https://pihole-trusted.<your-domain>/admin/`
+- `https://pihole-iot.<your-domain>/admin/`
 
-For example, `REVERSE_PROXY_DOMAIN=home.arpa` makes these resolve as `*.home.arpa`.
-The actual `th-*` records are rendered from `.env` during deploy/update/restore using `TORHOLE_DNS_HOSTS`, so Pi-hole owns those local DNS entries automatically.
+For example, `REVERSE_PROXY_DOMAIN=lan.home.arpa` makes these resolve as
+`*.lan.home.arpa`. Do not use bare `home.arpa`: it is a special public suffix,
+so Authelia cannot set a session cookie for it.
+The canonical host records and their short aliases are rendered from `.env` during deploy, update, and restore, so Pi-hole owns those local DNS entries automatically.
 You can also add arbitrary Pi-hole local DNS records in `.env` via `PIHOLE_LOCAL_DNS_RECORDS`. Use `host=ip;fqdn=ip`. Short names are expanded under `REVERSE_PROXY_DOMAIN`.
 
-The shared Torhole edge session is rendered from `.env` by `ops/scripts/18-render-auth.sh`. On first render it auto-generates the internal Authelia session and storage secrets plus `BACKUP_MANAGER_API_TOKEN` if they are blank, then writes them back into `.env`. Caddy presents that token to `backup-manager` after Authelia succeeds; direct internal API calls are rejected. `th-auth.<your-domain>` must resolve locally because it hosts the login form for the protected routes.
+The shared Torhole edge session is rendered from `.env` by `ops/scripts/18-render-auth.sh`. `TORHOLE_WEB_MODE` selects plain HTTP, Caddy-local HTTPS, or an uploaded custom certificate. HTTPS uses Authelia; HTTP and the permanent `http://HOST_MGMT_IP/` recovery route use Caddy authentication with the same admin credentials. On first render the script auto-generates internal Authelia secrets plus `BACKUP_MANAGER_API_TOKEN` if they are blank, then writes them back into `.env`. Caddy presents that token to `backup-manager`; direct internal API calls are rejected.
 
 ### Autostart
 Two systemd units are installed:
-- `pihole-tor-vlans.service` (creates VLAN sub-interfaces if needed)
+- `pihole-tor-vlans.service` (checks the flat parent or creates VLAN sub-interfaces, according to `TORHOLE_TOPOLOGY`)
 - `pihole-tor.service` (starts the Docker Compose stack)
 
 ## Tor-only egress model
@@ -148,7 +150,7 @@ Two systemd units are installed:
 - Dockhand is attached only to the internal `admin_net`, which it shares with Caddy; it is not directly reachable from workload containers on `dns_int`.
 - `reverse-proxy` is attached to both `dns_int` and `mgmt_net`, publishes one HTTP port to the host, and routes to the internal services by local hostname.
 - `authelia` stays on `dns_int` only and provides the shared login session for the landing page, Prometheus, Alertmanager, and the recovery API.
-- `pihole_*` containers use `dns_int` as the preferred internal route for upstream DNS and keep macvlan attachments for client traffic on each VLAN.
+- active `pihole_*` containers use `dns_int` as the preferred internal route for upstream DNS and keep macvlan attachments for client traffic. Single-LAN activates one plane; VLAN activates Trusted and IoT.
 - `loki` and `alloy` keep logs inside the stack so Grafana can correlate metrics, alerts, and service logs.
 - `pihole-exporter` authenticates to the Pi-hole v6 API and exposes real DNS/cache/client/upstream metrics to Prometheus.
 - This survives `docker compose down && docker compose up -d` because the network topology is defined in `docker-compose.yml`, not in temporary firewall state.
@@ -158,6 +160,7 @@ Two systemd units are installed:
 ```bash
 docker network inspect pi-dns-warden_dns_int
 docker inspect dnscrypt-trusted --format '{{json .NetworkSettings.Networks}}'
+# VLAN topology only:
 docker inspect dnscrypt-iot --format '{{json .NetworkSettings.Networks}}'
 docker inspect tor --format '{{json .NetworkSettings.Networks}}'
 docker inspect reverse-proxy --format '{{json .NetworkSettings.Networks}}'
@@ -185,7 +188,12 @@ Expected:
 ### Alerting
 Alertmanager config is rendered from `.env` by `ops/scripts/17-render-alertmanager.sh`.
 
-Prometheus itself cannot alert you when it is totally down. To cover that case, deployment also installs a host-side systemd timer that runs `ops/scripts/18-prometheus-watchdog.sh` every minute and sends Telegram directly if Prometheus stops answering on its internal container health endpoint.
+Prometheus itself cannot alert you when it is totally down. To cover that case,
+deployment also installs a host-side systemd timer that runs
+`ops/scripts/18-prometheus-watchdog.sh` every minute. It sends directly through
+the configured Telegram and/or SMTP channels if Prometheus stops answering on
+its internal container health endpoint. A channel is marked notified only after
+delivery succeeds, so transient delivery failures are retried on the next run.
 
 By default the watchdog now auto-discovers the `prometheus` container IP on `pi-dns-warden_dns_int` and checks `http://<container-ip>:9090/-/healthy`. You only need `PROMETHEUS_WATCHDOG_URL` if you want to override that behavior.
 
@@ -204,7 +212,7 @@ docker logs --tail 50 prometheus
 Expected:
 - `alertmanager` stays up without config parse errors
 - `prometheus` stays up and can reach `alertmanager:9093`
-- if no `ALERT_EMAIL_*` or `ALERT_TELEGRAM_*` values are set, Alertmanager still starts with a no-op receiver
+- if no `ALERT_EMAIL_*`, `ALERT_TELEGRAM_*`, or `ALERT_DISCORD_*` values are set, Alertmanager still starts with a no-op receiver
 
 Verify the external watchdog:
 ```bash
@@ -252,7 +260,7 @@ The restore script:
 - re-renders and validates config before restart
 - requires explicit restore confirmation
 
-For unattended recovery from the landing page, the Torhole main page (`https://th-torhole.<your-domain>`) exposes a protected recovery panel. Use the Torhole admin credentials configured in `.env` for the protected monitoring surfaces to create a backup or schedule a restore without leaving the page.
+For unattended recovery from the landing page, the Torhole main page (`https://torhole.<your-domain>`) exposes a protected recovery panel. Use the Torhole admin credentials configured in `.env` for the protected monitoring surfaces to create a backup or schedule a restore without leaving the page.
 The recovery panel polls running jobs automatically and each archive reports how many service volumes were captured alongside the Pi-hole state.
 Backup deletion is also available there, but it requires repeated confirmation and the exact archive name before anything is removed.
 
@@ -274,11 +282,26 @@ docker compose -f docker-compose.yml -f docker-compose.monitoring.yml start tor
 Tor logs are typically emitted in UTC. If the host is configured for `CEST` or another local time zone, a 1-2 hour offset between `date` and `docker logs tor` is expected.
 
 ## Monitoring dashboards (included)
-Grafana will auto-load 4 dashboards:
-- **Pi DNS Warden - Control Room** (alerts, stack health, request path, host saturation, Tor traffic)
-- **Pi DNS Warden - DNS Path** (Pi-hole -> dnscrypt -> Tor availability, latency, pressure)
-- **Pi DNS Warden - Tor Traffic & Runtime** (Tor RX/TX, Tor runtime health, dnscrypt demand into Tor)
-- **Pi DNS Warden - Platform & Edge** (host hardware, reverse-proxy edge, storage, network, and Tor edge traffic)
+
+Grafana is part of **Advanced** installs; Home intentionally omits the
+monitoring stack. Advanced Single-LAN and VLAN installations auto-load six
+dashboards:
+
+- **Pi DNS Warden - Control Room** — current privacy signals, alerts, and core
+  service state.
+- **Pi DNS Warden - DNS Path** — active Pi-hole and dnscrypt planes,
+  availability, latency, and DNS outcomes.
+- **Pi DNS Warden - Tor Flow & Runtime** — Tor control state, circuits, and
+  traffic.
+- **Pi DNS Warden - Edge & Egress** — management edge health and proxy traffic.
+- **Pi DNS Warden - Visibility & Logs** — aggregate DNS outcomes and
+  allowlisted operational logs.
+- **Pi DNS Warden - Host Infrastructure** — host CPU, memory, storage, and
+  network pressure.
+
+Current-state cards treat missing or stale telemetry as unknown/failing. The
+external Tor-egress verification is shown separately from DNS-hop probes; it
+does not claim to trace an individual DNS query through the chain.
 
 ## Project structure
 ```text

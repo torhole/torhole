@@ -72,9 +72,9 @@ you choose a capability profile:
 
 | | Torhole Home | Torhole Advanced |
 |---|---|---|
-| Designed for | Households and first-time self-hosters | Homelabs, segmented networks, and experienced operators |
-| DNS layout | One simple DNS plane | Separate trusted and IoT/VLAN DNS planes |
-| Privacy path | Pi-hole -> dnscrypt-proxy -> Tor | The same core path, isolated per network plane |
+| Designed for | Households and first-time self-hosters | Homelabs and operators who want full visibility/control, on flat or segmented networks |
+| DNS layout | One simple DNS plane | One flat-LAN plane or separate Trusted/IoT VLAN planes |
+| Privacy path | Pi-hole -> dnscrypt-proxy -> Tor | The same core path, with isolation for every active plane |
 | User experience | Guided setup and a lightweight privacy dashboard | Guided setup plus the full operational workspace |
 | Controls | Verify privacy, start, stop, restart, and renew Tor identity | Per-plane Tor controls, validation, recovery, and deeper operations |
 | Optional operations | Intentionally minimal | SSO, Caddy, backups, Prometheus, Grafana, Loki, alerting, and container tooling |
@@ -86,15 +86,26 @@ VLANs, identity providers, metrics, or log aggregation. Home keeps the number
 of components and decisions small, which makes installation, recovery, and
 everyday use more approachable.
 
-Advanced exists because segmented networks and long-running infrastructure
-need more visibility and control. Its operational tools are valuable in that
-environment, but they also consume more resources and create more configuration
-surface. They should not be mandatory for someone who only wants a private DNS
-path at home.
+Advanced exists because long-running infrastructure may need more visibility,
+control, recovery, and alerting whether the network is flat or segmented. VLANs
+are an Advanced topology option, not the definition of the edition. Its
+operational tools consume more resources and create more configuration surface,
+so they should not be mandatory for someone who only wants a private DNS path.
 
 These are not separate products or installers. Both use the same Torhole code
 and guided setup. Start with Home unless you already know why you need the
 Advanced capabilities.
+
+<table>
+<tr>
+<td width="50%"><strong>Torhole Home</strong><br><sub>One clear privacy proof and safe everyday controls.</sub></td>
+<td width="50%"><strong>Torhole Advanced</strong><br><sub>Live proof, topology, operations, monitoring, and recovery.</sub></td>
+</tr>
+<tr>
+<td><img src="pi-dns-warden/docs/images/screen-home.png" alt="Torhole Home live privacy dashboard" width="100%"></td>
+<td><img src="pi-dns-warden/docs/images/screen-glance.png" alt="Torhole Advanced Glance dashboard" width="100%"></td>
+</tr>
+</table>
 
 ## Prepare a host
 
@@ -161,7 +172,8 @@ the machine a reserved address.
 
 For Advanced VLAN isolation, the physical NIC, switch port, and router must all
 support the intended tagged VLANs. If that sentence is unfamiliar, start with
-Home; VLANs are not required for the DNS privacy path.
+Home or choose **Advanced → Single-LAN**. VLANs are not required for either the
+DNS privacy path or Advanced operational tooling.
 
 ## Install
 
@@ -179,10 +191,14 @@ The bootstrap:
 
 1. installs Git if it is missing and you approve the change;
 2. downloads Torhole into `~/torhole`;
-3. starts a temporary local setup service;
-4. opens or prints a private setup URL;
-5. lets you choose **Home** or **Advanced** and configure that profile in the
-   browser.
+3. requests one operating-system `sudo` authorization for host installation;
+4. starts a temporary local setup service and a narrow host-side installer;
+5. opens or prints a private setup URL;
+6. lets you choose **Home** or **Advanced**, configure it, install it, and watch
+   progress in the browser.
+
+Keep the launcher terminal open until the web wizard reports success. Closing
+the setup page with its Finish button removes the temporary bootstrap service.
 
 The wizard writes deployment-specific values to local, ignored environment
 files. They are not committed to the repository.
@@ -252,31 +268,52 @@ dig @<torhole-dns-address> example.com
 
 ### Advanced setup
 
-Choose **Advanced** in the same web installer. The wizard exposes the additional
-network planes and operational features, validates the configuration, and lets
-experienced users review or edit the generated environment values.
+Choose **Advanced** in the same web installer, then select the topology
+independently:
 
-The current proven Advanced deployer requires separate Trusted and IoT VLAN
-planes. The wizard therefore disables Single-LAN for Advanced instead of
-accepting a topology the deployer cannot safely build. Single-LAN Advanced is a
-planned capability; choose Home when VLANs are not available.
+- **Single-LAN:** one flat-network Pi-hole/dnscrypt plane plus the complete
+  Advanced operations stack—SSO, Grafana, Prometheus, Loki, alerting, backups,
+  validation, and service controls. No VLAN interfaces are created.
+- **Segmented VLANs:** separate Trusted and IoT Pi-hole/dnscrypt planes plus the
+  same Advanced operations stack. This requires correctly configured router,
+  switch, and host VLAN settings.
+
+Home and Advanced Single-LAN are therefore not the same deployment. They share
+one DNS topology, but Advanced adds the operational capability set and its
+additional resource/configuration cost.
+
+The Advanced wizard also asks how the administration page should open:
+
+- **HTTP:** immediate access by IP or local name on a trusted LAN;
+- **HTTPS · generated:** Torhole creates a local certificate and offers its CA
+  certificate for download on the final screen;
+- **HTTPS · custom:** upload a PEM certificate and its matching private key.
+
+Every Advanced mode keeps a password-protected recovery/configuration URL at
+`http://<host-management-ip>/`. DNS or certificate mistakes therefore do not
+lock the administrator out of Torhole.
 
 After validation, the wizard writes `pi-dns-warden/.env` with mode `0600`,
-generates any missing local credentials, and shows the exact host command:
+generates any missing local credentials, and queues Torhole's fixed Advanced
+deployer through the launcher process that received `sudo` authorization before
+the browser opened. The page streams deployment logs and does not report
+success until the deployer exits successfully. No command needs to be copied
+from the browser or run in a second terminal.
 
-```bash
-cd ~/torhole/pi-dns-warden
-sudo ./deploy.sh
-```
+Advanced installs host systemd services. VLAN topology also creates host VLAN
+interfaces; keep console access available during that first installation
+because an incorrect interface, VLAN, or gateway can interrupt connectivity.
 
-That explicit terminal approval is intentional. Advanced creates host VLAN
-interfaces and systemd services; the temporary web installer is not granted
-root control of the host network. Keep console access available while applying
-new VLAN settings.
+After installation, administrators can edit non-secret `.env` values one key at
+a time under **Configure → App parameters**, or edit `pi-dns-warden/.env`
+directly. Web edits are atomic and create a backup. Secrets remain masked and
+use dedicated controls such as the admin-password editor. Saving a parameter
+does not claim it is live: host networking, rendered authentication, and most
+container changes still require a maintenance deployment.
 
 Advanced can provide:
 
-- trusted and IoT/VLAN DNS isolation;
+- a flat-LAN DNS plane or Trusted/IoT VLAN DNS isolation;
 - the full Torhole administration workspace;
 - Caddy and Authelia single sign-on;
 - Prometheus metrics, Grafana dashboards, Loki logs, and alerting;
@@ -318,6 +355,173 @@ From the repository directory:
 Advanced operations and validation commands are documented under
 [`pi-dns-warden/docs/`](pi-dns-warden/docs/).
 
+## Update Torhole
+
+Updates keep the edition, topology, passwords, certificates, Pi-hole data, and
+other local configuration selected during setup. You do **not** need to run the
+setup wizard again for a normal update.
+
+Before updating, make sure the current dashboard is healthy and avoid changing
+router DNS settings until the update has completed. From the Torhole host:
+
+```bash
+cd ~/torhole
+curl -fsSL https://raw.githubusercontent.com/torhole/torhole/main/get-torhole.sh \
+  | TORHOLE_DOWNLOAD_ONLY=1 bash
+```
+
+The downloader accepts only a fast-forward update from the official Torhole
+repository. It refuses to overwrite an unrelated directory or local Git
+history.
+
+Then apply the downloaded version for the installed edition.
+
+For **Torhole Home**:
+
+```bash
+cd ~/torhole
+./install.sh install-home
+```
+
+For **Torhole Advanced**:
+
+```bash
+cd ~/torhole/pi-dns-warden
+sudo ./ops/scripts/40-update.sh
+```
+
+The Advanced updater validates the rendered configuration and creates a backup
+before replacing running containers. Home rebuilds its containers while
+retaining the persistent Pi-hole and Tor volumes. When the command finishes,
+open Torhole and run the privacy verification again.
+
+If an update fails, do not point clients at another resolver merely to make DNS
+work: that would bypass Torhole's privacy path. Inspect the logs first, or
+restore the previous Advanced snapshot from **Operate → Backups**.
+
+## Remove or uninstall Torhole
+
+Before removing Torhole, change the DNS server in your router or DHCP settings
+away from the Torhole address. Otherwise clients may lose DNS as soon as the
+containers stop.
+
+### Stop it temporarily
+
+For Home, the following command stops Torhole but keeps all configuration and
+Pi-hole data:
+
+```bash
+cd ~/torhole
+./install.sh stop
+```
+
+For Advanced, stop its system service:
+
+```bash
+sudo systemctl stop pihole-tor.service
+```
+
+Use this option when troubleshooting, moving the host, or when you may want to
+start Torhole again.
+
+### Remove running services but keep data
+
+This removes the containers and Docker networks while retaining local
+configuration and persistent data for a future reinstall.
+
+For Home:
+
+```bash
+cd ~/torhole/pi-dns-warden
+sudo docker compose --env-file .env.quickstart.local \
+  -f docker-compose.quickstart.yml down
+```
+
+For Advanced:
+
+```bash
+sudo systemctl disable --now pihole-tor.service \
+  pihole-tor-prometheus-watchdog.timer pihole-tor-vlans.service
+cd ~/torhole/pi-dns-warden
+sudo docker compose -f docker-compose.yml -f docker-compose.monitoring.yml down
+```
+
+The repository and its ignored local files remain the recovery copy. Do not
+delete it unless you have intentionally chosen the permanent-removal path.
+
+### Permanently remove all data
+
+Permanent removal also means deleting Pi-hole history and settings, Tor state,
+monitoring databases, backups, generated credentials, and local certificates.
+This cannot be undone without an external backup.
+
+Torhole does not yet advertise a one-command purge because Advanced installs
+host services and can create VLAN interfaces as well as Docker resources. A
+safe uninstaller must identify exactly what this installation owns before
+deleting it. Until that command is implemented and tested, use the detailed
+[uninstall checklist](pi-dns-warden/docs/uninstall.md) rather than improvising
+with broad Docker-volume or recursive-delete commands.
+
+## Routine maintenance and recovery
+
+- View generated URLs, the control PIN, and local passwords with
+  `./install.sh credentials`. Keep the output private.
+- Check Home containers with `./install.sh status` and follow their logs with
+  `./install.sh logs`.
+- In Advanced, use **Glance** for current health, **Privacy** for the live proof,
+  and **Operate → Stack validation** after configuration changes.
+- Create an Advanced snapshot under **Operate → Backups** before changing
+  networking, certificates, authentication, or topology.
+- Keep the host operating system and Docker security updates current, but avoid
+  unattended major distribution upgrades on a DNS server.
+- Test DNS and the Tor exit after router, firewall, VLAN, or certificate
+  changes. A green container status alone does not prove the complete privacy
+  path.
+- Keep the permanent Advanced recovery address
+  `http://<host-management-ip>/` on the trusted LAN. It remains useful when
+  local DNS, HTTPS, or SSO configuration is broken.
+
+### Update Torhole containers
+
+Updates require shell access to the Torhole host and `sudo`. Take a VM or host
+backup first; Advanced users should also create a snapshot under **Operate →
+Backups**. Updating downloads newer images for the configured tags, rebuilds
+Torhole's local images, and recreates only containers whose image or
+configuration changed. Persistent Docker volumes are retained.
+
+For Home:
+
+```bash
+cd ~/torhole
+git pull --ff-only
+cd pi-dns-warden
+sudo docker compose --env-file .env.quickstart.local \
+  -f docker-compose.quickstart.yml pull --ignore-buildable
+sudo docker compose --env-file .env.quickstart.local \
+  -f docker-compose.quickstart.yml up -d --build
+cd ..
+./install.sh status
+```
+
+Then open the Home dashboard and run **Verify privacy**.
+
+For Advanced, the deployment script is the supported updater because it also
+renders configuration, rebuilds the local images, validates the stack, and
+verifies that DNS still exits through Tor:
+
+```bash
+cd ~/torhole
+git pull --ff-only
+cd pi-dns-warden
+sudo ./deploy.sh --skip-prereqs
+```
+
+Do not treat Dockhand's image-status banner as proof that images are current.
+Dockhand is deliberately isolated from public registries, so registry checks
+can report `Could not query registry` even though host-side Docker Compose
+pulls work normally. A failed check means the image status is unknown, not
+that the image is current.
+
 ## Repository layout
 
 - `install.sh` and `get-torhole.sh` - the single guided installation entrypoint
@@ -326,6 +530,19 @@ Advanced operations and validation commands are documented under
 - `scripts/` - repository-level bootstrap and validation helpers
 - `README-ALERTING.md`, `README-ANSIBLE.md`, `README-PROXMOX.md`, and
   `README-TESTING.md` - focused operator documentation
+
+## Built with Codex during OpenAI Build Week
+
+Torhole's public release, unified Home/Advanced installer, operational UI,
+privacy-aware monitoring audit, and live deployment validation were completed
+with Codex and GPT-5.6 during the Build Week submission period. The human
+operator set the privacy boundary, product direction, topology requirements,
+and release decisions; Codex accelerated repository-wide implementation,
+testing, dashboard analysis, live VM diagnosis, documentation, and release
+verification.
+
+See [BUILD_WEEK.md](BUILD_WEEK.md) for the dated work breakdown, collaboration
+details, verification evidence, and what should be considered new for judging.
 
 ## Security
 

@@ -6,7 +6,7 @@ This guide walks through setting up a dedicated self-hosted runner that executes
 
 ## What you need
 
-- A VM (or a second Pi) on the same LAN segment as the Torhole deployment you want to test against — the runner needs to resolve `th-torhole.<your-domain>` and pass Authelia
+- A VM (or a second Pi) on the same LAN segment as the Torhole deployment you want to test against — the runner needs to resolve `torhole.<your-domain>` and pass Authelia
 - **Ubuntu 22.04+** recommended (runners work on Debian, Fedora, Alpine too, but most dependency guides assume Ubuntu)
 - At least **2 vCPU, 4 GB RAM, 20 GB disk** — Node + Playwright browser downloads + test artifacts
 - Outbound network to `github.com` (for runner heartbeat and checkout)
@@ -19,7 +19,7 @@ This guide walks through setting up a dedicated self-hosted runner that executes
 3. **Dedicated VM, not your workstation.** The runner gets the repo's secrets (TORHOLE_BASE_URL, test credentials). If the runner VM is compromised, the attacker has everything on it.
 4. **Treat the runner as ephemeral-ish.** Rebuild the VM periodically, or use the `ephemeral` mode (one job per runner registration — slower but far safer).
 
-If any of these feel shaky, **stick with the hosted `ci.yml` workflow** and run Playwright manually on your Mac from `monitoring/torhole-ui-v2` via `npm run test:e2e`. That's what I've been doing this whole time, and it works fine.
+If any of these feel shaky, **stick with the hosted `ci.yml` workflow** and run Playwright manually on your Mac from `monitoring/torhole-ui` via `npm run test:e2e`. That's what I've been doing this whole time, and it works fine.
 
 ## Provisioning the runner VM
 
@@ -85,7 +85,7 @@ In **Settings → Secrets and variables → Actions → New repository secret**,
 
 | Name | Value |
 |---|---|
-| `TORHOLE_BASE_URL` | `https://th-torhole.<your-domain>` (must be reachable from the runner) |
+| `TORHOLE_BASE_URL` | `https://torhole.<your-domain>` (must be reachable from the runner) |
 | `TORHOLE_TEST_USER` | Authelia username with admin privileges (dedicated test account recommended, not your real admin) |
 | `TORHOLE_TEST_PASSWORD` | Password for that account |
 

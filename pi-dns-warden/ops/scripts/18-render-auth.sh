@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="$ROOT_DIR/.env"
 AUTHELIA_DIR="$ROOT_DIR/monitoring/authelia"
 CADDY_DIR="$ROOT_DIR/monitoring/caddy"
+CADDY_TLS_DIR="$CADDY_DIR/tls"
 AUTHELIA_ASSETS_DIR="$AUTHELIA_DIR/assets"
 AUTHELIA_LOCALES_DIR="$AUTHELIA_ASSETS_DIR/locales/en"
 AUTHELIA_LOGO_FILE="$AUTHELIA_ASSETS_DIR/logo.png"
@@ -71,6 +72,22 @@ ensure_secret AUTHELIA_STORAGE_ENCRYPTION_KEY
 ensure_secret BACKUP_MANAGER_API_TOKEN
 protected_hosts_regex="$(torhole_protected_hosts_regex)"
 
+TORHOLE_WEB_MODE="${TORHOLE_WEB_MODE:-https-local}"
+case "$TORHOLE_WEB_MODE" in
+  http)
+    TORHOLE_WEB_SCHEME="http"
+    ;;
+  https-local|https-custom)
+    TORHOLE_WEB_SCHEME="https"
+    ;;
+  *)
+    echo "TORHOLE_WEB_MODE must be http, https-local, or https-custom."
+    exit 1
+    ;;
+esac
+update_env_value TORHOLE_WEB_SCHEME "$TORHOLE_WEB_SCHEME"
+export TORHOLE_WEB_SCHEME
+
 AUTHELIA_IMAGE="${AUTHELIA_IMAGE:-authelia/authelia:latest}"
 
 mkdir -p "$AUTHELIA_DIR"
@@ -86,8 +103,18 @@ password_hash="$(
     | sed -n 's/^Digest: //p' | tail -n 1 | tr -d '\r'
 )"
 
+caddy_password_hash="$(
+  docker run --rm "$REVERSE_PROXY_IMAGE" \
+    caddy hash-password --plaintext "$TORHOLE_ADMIN_PASSWORD" \
+    | tail -n 1 | tr -d '\r'
+)"
+
 if [[ -z "$password_hash" ]]; then
   echo "Failed to generate the Authelia password hash."
+  exit 1
+fi
+if [[ -z "$caddy_password_hash" ]]; then
+  echo "Failed to generate the Caddy recovery password hash."
   exit 1
 fi
 
@@ -152,12 +179,96 @@ users:
       - admins
 EOF
 
-cat > "$CADDY_DIR/auth-snippets.caddy" <<'EOF'
-# SSO is handled by Authelia forward_auth on all protected routes.
-# HTTP Basic is no longer used. This file is kept for deploy compatibility.
-EOF
+if [[ "$TORHOLE_WEB_MODE" == "http" ]]; then
+  cat > "$CADDY_DIR/auth-snippets.caddy" <<EOF
+(access_gate) {
+  basic_auth {
+    ${TORHOLE_ADMIN_USER} ${caddy_password_hash}
+  }
+  request_header Remote-User {http.auth.user.id}
+  request_header Remote-Name {http.auth.user.id}
+}
 
-chmod 600 "$AUTHELIA_DIR/configuration.yml" "$AUTHELIA_DIR/users_database.yml" "$CADDY_DIR/auth-snippets.caddy"
+(ip_access_gate) {
+  import access_gate
+}
+EOF
+else
+  cat > "$CADDY_DIR/auth-snippets.caddy" <<EOF
+(access_gate) {
+  forward_auth authelia:9091 {
+    uri /api/authz/forward-auth?authelia_url=${TORHOLE_WEB_SCHEME}://${TORHOLE_HOST_AUTH}.${REVERSE_PROXY_DOMAIN}
+    copy_headers Remote-User Remote-Groups Remote-Email Remote-Name
+  }
+}
+
+(ip_access_gate) {
+  basic_auth {
+    ${TORHOLE_ADMIN_USER} ${caddy_password_hash}
+  }
+  request_header Remote-User {http.auth.user.id}
+  request_header Remote-Name {http.auth.user.id}
+}
+EOF
+fi
+
+case "$TORHOLE_WEB_MODE" in
+  http)
+    cat > "$CADDY_DIR/tls-snippets.caddy" <<'EOF'
+(tls_mode) {
+  encode zstd gzip
+}
+EOF
+    ;;
+  https-local)
+    cat > "$CADDY_DIR/tls-snippets.caddy" <<'EOF'
+(tls_mode) {
+  tls internal
+  encode zstd gzip
+}
+EOF
+    ;;
+  https-custom)
+    cert_file="$CADDY_TLS_DIR/custom.crt"
+    key_file="$CADDY_TLS_DIR/custom.key"
+    if [[ ! -f "$cert_file" || ! -f "$key_file" ]]; then
+      echo "Custom HTTPS requires monitoring/caddy/tls/custom.crt and custom.key."
+      exit 1
+    fi
+    openssl x509 -in "$cert_file" -noout >/dev/null
+    openssl pkey -in "$key_file" -noout >/dev/null
+    cert_pub="$(openssl x509 -in "$cert_file" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | awk '{print $1}')"
+    key_pub="$(openssl pkey -in "$key_file" -pubout -outform DER | sha256sum | awk '{print $1}')"
+    if [[ "$cert_pub" != "$key_pub" ]]; then
+      echo "Custom HTTPS certificate and private key do not match."
+      exit 1
+    fi
+    if ! openssl x509 -checkend 0 -noout -in "$cert_file" >/dev/null; then
+      echo "Custom HTTPS certificate is expired."
+      exit 1
+    fi
+    IFS=',' read -r -a public_host_labels <<< "$(torhole_public_hosts_csv)"
+    for host_label in "${public_host_labels[@]}"; do
+      public_hostname="${host_label}.${REVERSE_PROXY_DOMAIN}"
+      if ! openssl x509 -checkhost "$public_hostname" -noout -in "$cert_file" >/dev/null; then
+        echo "Custom HTTPS certificate does not cover ${public_hostname}."
+        exit 1
+      fi
+    done
+    cat > "$CADDY_DIR/tls-snippets.caddy" <<'EOF'
+(tls_mode) {
+  tls /etc/caddy/tls/custom.crt /etc/caddy/tls/custom.key
+  encode zstd gzip
+}
+EOF
+    ;;
+esac
+
+chmod 600 \
+  "$AUTHELIA_DIR/configuration.yml" \
+  "$AUTHELIA_DIR/users_database.yml" \
+  "$CADDY_DIR/auth-snippets.caddy" \
+  "$CADDY_DIR/tls-snippets.caddy"
 rm -f "$ENV_FILE.bak"
 
-echo "Rendered Authelia config in $AUTHELIA_DIR"
+echo "Rendered ${TORHOLE_WEB_MODE} web access and authentication configuration."

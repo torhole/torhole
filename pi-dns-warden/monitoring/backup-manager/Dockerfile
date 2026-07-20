@@ -4,7 +4,7 @@ FROM python:3.12-alpine
 # runs ops/scripts/19-validate-stack.sh which uses `docker compose ...`.
 # Without docker-cli-compose installed, _compose.sh fails to find `docker
 # compose` and validation errors out with all checks skipped.
-RUN apk add --no-cache bash docker-cli docker-cli-compose
+RUN apk add --no-cache bash docker-cli docker-cli-compose openssl
 
 WORKDIR /app
 # All backend modules (server.py + extracted modules like env_store.py).

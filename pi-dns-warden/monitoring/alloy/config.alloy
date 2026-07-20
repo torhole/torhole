@@ -18,6 +18,14 @@ discovery.docker "containers" {
 discovery.relabel "docker_logs" {
   targets = discovery.docker.containers.targets
 
+  // Default to an operational allowlist. Resolver/Pi-hole logs can contain
+  // client or query details and are intentionally not retained in Loki.
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    regex         = "tor|prometheus|loki|alloy|alertmanager|grafana|reverse-proxy|blackbox-exporter|node-exporter|cadvisor|pihole-exporter|backup-manager"
+    action        = "keep"
+  }
+
   rule {
     source_labels = ["__meta_docker_container_name"]
     regex         = "/(.*)"
@@ -38,19 +46,5 @@ discovery.relabel "docker_logs" {
 loki.source.docker "containers" {
   host       = "tcp://docker-socket-proxy:2375"
   targets    = discovery.relabel.docker_logs.output
-  forward_to = [loki.write.local.receiver]
-}
-
-local.file_match "host_logs" {
-  path_targets = [
-    {"__path__" = "/var/log/syslog", "job" = "host-logs", "host" = "torhole", "log_file" = "syslog"},
-    {"__path__" = "/var/log/auth.log", "job" = "host-logs", "host" = "torhole", "log_file" = "auth.log"},
-    {"__path__" = "/var/log/kern.log", "job" = "host-logs", "host" = "torhole", "log_file" = "kern.log"},
-    {"__path__" = "/var/log/daemon.log", "job" = "host-logs", "host" = "torhole", "log_file" = "daemon.log"},
-  ]
-}
-
-loki.source.file "host_logs" {
-  targets    = local.file_match.host_logs.targets
   forward_to = [loki.write.local.receiver]
 }

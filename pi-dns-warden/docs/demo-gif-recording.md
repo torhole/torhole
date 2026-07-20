@@ -21,7 +21,7 @@ A single GIF, **≤ 10 MB**, **≤ 30 seconds**, showing off the end-to-end valu
 - **Mac** (alt): CleanShot X's "Record GIF" mode — paid but higher quality palettes
 - **Linux**: Peek — simple, good-enough GIF export
 
-Whatever you pick, set the recording region to the v2 UI viewport (1280 × 720 works well — hides the macOS title bar and gives a clean edge).
+Whatever you pick, set the recording region to the admin UI viewport (1280 × 720 works well — hides the macOS title bar and gives a clean edge).
 
 ## Browser setup before recording
 
@@ -29,7 +29,7 @@ Whatever you pick, set the recording region to the v2 UI viewport (1280 × 720 w
 2. Set **zoom to 100%** (`Cmd-0`).
 3. Resize the window to exactly **1280 × 720** (or whatever matches your recording region).
 4. Close DevTools.
-5. Open `https://th-torhole.<your-domain>/v2/` and sign in BEFORE starting the recording — the Authelia redirect is not part of the demo.
+5. Open `https://torhole.<your-domain>/` and sign in BEFORE starting the recording — the Authelia redirect is not part of the demo.
 6. Wait for the Glance screen to finish loading (live counters should be showing real numbers, not placeholders).
 
 ## Click path (25 seconds total)
@@ -81,4 +81,4 @@ After recording:
 
 ## Historical note
 
-The static screenshots in `docs/images/screen-*.png` are harvested from the Playwright visual regression baselines at `monitoring/torhole-ui-v2/tests/visual.spec.ts-snapshots/`. When the UI changes and those baselines are regenerated, the static docs screenshots should be refreshed too — the harvest is a simple `cp` from the snapshots dir.
+The static screenshots in `docs/images/screen-*.png` are harvested from the Playwright visual regression baselines at `monitoring/torhole-ui/tests/visual.spec.ts-snapshots/`. When the UI changes and those baselines are regenerated, the static docs screenshots should be refreshed too — the harvest is a simple `cp` from the snapshots dir.

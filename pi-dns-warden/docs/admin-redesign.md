@@ -154,7 +154,7 @@ This is the screen that justifies Torhole's existence.
    - **Create snapshot** button (with optional label)
    - **Restore** is destructive: opens a type-to-confirm modal that requires typing the snapshot name (or `RESTORE`) to confirm; explicitly warns about what gets overwritten
    - **Delete** is destructive: opens a type-to-confirm modal that requires typing `DELETE` to confirm; warns that the archive cannot be recovered
-   - **Rule (applies everywhere in the v2 UI):** any irreversible destructive operation must go through a type-to-confirm modal — not a yes/no dialog that can be clicked by accident. The operator types a verb (`DELETE`, `RESTORE`, `FORCE`) or the resource name before the action button enables. This rule is load-bearing for operator safety and must not be softened.
+   - **Rule (applies everywhere in the admin UI):** any irreversible destructive operation must go through a type-to-confirm modal — not a yes/no dialog that can be clicked by accident. The operator types a verb (`DELETE`, `RESTORE`, `FORCE`) or the resource name before the action button enables. This rule is load-bearing for operator safety and must not be softened.
 3. **Validation**
    - **Run validation** button (single click)
    - Below: results from last run, each check expandable to show its full output
@@ -420,24 +420,24 @@ Files to delete:
 | Legacy Caddyfile redirect routes | Operate/resolver/access redirects |
 | Stale `index-*.{js,css}` bundles in `caddy/assets/` | Vite build hashes; only the current pair should remain |
 | Draft-state endpoints in `server.py` | If unused after rewrite |
-| `monitoring/torhole-ui/src/App.tsx` | Replaced by `src/App.tsx` v2 |
+| Earlier monolithic `monitoring/torhole-ui/src/App.tsx` | Replaced by the current screen-based React application |
 
-## 8. Migration plan
+## 8. Migration history
 
-Five phases. Each phase is independently shippable to the live system without breaking the running stack.
+These five phases describe the completed cutover from the development-era UI.
 
 ### Phase 1 — API foundation
 - Add `/api/system/snapshot` and `/api/stream/*` to `server.py`
 - Existing endpoints stay live and untouched
 - Unit tests against the new endpoints
 - Backup-manager image rebuilds via `ops/scripts/70-deploy-dev.sh`, which
-  also builds `torhole-ui-v2`, syncs the Vite build output under
-  `monitoring/caddy/v2/`, and rebuilds the container so the COPY'd
+  also builds `torhole-ui`, syncs the Vite build output under
+  `monitoring/caddy/admin-ui/`, and rebuilds the container so the COPY'd
   `server.py` is picked up.
 - **Exit criterion:** the new endpoints return the right data; old UI unaffected.
 
 ### Phase 2 — Greenfield React app
-- New `monitoring/torhole-ui-v2/` sibling tree (Vite/React/TS, separate `package.json`)
+- New `monitoring/torhole-ui/` sibling tree (Vite/React/TS, separate `package.json`)
 - All 5 screens implemented against the new endpoints
 - Mounted at `/v2` in the Caddyfile (old UI still at `/`)
 - Both UIs coexist; you can flip between them in the browser
@@ -502,7 +502,7 @@ These need an answer before Phase 2 starts. Phase 1 (API) can proceed without th
 5. **Setup wizard re-entry behavior.** "Reconfigure topology" via wizard — does it tear down and re-create the stack, or just rewrite `.env` and reload? Has implications for data persistence.
 6. **Pi-hole `max_sessions` default.** Currently bumped to 256 manually on the live stack. Should this become the bake-in default in `docker-compose.yml` via `FTLCONF_webserver_api_max_sessions=256`? Recommendation: yes — fold into Phase 1.
 7. **Tor bootstrap log parsing.** The current `build_tor_assurance` regex misses the actual bootstrap line emitted by the Tor build in this repo. Small standalone fix in `server.py` — fold into Phase 1.
-8. **Greenfield strategy: in-place or new directory?** Recommendation: new `src/v2/` tree during Phases 1-3 so the old UI keeps working; flip names in Phase 4. The alternative ("delete src/, start over") leaves the live stack with no UI for the duration of the rewrite, which is unacceptable.
+8. **Greenfield strategy: in-place or new directory?** Recommendation: new isolated UI tree during Phases 1-3 so the old UI keeps working; flip names in Phase 4. The alternative ("delete src/, start over") leaves the live stack with no UI for the duration of the rewrite, which is unacceptable.
 
 ## 12. Out of scope (v1)
 

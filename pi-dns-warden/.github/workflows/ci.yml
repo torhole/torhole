@@ -1,7 +1,7 @@
 # Torhole continuous integration.
 #
 # Scope:
-#   - Typecheck and production build the v2 admin UI (monitoring/torhole-ui-v2/)
+#   - Typecheck and production build the admin UI (monitoring/torhole-ui/)
 #   - Verify Grafana dashboard JSON files are well-formed
 #   - Lint the Caddyfile
 #
@@ -13,9 +13,8 @@
 #     isn't practical; a dedicated self-hosted runner against a test VM is
 #     the right home for E2E and will land in a future session.
 #
-#   - Python lint / backup-manager tests. The backup-manager server.py has
-#     no test suite yet; when one exists it should be wired in as a separate
-#     job here.
+#   - Python/backend tests. The root CI workflow runs those alongside the
+#     deployment and compose checks.
 
 name: ci
 
@@ -31,11 +30,11 @@ concurrency:
 
 jobs:
   ui:
-    name: v2 UI — typecheck + build
+    name: Admin UI — typecheck + build
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: monitoring/torhole-ui-v2
+        working-directory: monitoring/torhole-ui
     steps:
       - uses: actions/checkout@v4
 
@@ -44,7 +43,7 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: monitoring/torhole-ui-v2/package-lock.json
+          cache-dependency-path: monitoring/torhole-ui/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -57,12 +56,12 @@ jobs:
 
       - name: Verify build output exists
         run: |
-          test -f ../caddy/v2/index.html || {
-            echo "::error::monitoring/caddy/v2/index.html missing after build"
+          test -f ../caddy/admin-ui/index.html || {
+            echo "::error::monitoring/caddy/admin-ui/index.html missing after build"
             exit 1
           }
-          test -d ../caddy/v2/assets || {
-            echo "::error::monitoring/caddy/v2/assets/ missing after build"
+          test -d ../caddy/admin-ui/assets || {
+            echo "::error::monitoring/caddy/admin-ui/assets/ missing after build"
             exit 1
           }
 
@@ -118,7 +117,7 @@ jobs:
         #
         # REVERSE_PROXY_DOMAIN is a template variable the real Caddyfile reads
         # from .env at deploy time; pass a placeholder here so validate can
-        # substitute it into the site-block hostnames (th-auth.<domain>, etc.)
+        # substitute it into the site-block hostnames (auth.<domain>, etc.)
         # without tripping "empty hostname" errors.
         run: |
           docker run --rm \

@@ -8,7 +8,7 @@ services:
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=7d"
     volumes:
-      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/prometheus.runtime.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
       - prometheus_data:/prometheus
     networks:
@@ -38,6 +38,8 @@ services:
     image: ${DOCKER_SOCKET_PROXY_IMAGE:-tecnativa/docker-socket-proxy:latest}
     container_name: docker-socket-proxy
     restart: unless-stopped
+    entrypoint: ["/usr/local/bin/torhole-docker-socket-proxy"]
+    command: ["haproxy", "-f", "/tmp/haproxy.cfg"]
     environment:
       CONTAINERS: 1
       NETWORKS: 1 # discovery.docker computes network labels from GET /networks
@@ -47,6 +49,7 @@ services:
       POST: 0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./monitoring/docker-socket-proxy/entrypoint.sh:/usr/local/bin/torhole-docker-socket-proxy:ro
     networks:
       docker_sock_net:
 
@@ -58,11 +61,11 @@ services:
       - "run"
       - "--server.http.listen-addr=0.0.0.0:12345"
       - "--storage.path=/var/lib/alloy"
+      - "--disable-reporting"
       - "/etc/alloy/config.alloy"
     volumes:
       - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - alloy_data:/var/lib/alloy
-      - /var/log:/var/log:ro
     networks:
       dns_int:
         ipv4_address: 172.30.0.39
@@ -77,6 +80,8 @@ services:
     container_name: pihole-exporter
     restart: unless-stopped
     environment:
+      TORHOLE_TOPOLOGY: ${TORHOLE_TOPOLOGY:-vlan}
+      TORHOLE_EXPORT_CLIENT_METRICS: ${TORHOLE_EXPORT_CLIENT_METRICS:-false}
       PIHOLE_TRUSTED_URL: https://pihole_trusted/api
       PIHOLE_TRUSTED_PASSWORD: ${PIHOLE_TRUSTED_PASSWORD}
       PIHOLE_IOT_URL: https://pihole_iot/api
@@ -86,7 +91,6 @@ services:
         ipv4_address: 172.30.0.40
     depends_on:
       - pihole_trusted
-      - pihole_iot
 
   backup-manager:
     build:
@@ -95,6 +99,7 @@ services:
     container_name: backup-manager
     restart: unless-stopped
     environment:
+      TORHOLE_TOPOLOGY: ${TORHOLE_TOPOLOGY:-vlan}
       TORHOLE_ROOT_DIR: /workspace
       TORHOLE_HOST_ROOT_DIR: ${BACKUP_MANAGER_ROOT_DIR:-/opt/pi-dns-warden}
       TORHOLE_PROJECT_NAME: ${BACKUP_MANAGER_PROJECT_NAME:-pi-dns-warden}
@@ -126,7 +131,7 @@ services:
     restart: unless-stopped
     environment:
       - TZ=${TZ}
-      - GF_SERVER_ROOT_URL=https://${TORHOLE_HOST_GRAFANA:-grafana}.${REVERSE_PROXY_DOMAIN}
+      - GF_SERVER_ROOT_URL=${TORHOLE_WEB_SCHEME:-https}://${TORHOLE_HOST_GRAFANA:-grafana}.${REVERSE_PROXY_DOMAIN}
       - GF_AUTH_BASIC_ENABLED=false
       - GF_AUTH_DISABLE_LOGIN_FORM=true
       - GF_AUTH_PROXY_ENABLED=true
@@ -138,6 +143,10 @@ services:
       - GF_AUTH_PROXY_WHITELIST=172.30.0.37
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
+      # Torhole uses only Grafana's bundled panels and data sources. Current
+      # Grafana releases otherwise try to update suggested bundled plugins at
+      # startup, which is unnecessary and fails against the read-only image.
+      - GF_PLUGINS_PREINSTALL_DISABLED=true
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -157,6 +166,8 @@ services:
     restart: unless-stopped
     environment:
       - REVERSE_PROXY_DOMAIN=${REVERSE_PROXY_DOMAIN}
+      - HOST_MGMT_IP=${HOST_MGMT_IP:-127.0.0.1}
+      - TORHOLE_WEB_SCHEME=${TORHOLE_WEB_SCHEME:-https}
       - TORHOLE_ADMIN_USER=${TORHOLE_ADMIN_USER}
       - BACKUP_MANAGER_API_TOKEN=${BACKUP_MANAGER_API_TOKEN:-}
       - TORHOLE_HOST_TORHOLE=${TORHOLE_HOST_TORHOLE:-torhole}
@@ -185,8 +196,8 @@ services:
       # container sees current on-disk files on every read.
       #
       # Caddy only reads files it references (Caddyfile and its imports),
-      # so the extra files that end up under /etc/caddy (root.crt, v2/
-      # assets) are harmless. The v2/ assets are also mounted at /srv
+      # so the extra files that end up under /etc/caddy (root.crt, admin UI
+      # assets) are harmless. The admin-ui/ assets are also mounted at /srv
       # below for the file_server directive to serve.
       - ./monitoring/caddy:/etc/caddy:ro
       - ./monitoring/caddy:/srv:ro

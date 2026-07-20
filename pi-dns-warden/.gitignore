@@ -9,19 +9,20 @@ pihole/*/etc-pihole/
 pihole/*/etc-dnsmasq.d/
 
 # Prometheus/Grafana persistent data (named volumes not stored here)
+monitoring/prometheus/prometheus.runtime.yml
 
-# v2 UI — built output lives at monitoring/caddy/v2/ but is regenerated from
+# Admin UI — built output lives at monitoring/caddy/admin-ui/ but is regenerated from
 # source at deploy time. Keep it out of the repo so PRs don't churn on bundle
 # hashes.
-monitoring/caddy/v2/
+monitoring/caddy/admin-ui/
 
-# Node / Vite / Playwright (monitoring/torhole-ui-v2/)
-monitoring/torhole-ui-v2/node_modules/
-monitoring/torhole-ui-v2/.playwright-browsers/
-monitoring/torhole-ui-v2/test-results/
-monitoring/torhole-ui-v2/playwright-report/
-monitoring/torhole-ui-v2/dist/
-monitoring/torhole-ui-v2/.vite/
+# Node / Vite / Playwright (monitoring/torhole-ui/)
+monitoring/torhole-ui/node_modules/
+monitoring/torhole-ui/.playwright-browsers/
+monitoring/torhole-ui/test-results/
+monitoring/torhole-ui/playwright-report/
+monitoring/torhole-ui/dist/
+monitoring/torhole-ui/.vite/
 
 # Dashboard / Caddyfile rollback snapshots (.bak-YYYYMMDD...) produced by
 # edit scripts during iteration. Kept locally for rollback, never committed.
@@ -54,3 +55,7 @@ __pycache__/
 monitoring/authelia/configuration.yml
 monitoring/authelia/users_database.yml
 monitoring/caddy/auth-snippets.caddy
+monitoring/caddy/tls-snippets.caddy
+monitoring/caddy/topology-sites.caddy
+monitoring/caddy/torhole-local-ca.crt
+monitoring/caddy/tls/
