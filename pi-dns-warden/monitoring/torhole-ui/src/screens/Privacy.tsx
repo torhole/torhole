@@ -392,14 +392,27 @@ function torUptimeStatus(data: Snapshot): StatusKind {
 function exitIpValue(data: Snapshot): string {
   const last = data.leak_test.last_result;
   if (!last) return "never tested";
-  if (!last.pass) return "leak detected";
+  const status = leakVerificationStatus(last);
+  if (status === "unavailable") return "verifier unavailable";
+  if (status === "confirmed_not_tor") return "leak detected";
   return last.ip || "unknown";
 }
 
 function exitIpStatus(data: Snapshot): StatusKind {
   const last = data.leak_test.last_result;
   if (!last) return "degraded";
-  return last.pass ? "healthy" : "offline";
+  const status = leakVerificationStatus(last);
+  if (status === "unavailable") return "degraded";
+  return status === "confirmed_tor" ? "healthy" : "offline";
+}
+
+function leakVerificationStatus(result: LeakTestResult | LeakTestHistoryEntry) {
+  if (result.verification_status) return result.verification_status;
+  if (result.pass) return "confirmed_tor";
+  const error = "error" in result ? String(result.error || "").toLowerCase() : "";
+  return error.includes("leak detected") || error.replaceAll(" ", "").includes("istor=false")
+    ? "confirmed_not_tor"
+    : "unavailable";
 }
 
 function ProofTile({ label, value, status }: { label: string; value: string; status: StatusKind }) {
@@ -643,6 +656,10 @@ function LeakTestPanel({ state, refetch }: { state: SnapshotState; refetch: () =
     state.kind === "ready" ? state.data.leak_test.recent_pass_rate : null;
   const historyCount =
     state.kind === "ready" ? state.data.leak_test.history_count : 0;
+  const conclusiveCount =
+    state.kind === "ready"
+      ? state.data.leak_test.conclusive_count ?? state.data.leak_test.history_count
+      : 0;
   // history may be absent on an older backend that hasn't been rebuilt yet —
   // fall back to an empty array so the UI doesn't crash on a version skew.
   const history: LeakTestHistoryEntry[] =
@@ -682,7 +699,7 @@ function LeakTestPanel({ state, refetch }: { state: SnapshotState; refetch: () =
       {recentPassRate !== null && historyCount > 0 && (
         <div className="flex items-center gap-3 mt-0.5">
           <div className="text-[10px] font-mono text-th-text-muted uppercase tracking-[0.14em] shrink-0">
-            recent · {Math.round(recentPassRate * 100)}% ({historyCount})
+              recent · {Math.round(recentPassRate * 100)}% conclusive ({conclusiveCount}/{historyCount})
           </div>
           <LeakTestHistoryStrip history={history} />
         </div>
@@ -745,7 +762,9 @@ function LeakTestResultBlock({
     );
   }
 
-  const passed = result.pass;
+  const verificationStatus = leakVerificationStatus(result);
+  const passed = verificationStatus === "confirmed_tor";
+  const unavailable = verificationStatus === "unavailable";
   const ranAgo = formatRelative(result.ran_at);
 
   return (
@@ -753,23 +772,33 @@ function LeakTestResultBlock({
       className={`rounded-md border p-3 ${
         passed
           ? "bg-th-primary/[0.04] border-th-primary/30"
+          : unavailable
+            ? "bg-th-warning/[0.06] border-th-warning/40"
           : "bg-th-danger/[0.06] border-th-danger/40"
       }`}
     >
       <div className="flex items-center gap-2 mb-2">
         <div
           className={`w-6 h-6 rounded flex items-center justify-center ${
-            passed ? "bg-th-primary/15 text-th-primary" : "bg-th-danger/15 text-th-danger"
+            passed
+              ? "bg-th-primary/15 text-th-primary"
+              : unavailable
+                ? "bg-th-warning/15 text-th-warning"
+                : "bg-th-danger/15 text-th-danger"
           }`}
         >
           {passed ? <Check size={14} strokeWidth={3} /> : <ShieldAlert size={14} strokeWidth={2.5} />}
         </div>
         <div
           className={`text-[14px] font-bold tracking-tight ${
-            passed ? "text-th-primary" : "text-th-danger"
+            passed ? "text-th-primary" : unavailable ? "text-th-warning" : "text-th-danger"
           }`}
         >
-          {passed ? "PASS · DNS exits via Tor" : "FAIL · privacy not intact"}
+          {passed
+            ? "PASS · DNS exits via Tor"
+            : unavailable
+              ? "CHECK INCONCLUSIVE · verifier unavailable"
+              : "FAIL · privacy not intact"}
         </div>
         <div className="ml-auto text-[10px] font-mono text-th-text-muted uppercase tracking-[0.14em]">
           {ranAgo}
@@ -784,7 +813,7 @@ function LeakTestResultBlock({
           label="is_tor"
           value={result.is_tor ? "true" : "false"}
           mono
-          accent={result.is_tor ? "ok" : "fail"}
+          accent={result.is_tor ? "ok" : unavailable ? undefined : "fail"}
         />
         <ResultRow label="duration" value={`${result.duration_ms}ms`} mono />
         {result.error && (
@@ -804,15 +833,19 @@ function LeakTestHistoryStrip({ history }: { history: LeakTestHistoryEntry[] }) 
     <div
       className="flex items-center gap-[3px] flex-1 min-w-0"
       role="img"
-      aria-label={`Recent leak test history: ${history.length} runs, ${history.filter((h) => h.pass).length} passed`}
+      aria-label={`Recent leak test history: ${history.length} runs, ${history.filter((h) => leakVerificationStatus(h) === "confirmed_tor").length} passed`}
     >
       {history.map((entry, i) => (
         <span
           key={`${entry.ran_at}-${i}`}
           className={`inline-block w-1.5 h-3 rounded-sm ${
-            entry.pass ? "bg-th-primary/70" : "bg-th-danger/80"
+            leakVerificationStatus(entry) === "confirmed_tor"
+              ? "bg-th-primary/70"
+              : leakVerificationStatus(entry) === "unavailable"
+                ? "bg-th-warning/70"
+                : "bg-th-danger/80"
           }`}
-          title={`${entry.pass ? "PASS" : "FAIL"} · ${formatRelative(entry.ran_at)}`}
+          title={`${leakVerificationStatus(entry) === "confirmed_tor" ? "PASS" : leakVerificationStatus(entry) === "unavailable" ? "INCONCLUSIVE" : "FAIL"} · ${formatRelative(entry.ran_at)}`}
         />
       ))}
     </div>

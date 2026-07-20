@@ -890,6 +890,23 @@ class TorEgressMetricTests(unittest.TestCase):
             "unavailable",
         )
 
+    def test_verifier_outages_do_not_reduce_conclusive_pass_rate(self):
+        with server._LEAK_TEST_LOCK:
+            server._LEAK_TEST_HISTORY[:] = [
+                {"pass": True, "ran_at": "2026-01-01T00:00:00Z"},
+                {
+                    "pass": False,
+                    "ran_at": "2026-01-01T00:01:00Z",
+                    "verification_status": "unavailable",
+                    "error": "SSLEOFError",
+                },
+            ]
+        state = server.get_leak_test_state()
+        self.assertEqual(state["recent_pass_rate"], 1.0)
+        self.assertEqual(state["history_count"], 2)
+        self.assertEqual(state["conclusive_count"], 1)
+        self.assertEqual(state["history"][-1]["verification_status"], "unavailable")
+
     def _run_with_verifier_payload(self, payload):
         class FakeSocket:
             def close(self):
