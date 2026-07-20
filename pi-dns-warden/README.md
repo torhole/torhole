@@ -108,7 +108,8 @@ See [`docs/architecture.md`](docs/architecture.md) for the longer version and [`
 - Raspberry Pi 5 (tested) or any x86/arm64 Debian 12+ host
 - Docker 24+ with the compose plugin
 - ~2 GB free memory, ~10 GB free disk
-- For local `home.arpa` HTTPS domains, you'll need to either trust the Caddy internal CA on your clients or point a real domain at the host
+- One free host-management IP. The wizard can use HTTP, generate local HTTPS,
+  or accept your PEM certificate and private key.
 
 ### Install
 
@@ -129,7 +130,8 @@ Edit `.env` — at minimum set:
 - `TORHOLE_ADMIN_USER` and `TORHOLE_ADMIN_PASSWORD` (the Authelia admin)
 - `PIHOLE_*_PASSWORD` for each plane
 - `PIHOLE_*_IP` for each plane (the static IP clients will use as their DNS)
-- `REVERSE_PROXY_DOMAIN` (for example, `home.arpa`)
+- `REVERSE_PROXY_DOMAIN` (for example, `lan.home.arpa`; bare `home.arpa` is not a valid Authelia cookie domain)
+- `TORHOLE_WEB_MODE` (`http`, `https-local`, or `https-custom`)
 
 Then run deploy again:
 
@@ -139,9 +141,10 @@ sudo ./deploy.sh
 
 ### First login
 
-- Open `https://th-torhole.<your-domain>` in a browser
+- Open the URL printed by the deployer, or use the permanent recovery URL
+  `http://<host-management-ip>/`
 - Log in with the admin credentials you set in `.env`
-- The Setup wizard at `https://th-torhole.<your-domain>/v2/#/setup` walks you through the rest
+- The Setup wizard under `/v2/#/setup` walks you through the rest
 
 ### Verify
 
@@ -160,23 +163,25 @@ Torhole supports two network layouts. The Setup wizard auto-detects which one yo
 
 | Topology | Good for | What you need |
 |---|---|---|
-| **Single LAN** *(recommended)* | Most home setups. One network, one Pi-hole, one DNS path. | Just a network and a static IP for the Pi-hole. Works on any home router. |
-| **Segmented VLANs** *(advanced)* | Homelab with trusted / IoT separation. Each plane gets its own isolated Tor circuit pool. | Managed switch + VLAN-aware router (UniFi, OPNsense, etc.) |
+| **Single LAN** *(recommended)* | Home, or Advanced with the full SSO/monitoring/alerting/backup stack on one flat DNS plane. | A flat network and a static IP for the Pi-hole. Works on any home router. |
+| **Segmented VLANs** | Advanced with Trusted / IoT separation. Each plane gets its own isolated Tor circuit pool. | Managed switch + VLAN-aware router (UniFi, OPNsense, etc.) |
 
 For VLAN-mode operators, see [`docs/deploy-reference.md`](docs/deploy-reference.md) for the UniFi-specific setup notes.
 
 ## Admin surfaces
 
-After deploy, behind Authelia SSO:
+After deploy, the scheme is the wizard selection (`http` or `https`). HTTPS
+uses Authelia SSO; HTTP and the permanent IP recovery page use the same Torhole
+admin credentials directly at Caddy.
 
 | URL | What |
 |---|---|
-| `https://th-torhole.<domain>/v2/` | The Torhole admin UI (5 screens) |
-| `https://th-grafana.<domain>` | Grafana (Prometheus datasource, auto-provisioned dashboards) |
-| `https://th-prometheus.<domain>` | Prometheus web UI |
-| `https://th-alertmanager.<domain>` | Alertmanager web UI |
-| `https://th-pihole-trusted.<domain>/admin/` | Pi-hole admin, per plane |
-| `https://th-auth.<domain>` | Authelia sign-in portal |
+| `<scheme>://th-torhole.<domain>/v2/` | The Torhole admin UI (5 screens) |
+| `<scheme>://th-grafana.<domain>` | Grafana (Prometheus datasource, auto-provisioned dashboards) |
+| `<scheme>://th-prometheus.<domain>` | Prometheus web UI |
+| `<scheme>://th-alertmanager.<domain>` | Alertmanager web UI |
+| `<scheme>://th-pihole-trusted.<domain>/admin/` | Pi-hole admin, per plane |
+| `http://<host-management-ip>/` | Permanent password-protected recovery/configuration access |
 
 One sign-in session covers all of them.
 

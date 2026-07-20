@@ -585,7 +585,7 @@ export async function fetchConfig(): Promise<ConfigResponse> {
 export async function updateConfigValue(
   key: string,
   value: string,
-): Promise<{ message?: string }> {
+): Promise<{ message?: string; config?: Record<string, string> }> {
   const res = await fetch("/api/config", {
     method: "POST",
     credentials: "include",
@@ -595,6 +595,54 @@ export async function updateConfigValue(
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
   return data || {};
+}
+
+export interface WebAccessActivationResult {
+  ok: boolean;
+  message: string;
+  scheduled: boolean;
+  config?: Record<string, string>;
+  recovery_url?: string | null;
+  certificate_url?: string | null;
+  https_url?: string | null;
+}
+
+/** Upgrade an installed Advanced HTTP deployment to generated HTTPS with
+ * Authelia SSO. The backend validates before queuing the narrow proxy/auth
+ * restart; direct-IP HTTP recovery remains available. */
+export async function enableLocalHttps(): Promise<WebAccessActivationResult> {
+  const res = await fetch("/api/config/web-access", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirm: "ENABLE", mode: "https-local" }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
+  return data as WebAccessActivationResult;
+}
+
+/** Validate and activate an operator-supplied PEM certificate/full chain and
+ * matching unencrypted private key. The backend performs the cryptographic
+ * checks and restores the previous web mode/files if validation fails. */
+export async function applyCustomHttps(
+  certificate: string,
+  privateKey: string,
+): Promise<WebAccessActivationResult> {
+  const res = await fetch("/api/config/web-access", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      confirm: "UPLOAD",
+      mode: "https-custom",
+      certificate,
+      private_key: privateKey,
+    }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
+  return data as WebAccessActivationResult;
 }
 
 export interface InsightEntry {
@@ -670,8 +718,8 @@ export async function sendTestAlert(): Promise<{ ok: boolean; message: string }>
 
 /** POST /api/setup/apply — persist the Setup wizard's captured fields
  *  into .env. Current scope: edition + admin_user + timezone. Does NOT
- *  auto-deploy — the backend returns a "run deploy.sh on the host"
- *  message on success and the UI surfaces the next step.
+ *  auto-deploy; this endpoint belongs to the installed admin UI, not the
+ *  one-time bootstrap installer.
  *
  *  The backend requires a literal confirm:"APPLY" field in the body. */
 export interface SetupApplyChange {
@@ -689,10 +737,11 @@ export interface SetupApplyResult {
 
 export async function applySetupConfig(
   edition: "home" | "advanced",
+  topology: "single-lan" | "vlan",
   admin_user: string | null,
   timezone: string | null,
 ): Promise<SetupApplyResult> {
-  const body: Record<string, string> = { confirm: "APPLY", edition };
+  const body: Record<string, string> = { confirm: "APPLY", edition, topology };
   if (admin_user && admin_user.trim().length > 0) body.admin_user = admin_user.trim();
   if (timezone && timezone.trim().length > 0) body.timezone = timezone.trim();
 
@@ -714,15 +763,27 @@ export interface BootstrapInstallStatus {
   message: string;
   logs: string[];
   edition?: "home" | "advanced";
+  topology?: "single-lan" | "vlan";
+  web_mode?: "http" | "https-local" | "https-custom";
   home_url?: string;
   pihole_url?: string;
   pihole_password?: string;
   control_pin?: string;
   blocklists?: string[];
-  handoff?: boolean;
+  alerts?: string[];
   env_path?: string;
-  deployment_command?: string;
+  request_id?: string;
+  advanced_complete?: boolean;
+  advanced_url?: string;
+  direct_ip_url?: string;
+  certificate_url?: string;
+  grafana_url?: string;
+  pihole_trusted_url?: string;
+  pihole_iot_url?: string;
+  trusted_dns?: string;
+  iot_dns?: string;
   generated_credentials?: Record<string, string>;
+  credentials?: Record<string, string>;
   verification?: {
     tor: { ok: boolean; exit_ip?: string; detail: string };
     dns: { ok: boolean; answer?: string; detail: string };
@@ -737,6 +798,24 @@ export async function startBootstrapInstall(
   blocklists: string[],
   topology?: "single-lan" | "vlan",
   advanced_config?: Record<string, string>,
+  web_access?: {
+    mode: "http" | "https-local" | "https-custom";
+    certificate?: string;
+    private_key?: string;
+  },
+  alerts?: {
+    telegram: { enabled: boolean; bot_token?: string; chat_id?: string };
+    email: {
+      enabled: boolean;
+      to?: string;
+      from?: string;
+      smarthost?: string;
+      auth_username?: string;
+      auth_password?: string;
+      require_tls: boolean;
+    };
+    discord: { enabled: boolean; webhook_url?: string; username?: string };
+  },
 ): Promise<BootstrapInstallStatus> {
   const body: Record<string, unknown> = {
     confirm: "INSTALL",
@@ -744,6 +823,8 @@ export async function startBootstrapInstall(
     blocklists,
     topology,
     advanced_config,
+    web_access,
+    alerts,
   };
   if (admin_user?.trim()) body.admin_user = admin_user.trim();
   if (timezone?.trim()) body.timezone = timezone.trim();
@@ -760,6 +841,17 @@ export async function startBootstrapInstall(
 
 export async function fetchBootstrapStatus(): Promise<BootstrapInstallStatus> {
   const response = await fetch("/api/bootstrap/status", {
+    credentials: "include",
+    headers: { "X-Torhole-Request": "bootstrap" },
+    cache: "no-store",
+  });
+  const data = (await response.json()) as BootstrapInstallStatus & { error?: string };
+  if (!response.ok) throw new Error(data.error || data.message || `HTTP ${response.status}`);
+  return data;
+}
+
+export async function recoverBootstrapReceipt(): Promise<BootstrapInstallStatus> {
+  const response = await fetch("/api/bootstrap/receipt", {
     credentials: "include",
     headers: { "X-Torhole-Request": "bootstrap" },
     cache: "no-store",

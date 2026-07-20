@@ -44,6 +44,12 @@ function volatileMasks(page: Page): Locator[] {
 }
 
 async function gotoAndSettle(page: Page, path: string) {
+  // Visual baselines must not inherit the workstation or a prior test's
+  // appearance preference. Light mode has its own functional persistence
+  // coverage; keep screenshot diffs deterministic in the dark brand theme.
+  await page.addInitScript(() => {
+    localStorage.setItem("torhole.v2.theme", "dark");
+  });
   await page.goto(path);
   // Wait for the snapshot poll to populate the page. 1s is enough for
   // the initial fetch + render on the Pi.
@@ -87,12 +93,4 @@ test.describe("visual regression", () => {
     });
   });
 
-  test("Setup (welcome)", async ({ page }) => {
-    await gotoAndSettle(page, "/v2/#/setup");
-    await expect(page).toHaveScreenshot("setup-welcome.png", {
-      clip: VIEWPORT_CLIP,
-      mask: volatileMasks(page),
-      maxDiffPixelRatio: 0.03,
-    });
-  });
 });

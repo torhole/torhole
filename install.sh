@@ -7,7 +7,9 @@ ENV_FILE="$APP_DIR/.env.quickstart.local"
 COMPOSE_FILE="$APP_DIR/docker-compose.quickstart.yml"
 BOOTSTRAP_ENV_FILE="$APP_DIR/.env.bootstrap.local"
 BOOTSTRAP_COMPOSE_FILE="$APP_DIR/docker-compose.bootstrap.yml"
+BOOTSTRAP_RUN_DIR="$APP_DIR/run/bootstrap"
 DOCKER=(docker)
+HOST_RUNNER_USE_SUDO=0
 
 usage() {
   cat <<'EOF'
@@ -125,11 +127,42 @@ detected_address() {
   printf '%s' "$address"
 }
 
+repair_bootstrap_ownership() {
+  local owner_uid owner_gid
+  owner_uid="${SUDO_UID:-$(id -u)}"
+  owner_gid="${SUDO_GID:-$(id -g)}"
+  for path in "$BOOTSTRAP_ENV_FILE" "$BOOTSTRAP_RUN_DIR"; do
+    [[ -e "$path" ]] || continue
+    if [[ "$(id -u)" == "0" ]]; then
+      chown -R "${owner_uid}:${owner_gid}" "$path"
+    elif [[ ! -O "$path" ]]; then
+      sudo chown -R "${owner_uid}:${owner_gid}" "$path"
+    fi
+  done
+}
+
+set_bootstrap_env_value() {
+  local key="$1" value="$2" temp_file
+  temp_file="$(mktemp "${BOOTSTRAP_ENV_FILE}.XXXXXX")"
+  awk -v key="$key" -v value="$value" '
+    BEGIN { prefix = key "="; replaced = 0 }
+    index($0, prefix) == 1 {
+      if (!replaced) print prefix value
+      replaced = 1
+      next
+    }
+    { print }
+    END { if (!replaced) print prefix value }
+  ' "$BOOTSTRAP_ENV_FILE" >"$temp_file"
+  chmod 600 "$temp_file"
+  mv "$temp_file" "$BOOTSTRAP_ENV_FILE"
+}
+
 ensure_bootstrap_env() {
   if [[ -f "$BOOTSTRAP_ENV_FILE" ]]; then
-    if ! grep -q '^TORHOLE_REPO_PATH=' "$BOOTSTRAP_ENV_FILE"; then
-      printf 'TORHOLE_REPO_PATH=%s\n' "$ROOT_DIR" >>"$BOOTSTRAP_ENV_FILE"
-    fi
+    set_bootstrap_env_value TORHOLE_REPO_PATH "$ROOT_DIR"
+    set_bootstrap_env_value TORHOLE_OWNER_UID "${SUDO_UID:-$(id -u)}"
+    set_bootstrap_env_value TORHOLE_OWNER_GID "${SUDO_GID:-$(id -g)}"
     return
   fi
   local address timezone owner_uid owner_gid
@@ -173,6 +206,57 @@ rotate_bootstrap_token() {
   mv "$temp_file" "$BOOTSTRAP_ENV_FILE"
 }
 
+prepare_bootstrap_runtime() {
+  mkdir -p "$BOOTSTRAP_RUN_DIR"
+  chmod 700 "$BOOTSTRAP_RUN_DIR"
+  rm -f \
+    "$BOOTSTRAP_RUN_DIR/advanced-request.json" \
+    "$BOOTSTRAP_RUN_DIR/advanced-request.processing.json" \
+    "$BOOTSTRAP_RUN_DIR/advanced-status.json" \
+    "$BOOTSTRAP_RUN_DIR/advanced-install.log"
+}
+
+authorize_host_installer() {
+  if [[ "$(id -u)" == "0" ]]; then
+    return
+  fi
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "The guided installer needs sudo to install packages and configure host networking."
+    echo "Install sudo or run ./install.sh as root, then try again."
+    exit 1
+  fi
+
+  echo
+  echo "Torhole needs one operating-system authorization before the browser opens."
+  echo "After this, the web wizard performs and monitors the complete installation."
+  # Cloud images and managed appliances commonly grant NOPASSWD sudo. `sudo
+  # -v` still asks those users for an account password even though every
+  # installer command is already authorized, so test a real non-interactive
+  # command first and prompt only when the policy actually requires it.
+  if ! sudo -n true >/dev/null 2>&1; then
+    sudo -v
+  fi
+  HOST_RUNNER_USE_SUDO=1
+}
+
+cleanup_wizard() {
+  if [[ -f "$BOOTSTRAP_ENV_FILE" ]]; then
+    bootstrap_compose down >/dev/null 2>&1 || true
+  fi
+}
+
+run_host_installer() {
+  local -a args=(--root "$ROOT_DIR")
+  if [[ "$HOST_RUNNER_USE_SUDO" == "1" ]]; then
+    args+=(--use-sudo)
+  fi
+  if [[ "${DOCKER[0]}" == "sudo" ]]; then
+    args+=(--docker-uses-sudo)
+  fi
+  TORHOLE_BOOTSTRAP_TOKEN="$(bootstrap_env_value TORHOLE_BOOTSTRAP_TOKEN)" \
+    python3 "$APP_DIR/bootstrap/host_runner.py" "${args[@]}"
+}
+
 open_installer_url() {
   local url="$1"
   if command -v xdg-open >/dev/null 2>&1 && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
@@ -184,8 +268,11 @@ open_installer_url() {
 
 start_wizard() {
   need_docker
+  authorize_host_installer
+  repair_bootstrap_ownership
   ensure_bootstrap_env
   rotate_bootstrap_token
+  prepare_bootstrap_runtime
   echo "Starting the Torhole setup wizard…"
   bootstrap_compose up -d --build
 
@@ -212,6 +299,12 @@ start_wizard() {
   echo
   echo "Keep this terminal open while Torhole installs."
   open_installer_url "$url"
+
+  trap cleanup_wizard EXIT
+  trap 'exit 130' INT TERM
+  run_host_installer
+  cleanup_wizard
+  trap - EXIT INT TERM
 }
 
 ensure_env() {
@@ -318,8 +411,41 @@ show_success() {
 }
 
 show_credentials() {
+  local advanced_file="$APP_DIR/.env"
+  if [[ -f "$advanced_file" ]] && [[ "$(sed -n 's/^TORHOLE_EDITION=//p' "$advanced_file" | head -n 1)" == "advanced" ]]; then
+    local topology web_mode scheme host_ip domain admin_user admin_password
+    local trusted_ip trusted_password iot_ip iot_password
+    topology="$(sed -n 's/^TORHOLE_TOPOLOGY=//p' "$advanced_file" | head -n 1)"
+    web_mode="$(sed -n 's/^TORHOLE_WEB_MODE=//p' "$advanced_file" | head -n 1)"
+    host_ip="$(sed -n 's/^HOST_MGMT_IP=//p' "$advanced_file" | head -n 1)"
+    domain="$(sed -n 's/^REVERSE_PROXY_DOMAIN=//p' "$advanced_file" | head -n 1)"
+    admin_user="$(sed -n 's/^TORHOLE_ADMIN_USER=//p' "$advanced_file" | head -n 1)"
+    admin_password="$(sed -n 's/^TORHOLE_ADMIN_PASSWORD=//p' "$advanced_file" | head -n 1)"
+    trusted_ip="$(sed -n 's/^PIHOLE_TRUSTED_IP=//p' "$advanced_file" | head -n 1)"
+    trusted_password="$(sed -n 's/^PIHOLE_TRUSTED_PASSWORD=//p' "$advanced_file" | head -n 1)"
+    iot_ip="$(sed -n 's/^PIHOLE_IOT_IP=//p' "$advanced_file" | head -n 1)"
+    iot_password="$(sed -n 's/^PIHOLE_IOT_PASSWORD=//p' "$advanced_file" | head -n 1)"
+    [[ -n "$admin_user" ]] || admin_user="admin"
+    scheme="https"
+    [[ "$web_mode" == "http" ]] && scheme="http"
+
+    echo "Torhole Advanced access details (keep this output private):"
+    echo
+    echo "Torhole direct IP:       http://${host_ip}/"
+    [[ -n "$domain" ]] && echo "Torhole Advanced:        ${scheme}://torhole.${domain}/"
+    echo "Torhole / SSO username:  ${admin_user}"
+    echo "Torhole / SSO password:  ${admin_password}"
+    echo "Trusted Pi-hole:         ${trusted_ip} (username: admin)"
+    echo "Trusted Pi-hole password:${trusted_password:+ }${trusted_password}"
+    if [[ "$topology" == "vlan" ]]; then
+      echo "IoT Pi-hole:             ${iot_ip} (username: admin)"
+      echo "IoT Pi-hole password:    ${iot_password}"
+    fi
+    return
+  fi
+
   if [[ ! -f "$ENV_FILE" ]]; then
-    echo "No Torhole Home credentials were found."
+    echo "No Torhole credentials were found."
     echo "Run './install.sh' to install Torhole first."
     exit 1
   fi

@@ -37,7 +37,7 @@ import {
 import SectionTabs, { type SectionTabDef } from "../components/SectionTabs";
 import {
   formatRelative,
-  rotateTorPlane,
+  rotateTorIdentity,
   runLeakTest,
   useQueryFeed,
   useSnapshot,
@@ -49,11 +49,6 @@ import {
   type StatusKind,
   type TorCircuit,
 } from "../lib/snapshot";
-
-const PLANE_LABELS: Record<string, string> = {
-  trusted: "Trusted",
-  iot: "IoT",
-};
 
 export default function PrivacyScreen() {
   const { state, refetch } = useSnapshot();
@@ -85,7 +80,7 @@ export default function PrivacyScreen() {
     {
       id: "internal",
       eyebrow: "advanced",
-      title: "Internal circuits",
+      title: "Tor circuits",
       meta: internalMeta,
       icon: <Lock size={11} />,
       content: <InternalCircuitsPanel state={state} />,
@@ -93,7 +88,7 @@ export default function PrivacyScreen() {
   ];
 
   return (
-    <div className="px-6 py-7 lg:px-10 lg:py-9 xl:px-14 max-w-[1500px] 2xl:max-w-[1700px] mx-auto">
+    <div className="th-page-enter px-6 py-7 lg:px-10 lg:py-9 xl:px-14 max-w-[1500px] 2xl:max-w-[1700px] mx-auto">
       <Header state={state} />
       <PrivacyHero state={state} />
       <TorRuntimeStrip state={state} />
@@ -249,8 +244,7 @@ function computeInternalMeta(state: SnapshotState): string | undefined {
   if (state.kind !== "ready") return undefined;
   const circuits = state.data.tor.circuits;
   if (!circuits.available) return "unavailable";
-  const internal = circuits.items.filter((c) => !c.socks_username).length;
-  return `${internal} background`;
+  return `${circuits.count} reported`;
 }
 
 function Header({ state }: { state: SnapshotState }) {
@@ -304,12 +298,10 @@ function PrivacyHero({ state }: { state: SnapshotState }) {
   const tor = data.tor;
   const circuits = tor.circuits;
   const intact = data.torhole.privacy_intact;
-  const planeWithCircuits = circuits.available
-    ? Object.entries(circuits.by_plane).filter(([, v]) => v.length > 0).length
-    : 0;
+  const configuredPlaneCount = data.dns.planes.length;
 
   return (
-    <div className="th-scanlines relative overflow-hidden mb-6 rounded-lg px-9 py-8 border bg-gradient-to-br from-th-panel via-th-panel to-th-primary/[0.04] border-th-line">
+    <div className="th-scanlines th-hero-surface relative overflow-hidden mb-6 rounded-xl px-9 py-8 border bg-gradient-to-br from-th-panel via-th-panel to-th-primary/[0.04] border-th-line">
       <div className="flex items-start gap-7">
         <div
           className={`w-[80px] h-[80px] rounded-xl flex items-center justify-center shrink-0 ${
@@ -330,7 +322,7 @@ function PrivacyHero({ state }: { state: SnapshotState }) {
           </div>
           <div className="text-[13.5px] text-th-text-muted mt-2">
             {tor.bootstrap.status === "healthy"
-              ? `Tor bootstrapped. ${circuits.count} active circuit${circuits.count === 1 ? "" : "s"} across ${planeWithCircuits} plane${planeWithCircuits === 1 ? "" : "s"}.`
+              ? `Tor bootstrapped. ${circuits.count} circuit entr${circuits.count === 1 ? "y" : "ies"} reported; ${configuredPlaneCount} isolated DNS plane${configuredPlaneCount === 1 ? "" : "s"} configured.`
               : "Tor is not bootstrapped — privacy guarantee in flux."}
           </div>
 
@@ -431,8 +423,11 @@ function ProofTile({ label, value, status }: { label: string; value: string; sta
  * ----------------------------------------------------------------------- */
 
 function CircuitPlanePanels({ state, refetch }: { state: SnapshotState; refetch: () => void }) {
+  const [rotate, setRotate] = useState<RotateState>({ kind: "idle" });
   if (state.kind !== "ready") return null;
   const circuits = state.data.tor.circuits;
+  const activePlaneIds = new Set(state.data.dns.planes.map((plane) => plane.id));
+  const planeLabels = new Map(state.data.dns.planes.map((plane) => [plane.id, plane.label]));
 
   if (!circuits.available) {
     return (
@@ -455,26 +450,65 @@ function CircuitPlanePanels({ state, refetch }: { state: SnapshotState; refetch:
     );
   }
 
-  const planes: Array<{ id: "trusted" | "iot"; circuitIds: string[] }> = [
+  const allPlanes: Array<{ id: "trusted" | "iot"; circuitIds: string[] }> = [
     { id: "trusted", circuitIds: circuits.by_plane.trusted },
     { id: "iot", circuitIds: circuits.by_plane.iot },
   ];
+  const planes = allPlanes.filter((plane) => activePlaneIds.has(plane.id));
+
+  const handleRotate = async () => {
+    setRotate({ kind: "loading" });
+    try {
+      const result = await rotateTorIdentity();
+      if (!result.ok) throw new Error(result.message);
+      setRotate({ kind: "success" });
+      refetch();
+      setTimeout(() => refetch(), 1500);
+      setTimeout(() => setRotate({ kind: "idle" }), 2500);
+    } catch (err) {
+      setRotate({ kind: "error", message: (err as Error).message });
+      setTimeout(() => setRotate({ kind: "idle" }), 4000);
+    }
+  };
 
   return (
     <SectionCard
       eyebrow="tor circuits"
-      title="Per-plane circuit isolation"
-      meta={`${circuits.count} live · ${planes.filter((p) => p.circuitIds.length > 0).length}/3 planes active`}
+      title="DNS plane isolation"
+      meta={`${planes.length} configured · ${circuits.count} Tor circuit entries`}
       className="mb-5"
+      action={
+        <button
+          type="button"
+          onClick={handleRotate}
+          disabled={rotate.kind === "loading"}
+          title={rotate.kind === "error" ? rotate.message : "Request a new global Tor identity"}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded border min-h-[38px] text-[10.5px] font-mono uppercase tracking-[0.12em] ${
+            rotate.kind === "success"
+              ? "border-th-primary/40 bg-th-primary/10 text-th-primary"
+              : rotate.kind === "error"
+              ? "border-th-danger/40 bg-th-danger/10 text-th-danger"
+              : "border-th-line bg-th-bg/60 text-th-text-muted hover:text-th-text hover:border-th-primary/40"
+          }`}
+        >
+          <RefreshCw size={12} className={rotate.kind === "loading" ? "animate-spin" : ""} />
+          {rotate.kind === "loading"
+            ? "renewing…"
+            : rotate.kind === "success"
+            ? "identity renewed"
+            : rotate.kind === "error"
+            ? "renewal failed"
+            : "renew Tor identity"}
+        </button>
+      }
     >
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+      <div className={`grid grid-cols-1 ${planes.length > 1 ? "lg:grid-cols-2" : ""} gap-3`}>
         {planes.map((plane) => (
           <PlaneCircuitCard
             key={plane.id}
-            planeId={plane.id}
+            planeLabel={planeLabels.get(plane.id) || plane.id}
             circuitIds={plane.circuitIds}
             allItems={circuits.items}
-            refetch={refetch}
           />
         ))}
       </div>
@@ -489,76 +523,40 @@ type RotateState =
   | { kind: "error"; message: string };
 
 function PlaneCircuitCard({
-  planeId,
+  planeLabel,
   circuitIds,
   allItems,
-  refetch,
 }: {
-  planeId: "trusted" | "iot";
+  planeLabel: string;
   circuitIds: string[];
   allItems: TorCircuit[];
-  refetch: () => void;
 }) {
   const circuits = circuitIds
     .map((id) => allItems.find((c) => c.id === id))
     .filter((c): c is TorCircuit => Boolean(c));
-  const active = circuits.length > 0;
-  const [rotate, setRotate] = useState<RotateState>({ kind: "idle" });
-
-  // Per-plane rotation: closes ONLY the circuits owned by this plane (via
-  // SOCKS_USERNAME match). New circuits will be built on the next DNS query
-  // through this plane. Other planes are untouched.
-  const handleRotate = async () => {
-    setRotate({ kind: "loading" });
-    try {
-      const result = await rotateTorPlane(planeId);
-      if (!result.ok) {
-        throw new Error(result.message);
-      }
-      setRotate({ kind: "success" });
-      refetch();
-      // Poll again after a short delay so freshly built circuits appear
-      // once dnscrypt-proxy makes its next query through this plane.
-      setTimeout(() => refetch(), 1500);
-      setTimeout(() => setRotate({ kind: "idle" }), 2500);
-    } catch (err) {
-      setRotate({ kind: "error", message: (err as Error).message });
-      setTimeout(() => setRotate({ kind: "idle" }), 4000);
-    }
-  };
-
-  const buttonClasses =
-    "mt-auto flex items-center justify-center gap-1.5 px-3 py-2.5 rounded text-[10.5px] font-mono uppercase tracking-[0.14em] min-h-[44px] transition-colors";
-  const buttonState =
-    rotate.kind === "loading"
-      ? "bg-th-bg/60 border border-th-line text-th-text-muted cursor-wait"
-      : rotate.kind === "success"
-      ? "bg-th-primary/15 border border-th-primary/40 text-th-primary"
-      : rotate.kind === "error"
-      ? "bg-th-danger/10 border border-th-danger/40 text-th-danger"
-      : "bg-th-bg/60 border border-th-line text-th-text-muted hover:text-th-text hover:border-th-primary/40 hover:bg-th-primary/[0.04]";
+  const attributed = circuits.length > 0;
 
   return (
     <div
       className={`rounded-md border p-3.5 flex flex-col gap-2.5 ${
-        active ? "bg-th-bg/60 border-th-line" : "bg-th-bg/30 border-th-line/40"
+        "bg-th-bg/60 border-th-line"
       }`}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span
-            className={`w-1.5 h-1.5 rounded-full ${active ? "bg-th-primary" : "bg-th-text-muted/40"}`}
+            className="w-1.5 h-1.5 rounded-full bg-th-primary"
           />
           <div className="text-[10px] uppercase tracking-[0.14em] text-th-text-muted font-mono">
-            {PLANE_LABELS[planeId]}
+            {planeLabel}
           </div>
         </div>
         <div className="text-[9.5px] uppercase tracking-[0.14em] text-th-primary/70 font-mono">
-          {active ? `${circuits.length} live` : "idle"}
+          {attributed ? `${circuits.length} attributed` : "isolation configured"}
         </div>
       </div>
 
-      {active ? (
+      {attributed ? (
         <div className="flex flex-col gap-2.5">
           {circuits.map((c) => (
             <CircuitDetail key={c.id} circuit={c} />
@@ -566,46 +564,11 @@ function PlaneCircuitCard({
         </div>
       ) : (
         <div className="text-[11px] text-th-text-muted/70 font-mono py-3 px-1">
-          no active circuit · plane is idle
+          SOCKS credential isolation is configured. Tor may prebuild circuits
+          before a short DNS stream owns them, so the current circuit table has
+          no reliable plane label.
         </div>
       )}
-
-      <button
-        type="button"
-        onClick={handleRotate}
-        disabled={rotate.kind === "loading"}
-        className={`${buttonClasses} ${buttonState}`}
-        title={
-          rotate.kind === "error"
-            ? rotate.message
-            : "Rotate Tor identity (sends NEWNYM signal — affects all planes)"
-        }
-      >
-        {rotate.kind === "loading" && (
-          <>
-            <RefreshCw size={12} className="animate-spin" />
-            rotating…
-          </>
-        )}
-        {rotate.kind === "success" && (
-          <>
-            <Check size={13} strokeWidth={2.5} />
-            rotated
-          </>
-        )}
-        {rotate.kind === "error" && (
-          <>
-            <RefreshCw size={12} />
-            failed
-          </>
-        )}
-        {rotate.kind === "idle" && (
-          <>
-            <RefreshCw size={12} />
-            rotate identity
-          </>
-        )}
-      </button>
     </div>
   );
 }
@@ -1144,18 +1107,17 @@ function InternalCircuitsPanel({ state }: { state: SnapshotState }) {
     );
   }
 
-  const internal = circuits.items.filter((c) => !c.socks_username);
-
   return (
     <div className="bg-th-panel border border-th-line rounded-lg p-4">
       <div className="text-[11px] text-th-text-muted/80 leading-relaxed mb-3">
-        Background circuits used by Tor for hidden service vanguards, conflux
-        multipaths, and directory operations. These are not attached to any
-        specific plane — they're Tor's internal housekeeping. Live Tor
-        runtime state is shown at the top of this screen.
+        Tor's current circuit table, including prebuilt paths, Conflux
+        multipaths, directory work, and circuits carrying application streams.
+        Tor only includes a SOCKS identity when it attributes a circuit to a
+        client, so an unlabeled circuit must not be presented as a specific DNS
+        plane. Relay nicknames and path details come directly from the control port.
       </div>
       <div className="space-y-1 max-h-[400px] overflow-y-auto pr-1">
-        {internal.map((c) => (
+        {circuits.items.map((c) => (
           <InternalCircuitRow key={c.id} circuit={c} />
         ))}
       </div>
@@ -1219,4 +1181,3 @@ function SectionCard({
     </section>
   );
 }
-

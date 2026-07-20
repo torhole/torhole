@@ -19,11 +19,10 @@
  *     two-column section (planes + containers), then quick actions.
  */
 
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import {
   Activity,
   AlertCircle,
-  Bell,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -33,14 +32,16 @@ import {
   HardDrive,
   Lock,
   LogOut,
+  Moon,
   Network,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  Sun,
   Zap,
 } from "lucide-react";
-import { Routes, Route, NavLink } from "react-router-dom";
+import { Routes, Route, NavLink, Navigate, Link, useLocation } from "react-router-dom";
 import PrivacyScreen from "./screens/Privacy";
 import OperateScreen from "./screens/Operate";
 import ConfigureScreen from "./screens/Configure";
@@ -63,18 +64,56 @@ import {
 } from "./lib/snapshot";
 
 const SIDEBAR_COLLAPSED_KEY = "torhole.v2.sidebar.collapsed";
+const THEME_KEY = "torhole.v2.theme";
+type ThemePreference = "dark" | "light";
+const PrivacyFlowCanvas = lazy(() => import("./components/PrivacyFlowCanvas"));
+
+function DeferredPrivacyFlow({ active }: { active: boolean }) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const browserWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    const handle = browserWindow.requestIdleCallback
+      ? browserWindow.requestIdleCallback(() => setReady(true), { timeout: 1400 })
+      : window.setTimeout(() => setReady(true), 500);
+    return () => {
+      if (browserWindow.cancelIdleCallback) browserWindow.cancelIdleCallback(handle);
+      else window.clearTimeout(handle);
+    };
+  }, []);
+  if (!ready) return null;
+  return (
+    <Suspense fallback={null}>
+      <PrivacyFlowCanvas active={active} />
+    </Suspense>
+  );
+}
 
 export default function App() {
+  const [theme, setTheme] = useThemePreference();
   const developmentMode = import.meta.env.DEV
     ? new URLSearchParams(window.location.search).get("mode")
     : null;
   if (window.__TORHOLE_MODE__ === "home" || developmentMode === "home") {
-    return <HomeScreen />;
+    return (
+      <>
+        <HomeScreen />
+        <FloatingThemeControl theme={theme} onChange={setTheme} />
+      </>
+    );
   }
   if (window.__TORHOLE_MODE__ === "bootstrap" || developmentMode === "bootstrap") {
-    return <SetupScreen bootstrap />;
+    return (
+      <>
+        <SetupScreen bootstrap />
+        <FloatingThemeControl theme={theme} onChange={setTheme} />
+      </>
+    );
   }
-  return <AdvancedApp />;
+  return <AdvancedApp theme={theme} onThemeChange={setTheme} />;
 }
 
 declare global {
@@ -83,7 +122,36 @@ declare global {
   }
 }
 
-function AdvancedApp() {
+function useThemePreference(): [ThemePreference, (theme: ThemePreference) => void] {
+  const [theme, setTheme] = useState<ThemePreference>(() => {
+    try {
+      const stored = localStorage.getItem(THEME_KEY);
+      if (stored === "light" || stored === "dark") return stored;
+      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    } catch {
+      return "dark";
+    }
+  });
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    window.dispatchEvent(new Event("torhole-theme"));
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      /* localStorage may be unavailable */
+    }
+  }, [theme]);
+  return [theme, setTheme];
+}
+
+function AdvancedApp({
+  theme,
+  onThemeChange,
+}: {
+  theme: ThemePreference;
+  onThemeChange: (theme: ThemePreference) => void;
+}) {
   // Sidebar collapse state — persisted in localStorage so the operator's
   // preference survives reloads. Defaults to expanded; click the chevron at
   // the bottom of the sidebar to collapse on narrower screens (iPad).
@@ -118,6 +186,8 @@ function AdvancedApp() {
       <Sidebar
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed((v) => !v)}
+        theme={theme}
+        onThemeChange={onThemeChange}
       />
       <main className="flex-1 min-w-0 flex flex-col">
         <EnvBannerStrip />
@@ -127,7 +197,9 @@ function AdvancedApp() {
             <Route path="/privacy" element={<PrivacyScreen />} />
             <Route path="/operate" element={<OperateScreen />} />
             <Route path="/configure" element={<ConfigureScreen />} />
-            <Route path="/setup" element={<SetupScreen />} />
+            {/* Setup is a first-run surface. Installed systems are maintained
+                from Configure; a stale bookmark must not reopen commissioning. */}
+            <Route path="/setup" element={<Navigate to="/configure" replace />} />
             <Route path="*" element={<GlanceScreen />} />
           </Routes>
         </div>
@@ -188,20 +260,81 @@ function EnvBannerStrip() {
  *  hostname (torhole.<domain> -> auth.<domain>) rather than the snapshot so
  *  sign-out still works when the backend is unreachable. */
 function signOut() {
+  if (window.location.protocol === "http:") {
+    window.location.reload();
+    return;
+  }
   const parts = window.location.hostname.split(".");
   const authHost = ["auth", ...parts.slice(1)].join(".");
   const rd = encodeURIComponent(`${window.location.origin}/v2/`);
-  window.location.href = `https://${authHost}/logout?rd=${rd}`;
+  window.location.href = `${window.location.protocol}//${authHost}/logout?rd=${rd}`;
 }
 
-function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
-  const items = [
-    { to: "/", label: "Glance", icon: Activity, enabled: true },
-    { to: "/privacy", label: "Privacy", icon: Lock, enabled: true },
-    { to: "/operate", label: "Operate", icon: HardDrive, enabled: true },
-    { to: "/configure", label: "Configure", icon: Network, enabled: true },
-    { to: "/setup", label: "Setup", icon: Bell, enabled: true },
+type SidebarGroup = {
+  to: string;
+  label: string;
+  icon: typeof Activity;
+  children?: Array<{ label: string; section: string }>;
+};
+
+function Sidebar({
+  collapsed,
+  onToggle,
+  theme,
+  onThemeChange,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+  theme: ThemePreference;
+  onThemeChange: (theme: ThemePreference) => void;
+}) {
+  const location = useLocation();
+  const groups: SidebarGroup[] = [
+    { to: "/", label: "Glance", icon: Activity },
+    {
+      to: "/privacy",
+      label: "Privacy",
+      icon: Lock,
+      children: [
+        { label: "DNS leak test", section: "leak-test" },
+        { label: "Live queries", section: "query-feed" },
+        { label: "Tor circuits", section: "internal" },
+      ],
+    },
+    {
+      to: "/operate",
+      label: "Operate",
+      icon: HardDrive,
+      children: [
+        { label: "Containers", section: "containers" },
+        { label: "Backups", section: "backups" },
+        { label: "Validation", section: "validation" },
+        { label: "Insights", section: "insights" },
+      ],
+    },
+    {
+      to: "/configure",
+      label: "Configure",
+      icon: Network,
+      children: [
+        { label: "Identity & access", section: "identity" },
+        { label: "Topology", section: "topology" },
+        { label: "Alert channels", section: "alerts" },
+        { label: "Banner", section: "banner" },
+        { label: "App parameters", section: "advanced" },
+      ],
+    },
   ];
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => ({
+    [location.pathname]: true,
+  }));
+  const selectedSection = new URLSearchParams(location.search).get("section");
+
+  useEffect(() => {
+    if (location.pathname !== "/") {
+      setExpanded((current) => ({ ...current, [location.pathname]: true }));
+    }
+  }, [location.pathname]);
 
   return (
     <aside
@@ -251,43 +384,71 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
         </button>
       </div>
 
-      <nav className={`flex-1 space-y-0.5 ${collapsed ? "px-2" : "px-3"}`}>
-        {items.map(({ to, label, icon: Icon, enabled }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === "/"}
-            title={collapsed ? label : undefined}
-            /* min-h-[44px] satisfies the iOS touch target guideline */
-            className={({ isActive }) =>
-              [
-                "flex items-center rounded-md text-[13px] transition-colors min-h-[44px]",
-                collapsed ? "justify-center px-2" : "gap-2.5 px-3",
-                enabled
-                  ? isActive
-                    ? collapsed
-                      ? "bg-th-line/60 text-th-text"
-                      : "bg-th-line/60 text-th-text border-l-2 border-l-th-primary -ml-0.5 pl-[10px]"
-                    : "text-th-text-muted hover:text-th-text hover:bg-th-line/30"
-                  : "text-th-text-muted/40 cursor-not-allowed",
-              ].join(" ")
-            }
-            onClick={(e) => {
-              if (!enabled) e.preventDefault();
-            }}
-          >
-            <Icon size={15} strokeWidth={2} />
-            {!collapsed && <span>{label}</span>}
-            {!collapsed && !enabled && (
-              <span className="ml-auto text-[9px] uppercase tracking-[0.14em] text-th-text-muted/40 font-mono">
-                soon
-              </span>
-            )}
-          </NavLink>
-        ))}
+      <nav className={`flex-1 space-y-1 overflow-y-auto ${collapsed ? "px-2" : "px-3"}`}>
+        {groups.map(({ to, label, icon: Icon, children }) => {
+          const active = location.pathname === to;
+          const open = !collapsed && Boolean(children && expanded[to]);
+          return (
+            <div key={to}>
+              <div className="flex items-center gap-1">
+                <NavLink
+                  to={to}
+                  end={to === "/"}
+                  title={collapsed ? label : undefined}
+                  className={[
+                    "flex min-h-[44px] flex-1 items-center rounded-md text-[13px] transition-all",
+                    collapsed ? "justify-center px-2" : "gap-2.5 px-3",
+                    active
+                      ? collapsed
+                        ? "bg-th-line/60 text-th-text shadow-[inset_0_0_20px_rgba(34,197,94,0.05)]"
+                        : "-ml-0.5 border-l-2 border-l-th-primary bg-th-line/60 pl-[10px] text-th-text"
+                      : "text-th-text-muted hover:bg-th-line/30 hover:text-th-text",
+                  ].join(" ")}
+                >
+                  <Icon size={15} strokeWidth={2} />
+                  {!collapsed && <span>{label}</span>}
+                </NavLink>
+                {!collapsed && children && (
+                  <button
+                    type="button"
+                    aria-label={`${open ? "Collapse" : "Expand"} ${label} menu`}
+                    aria-expanded={open}
+                    onClick={() => setExpanded((current) => ({ ...current, [to]: !current[to] }))}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-th-text-muted hover:bg-th-line/40 hover:text-th-text"
+                  >
+                    <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+                  </button>
+                )}
+              </div>
+              {open && children && (
+                <div className="relative ml-[18px] mt-1 space-y-0.5 border-l border-th-line/80 pl-3">
+                  {children.map((child) => {
+                    const childActive =
+                      active && (selectedSection || children[0].section) === child.section;
+                    return (
+                      <Link
+                        key={child.section}
+                        to={`${to}?section=${child.section}`}
+                        className={`group flex min-h-[34px] items-center gap-2 rounded px-2 text-[11px] transition-colors ${
+                          childActive
+                            ? "bg-th-primary/[0.08] text-th-primary"
+                            : "text-th-text-muted/75 hover:bg-th-line/25 hover:text-th-text"
+                        }`}
+                      >
+                        <span className={`h-1 w-1 rounded-full ${childActive ? "bg-th-primary shadow-[0_0_8px_var(--color-th-primary)]" : "bg-th-text-muted/35 group-hover:bg-th-primary/60"}`} />
+                        {child.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </nav>
 
-      <div className={`pb-2 ${collapsed ? "px-2" : "px-3"}`}>
+      <div className={`mt-2 border-t border-th-line/50 pt-3 ${collapsed ? "px-2" : "px-3"}`}>
+        <ThemeControl collapsed={collapsed} theme={theme} onChange={onThemeChange} />
         <button
           type="button"
           onClick={signOut}
@@ -305,10 +466,93 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
 
       {!collapsed && (
         <div className="border-t border-th-line/40 px-5 py-4 text-[10px] text-th-text-muted/50 font-mono uppercase tracking-[0.14em]">
-          v2 prototype · 0.1
+          privacy infrastructure · live
         </div>
       )}
     </aside>
+  );
+}
+
+function ThemeControl({
+  collapsed,
+  theme,
+  onChange,
+}: {
+  collapsed: boolean;
+  theme: ThemePreference;
+  onChange: (theme: ThemePreference) => void;
+}) {
+  if (collapsed) {
+    const Icon = theme === "light" ? Sun : Moon;
+    const next = theme === "light" ? "dark" : "light";
+    return (
+      <button
+        type="button"
+        title={`Switch to ${next} theme`}
+        aria-label={`Switch to ${next} theme`}
+        onClick={() => onChange(next)}
+        className="mb-1 flex min-h-[44px] w-full items-center justify-center rounded-md text-th-text-muted hover:bg-th-line/30 hover:text-th-text"
+      >
+        <Icon size={15} />
+      </button>
+    );
+  }
+  return (
+    <div className="mb-2 flex min-h-[44px] items-center justify-between px-1">
+      <span className="font-mono text-[8.5px] uppercase tracking-[0.15em] text-th-text-muted/55">Appearance</span>
+      <ThemeSwitch theme={theme} onChange={onChange} />
+    </div>
+  );
+}
+
+function ThemeSwitch({
+  theme,
+  onChange,
+}: {
+  theme: ThemePreference;
+  onChange: (theme: ThemePreference) => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="Color theme"
+      className="flex rounded-full border border-th-line/70 bg-th-line/55 p-[3px] shadow-inner"
+    >
+      {([
+        { value: "light" as const, label: "Light", icon: Sun },
+        { value: "dark" as const, label: "Dark", icon: Moon },
+      ]).map(({ value, label, icon: Icon }) => (
+        <button
+          key={value}
+          type="button"
+          aria-label={`${label} theme`}
+          aria-pressed={theme === value}
+          title={`${label} theme`}
+          onClick={() => onChange(value)}
+          className={`flex h-7 w-7 items-center justify-center rounded-full transition-all duration-200 ${
+            theme === value
+              ? "bg-th-panel text-th-text shadow-[0_2px_8px_rgba(0,0,0,0.22)] ring-1 ring-th-line"
+              : "text-th-text-muted/65 hover:text-th-text"
+          }`}
+        >
+          <Icon size={14} strokeWidth={2} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function FloatingThemeControl({
+  theme,
+  onChange,
+}: {
+  theme: ThemePreference;
+  onChange: (theme: ThemePreference) => void;
+}) {
+  return (
+    <div className="fixed bottom-5 right-5 z-50 rounded-full bg-th-panel/85 p-1 shadow-[0_14px_40px_rgba(0,0,0,0.18)] backdrop-blur">
+      <ThemeSwitch theme={theme} onChange={onChange} />
+    </div>
   );
 }
 
@@ -325,7 +569,7 @@ function GlanceScreen() {
      * even on ultrawide displays. Padding scales with breakpoint so the
      * page breathes more on bigger canvases.
      */
-    <div className="px-6 py-7 lg:px-10 lg:py-9 xl:px-14 max-w-[1500px] 2xl:max-w-[1700px] mx-auto">
+    <div className="th-page-enter px-6 py-7 lg:px-10 lg:py-9 xl:px-14 max-w-[1500px] 2xl:max-w-[1700px] mx-auto">
       <Header state={state} />
       <Hero state={state} />
       <ProofRow state={state} />
@@ -407,39 +651,76 @@ function Hero({ state }: { state: SnapshotState }) {
 
   return (
     <div
-      className={`th-scanlines relative overflow-hidden mb-7 rounded-lg px-9 py-9 border ${
+      className={`th-scanlines th-hero-surface relative overflow-hidden mb-7 rounded-xl px-9 py-9 border ${
         intact
           ? "bg-gradient-to-br from-th-panel via-th-panel to-th-primary/[0.04] border-th-line"
           : "bg-th-panel border-th-danger/40"
       }`}
     >
-      <div className="flex items-start gap-7">
-        <div
-          className={`w-[80px] h-[80px] rounded-xl flex items-center justify-center shrink-0 ${
-            intact
-              ? "bg-th-primary/12 text-th-primary ring-1 ring-th-primary/30 shadow-[0_0_36px_rgba(34,197,94,0.20)]"
-              : "bg-th-danger/15 text-th-danger ring-1 ring-th-danger/30"
-          }`}
-        >
-          {intact ? (
-            <ShieldCheck size={42} strokeWidth={1.8} />
-          ) : (
-            <ShieldAlert size={42} strokeWidth={1.8} />
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
+      <DeferredPrivacyFlow active={intact} />
+      <div className="relative z-10 grid grid-cols-[minmax(0,1.3fr)_minmax(250px,0.7fr)] gap-8">
+        <div className="flex items-start gap-5">
           <div
-            className={`text-[34px] font-bold leading-[1.05] tracking-[-0.02em] ${
-              intact ? "text-th-text" : "text-th-danger"
+            className={`w-[68px] h-[68px] rounded-xl flex items-center justify-center shrink-0 ${
+              intact
+                ? "bg-th-primary/12 text-th-primary ring-1 ring-th-primary/30 shadow-[0_0_36px_rgba(34,197,94,0.20)]"
+                : "bg-th-danger/15 text-th-danger ring-1 ring-th-danger/30"
             }`}
           >
-            {intact ? "DNS exits via Tor" : "Privacy guarantee compromised"}
+            {intact ? (
+              <ShieldCheck size={36} strokeWidth={1.8} />
+            ) : (
+              <ShieldAlert size={36} strokeWidth={1.8} />
+            )}
           </div>
-          <div className="text-[13.5px] text-th-text-muted mt-2">
-            {data.torhole.headline}
+          <div className="flex-1 min-w-0">
+            <div
+              className={`text-[32px] font-bold leading-[1.05] tracking-[-0.02em] ${
+                intact ? "text-th-text" : "text-th-danger"
+              }`}
+            >
+              {intact ? "DNS exits via Tor" : "Privacy guarantee compromised"}
+            </div>
+            <div className="text-[13.5px] text-th-text-muted mt-2">
+              {data.torhole.headline}
+            </div>
+            <HeroProofTerminal data={data} />
           </div>
-          <HeroProofTerminal data={data} />
         </div>
+        <FlowStory data={data} intact={intact} />
+      </div>
+    </div>
+  );
+}
+
+function FlowStory({ data, intact }: { data: Snapshot; intact: boolean }) {
+  const exitIp = data.leak_test.last_result?.ip || "verify on demand";
+  const planes = data.dns.planes.length;
+  const stages = [
+    { label: "DNS ingress", value: `${planes} isolated ${planes === 1 ? "plane" : "planes"}` },
+    { label: "Tor relay mesh", value: data.tor.bootstrap.status === "healthy" ? "circuit ready" : "attention required" },
+    { label: "Anonymized exit", value: exitIp },
+  ];
+  return (
+    <div className="relative flex min-h-[220px] flex-col justify-between py-1 pl-4">
+      <div className="flex items-center justify-end gap-2 font-mono text-[9px] uppercase tracking-[0.16em] text-th-text-muted/70">
+        <span className={`h-1.5 w-1.5 rounded-full ${intact ? "bg-th-primary animate-pulse" : "bg-th-danger"}`} />
+        live privacy path
+      </div>
+      <div className="space-y-2.5 self-end w-full max-w-[280px]">
+        {stages.map((stage, index) => (
+          <div key={stage.label} className="th-flow-label group flex items-center gap-3 rounded-md border border-th-line/65 bg-th-bg/55 px-3 py-2.5 backdrop-blur-sm">
+            <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border font-mono text-[9px] ${
+              intact ? "border-th-primary/35 bg-th-primary/10 text-th-primary" : "border-th-danger/35 bg-th-danger/10 text-th-danger"
+            }`}>
+              0{index + 1}
+            </span>
+            <div className="min-w-0">
+              <div className="text-[10px] font-semibold text-th-text">{stage.label}</div>
+              <div className="truncate font-mono text-[9.5px] text-th-text-muted" title={stage.value}>{stage.value}</div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

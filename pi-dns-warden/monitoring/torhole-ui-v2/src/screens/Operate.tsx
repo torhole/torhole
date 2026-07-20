@@ -127,7 +127,7 @@ export default function OperateScreen() {
   ];
 
   return (
-    <div className="px-6 py-7 lg:px-10 lg:py-9 xl:px-14 max-w-[1500px] 2xl:max-w-[1700px] mx-auto">
+    <div className="th-page-enter px-6 py-7 lg:px-10 lg:py-9 xl:px-14 max-w-[1500px] 2xl:max-w-[1700px] mx-auto">
       <Header state={state} />
       <SectionTabs tabs={tabs} defaultTabId="containers" />
       <LogPane containerName={logContainer} onClose={() => setLogContainer(null)} />
@@ -783,7 +783,7 @@ type InsightTile = {
   name: string;
   description: string;
   icon: React.ReactNode;
-  /** Host label key from /api/config; path is appended to https://{host}.{domain}. */
+  /** Host label key from /api/config; path is appended to the configured public URL. */
   hostConfigKey: string;
   fallbackSubdomain: string;
   path: string;
@@ -1102,6 +1102,10 @@ function InsightsSection({ state }: { state: SnapshotState }) {
       containerStatus.set(c.name, c.status as StatusKind);
     }
   }
+  const iotEnabled =
+    state.kind === "ready"
+      ? state.data.dns.planes.some((plane) => plane.id === "iot")
+      : config.TORHOLE_TOPOLOGY === "vlan";
 
   return (
     <TabPanel>
@@ -1111,7 +1115,7 @@ function InsightsSection({ state }: { state: SnapshotState }) {
         <BarChart3 size={13} className="text-th-text-muted/70 shrink-0 mt-0.5" />
         <div>
           Curated deep-links into the observability stack. Each tile opens in a
-          new tab and inherits your current SSO session — no second login.
+          new tab and inherits your current Torhole login when the access mode supports it.
           Health dots mirror the container state from the snapshot, so a red
           dot means the tool is down, not just unreachable from your browser.
         </div>
@@ -1126,7 +1130,19 @@ function InsightsSection({ state }: { state: SnapshotState }) {
 
       <div className="space-y-5">
         {INSIGHT_GROUPS.map((group) => {
-          const tiles = INSIGHT_TILES.filter((t) => t.group === group.id);
+          const tiles = INSIGHT_TILES.filter(
+            (t) =>
+              t.group === group.id &&
+              (iotEnabled || t.id !== "pihole-iot"),
+          ).map((tile) =>
+            tile.id === "pihole-trusted" && !iotEnabled
+              ? {
+                  ...tile,
+                  name: "Pi-hole · Flat LAN",
+                  description: "Admin UI for the single-LAN DNS plane",
+                }
+              : tile,
+          );
           if (tiles.length === 0) return null;
           return (
             <div key={group.id}>
@@ -1164,7 +1180,8 @@ function InsightTileCard({
   status: StatusKind | null;
 }) {
   const host = config[tile.hostConfigKey] || tile.fallbackSubdomain;
-  const href = domain ? `https://${host}.${domain}${tile.path}` : null;
+  const scheme = config.TORHOLE_WEB_MODE === "http" ? "http" : "https";
+  const href = domain ? `${scheme}://${host}.${domain}${tile.path}` : null;
   const dotColor =
     status === "healthy"
       ? "bg-th-primary"

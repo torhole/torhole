@@ -16,10 +16,12 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 
-PIHOLE_API_TARGETS = (
+TORHOLE_TOPOLOGY = os.environ.get("TORHOLE_TOPOLOGY", "vlan")
+
+_PIHOLE_API_TARGETS = (
     {
         "id": "trusted",
-        "label": "Trusted",
+        "label": "Flat LAN" if TORHOLE_TOPOLOGY == "single-lan" else "Trusted",
         "url_key": "PIHOLE_TRUSTED_URL",
         "password_key": "PIHOLE_TRUSTED_PASSWORD",
         "default_url": "https://pihole_trusted/api",
@@ -31,6 +33,11 @@ PIHOLE_API_TARGETS = (
         "password_key": "PIHOLE_IOT_PASSWORD",
         "default_url": "https://pihole_iot/api",
     },
+)
+PIHOLE_API_TARGETS = (
+    _PIHOLE_API_TARGETS
+    if os.environ.get("TORHOLE_TOPOLOGY", "vlan") == "vlan"
+    else _PIHOLE_API_TARGETS[:1]
 )
 
 

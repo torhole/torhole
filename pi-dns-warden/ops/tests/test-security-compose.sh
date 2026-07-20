@@ -27,6 +27,7 @@ assert "admin_net" in proxy_networks
 assert "dns_int" not in dockhand_networks
 assert "BACKUP_MANAGER_API_TOKEN" in services["backup-manager"]["environment"]
 assert "BACKUP_MANAGER_API_TOKEN" in services["reverse-proxy"]["environment"]
+assert services["grafana"]["environment"]["GF_PLUGINS_PREINSTALL_DISABLED"] == "true"
 assert config["networks"]["admin_net"]["internal"] is True
 PY
 

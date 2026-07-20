@@ -2,6 +2,11 @@
 # Listens only inside Docker network (no host port publishing).
 # Use SOCKS-auth-based isolation so each dnscrypt-proxy instance can get its own circuits.
 SocksPort 0.0.0.0:9050 IsolateSOCKSAuth
+# dnscrypt-proxy connects to fixed resolver IP endpoints through SOCKS5. Tor's
+# generic "application supplied an IP" warning is expected for that encrypted
+# transport and does not indicate a client DNS leak. The privacy verifier still
+# enforces Tor egress and direct-network bypass protection.
+WarnUnsafeSocks 0
 SocksPolicy accept 127.0.0.1
 SocksPolicy accept 172.30.0.11
 SocksPolicy accept 172.30.0.12

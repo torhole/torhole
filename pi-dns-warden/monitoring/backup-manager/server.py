@@ -1,3 +1,4 @@
+import fcntl
 import json
 import os
 import re
@@ -30,16 +31,67 @@ _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 ROOT_DIR = Path(os.environ.get("TORHOLE_ROOT_DIR", "/workspace")).resolve()
-HOST_ROOT_DIR = Path(os.environ.get("TORHOLE_HOST_ROOT_DIR", str(ROOT_DIR))).resolve()
+
+
+def _detect_host_root_dir(root_dir, configured_root=None):
+    """Resolve the host source backing the container's workspace bind mount.
+
+    Docker bind paths in child ``docker run`` commands are interpreted by the
+    host daemon, not inside this container. Curl installs can live anywhere
+    under the operator's home directory, so a fixed ``/opt/pi-dns-warden``
+    default is not reliable. Docker's own mount metadata is authoritative;
+    retain the configured value as a fallback for host-side imports/tests or
+    restricted Docker sockets.
+    """
+    # These are paths in the Docker host's namespace. Do not resolve them in
+    # the container namespace: on Docker Desktop or symlinked hosts that can
+    # rewrite an otherwise correct daemon path.
+    fallback = Path(configured_root or str(root_dir))
+    container_ref = os.environ.get("HOSTNAME") or "backup-manager"
+    try:
+        result = subprocess.run(
+            ["docker", "inspect", container_ref],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        if result.returncode != 0:
+            return fallback
+        payload = json.loads(result.stdout)
+        mounts = payload[0].get("Mounts", []) if payload else []
+        destination = str(Path(root_dir))
+        for mount in mounts:
+            if (
+                mount.get("Type") == "bind"
+                and mount.get("Destination") == destination
+                and mount.get("Source")
+            ):
+                return Path(mount["Source"])
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError, json.JSONDecodeError):
+        pass
+    return fallback
+
+
+HOST_ROOT_DIR = _detect_host_root_dir(
+    ROOT_DIR,
+    os.environ.get("TORHOLE_HOST_ROOT_DIR"),
+)
+# Child recovery/validation scripts inherit this corrected host-side path.
+os.environ["TORHOLE_HOST_ROOT_DIR"] = str(HOST_ROOT_DIR)
 BACKUP_DIR = ROOT_DIR / "backups"
 RUN_DIR = ROOT_DIR / "run"
 STATUS_FILE = RUN_DIR / "recovery-status.json"
+RECOVERY_LOCK_FILE = RUN_DIR / "recovery.lock"
 VALIDATION_FILE = RUN_DIR / "system-validation.json"
 ENV_FILE = ROOT_DIR / ".env"
 ALERTMANAGER_CONFIG_FILE = ROOT_DIR / "monitoring/alertmanager/alertmanager.yml"
 HELPER_IMAGE = os.environ.get("BACKUP_MANAGER_IMAGE", "pi-dns-warden-backup-manager")
 PROJECT_NAME = os.environ.get("TORHOLE_PROJECT_NAME", "pi-dns-warden")
 BACKUP_MANAGER_API_TOKEN = os.environ.get("BACKUP_MANAGER_API_TOKEN", "")
+TORHOLE_TOPOLOGY = os.environ.get("TORHOLE_TOPOLOGY", "vlan")
+if TORHOLE_TOPOLOGY not in {"single-lan", "vlan"}:
+    TORHOLE_TOPOLOGY = "vlan"
 ARCHIVE_PATTERN = re.compile(r"torhole-backup-[0-9]{8}-[0-9]{6}\.tar\.gz")
 CHANNEL_FIELDS = {
     "telegram": {
@@ -58,7 +110,7 @@ CHANNEL_FIELDS = {
         "required_keys": ("ALERT_DISCORD_WEBHOOK_URL",),
     },
 }
-SERVICE_CATALOG = (
+_SERVICE_CATALOG = (
     {"id": "reverse-proxy", "label": "Reverse Proxy", "container": "reverse-proxy", "link_key": "torhole"},
     {"id": "authelia", "label": "Auth Portal", "container": "authelia", "link_key": "auth"},
     {"id": "grafana", "label": "Grafana", "container": "grafana", "link_key": "grafana"},
@@ -71,6 +123,12 @@ SERVICE_CATALOG = (
     {"id": "dnscrypt-iot", "label": "dnscrypt IoT", "container": "dnscrypt-iot"},
     {"id": "pihole-trusted", "label": "Pi-hole Trusted", "container": "pihole_trusted", "link_key": "pihole_trusted"},
     {"id": "pihole-iot", "label": "Pi-hole IoT", "container": "pihole_iot", "link_key": "pihole_iot"},
+)
+SERVICE_CATALOG = tuple(
+    service
+    for service in _SERVICE_CATALOG
+    if TORHOLE_TOPOLOGY == "vlan"
+    or service["container"] not in {"dnscrypt-iot", "pihole_iot"}
 )
 PUBLIC_HOST_DEFAULTS = {
     "TORHOLE_HOST_TORHOLE": "torhole",
@@ -89,6 +147,33 @@ PUBLIC_HOST_DEFAULTS = {
     "TORHOLE_ALIAS_PIHOLE_TRUSTED": "pt",
     "TORHOLE_ALIAS_PIHOLE_IOT": "pi",
 }
+
+# These settings describe the second DNS plane or VLAN tagging itself. They
+# remain in .env so an operator can move between Advanced topology profiles,
+# but they are not active application parameters in a single-LAN deployment.
+# Keep the API capability-aware: the installed dashboard must not advertise or
+# allow edits to controls that the running profile cannot use.
+VLAN_ONLY_CONFIG_KEYS = frozenset(
+    {
+        "TRUSTED_VLAN_ID",
+        "IOT_VLAN_ID",
+        "IOT_PARENT",
+        "IOT_SUBNET_CIDR",
+        "IOT_GATEWAY",
+        "PIHOLE_IOT_IP",
+        "PIHOLE_IOT_PASSWORD",
+        "DNSCRYPT_SOCKS_USER_IOT",
+        "DNSCRYPT_SOCKS_PASS_IOT",
+        "TORHOLE_HOST_PIHOLE_IOT",
+        "TORHOLE_ALIAS_PIHOLE_IOT",
+    }
+)
+
+
+def config_key_is_active(key):
+    return TORHOLE_TOPOLOGY == "vlan" or key not in VLAN_ONLY_CONFIG_KEYS
+
+
 VALIDATION_MARKERS = (
     ("compose", "Compose render", "compose render"),
     ("prometheus_config", "Prometheus config", "prometheus config"),
@@ -200,8 +285,28 @@ def write_status(operation, status, message, archive=""):
 
 
 def recovery_busy():
-    status = read_status()
-    return status.get("status") == "running"
+    """Return whether a recovery process currently owns the OS file lock.
+
+    The status JSON is display history, not synchronization state. A process
+    or container can stop after writing ``running`` and leave that text behind
+    indefinitely. The shell recovery scripts already hold an exclusive flock
+    for their lifetime, so probe the same lock and trust the kernel instead.
+    """
+    RUN_DIR.mkdir(parents=True, exist_ok=True)
+    with RECOVERY_LOCK_FILE.open("a+", encoding="utf-8") as lock_handle:
+        acquired = False
+        try:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            acquired = True
+        except BlockingIOError:
+            return True
+        finally:
+            if acquired:
+                try:
+                    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+                except OSError:
+                    pass
+    return False
 
 
 # Reading metadata.json from a multi-hundred-MB tar.gz takes seconds. Cache by
@@ -330,6 +435,168 @@ def schedule_restore(archive_name):
     )
 
 
+def schedule_local_https_activation():
+    """Queue a narrow post-install web-certificate transition.
+
+    The helper bind-mounts the project at its *real host path* so Docker
+    Compose resolves relative bind sources correctly for the host daemon.
+    A short delay lets the API response reach the browser before Caddy is
+    recreated. Direct-IP HTTP recovery remains defined in the new config.
+    """
+    command = "sleep 2 && ./ops/scripts/25-apply-web-access.sh"
+    return subprocess.run(
+        [
+            "docker",
+            "run",
+            "-d",
+            "--rm",
+            "--name",
+            f"torhole-web-access-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+            "-v",
+            "/var/run/docker.sock:/var/run/docker.sock",
+            "-v",
+            f"{HOST_ROOT_DIR}:{HOST_ROOT_DIR}",
+            "-w",
+            str(HOST_ROOT_DIR),
+            HELPER_IMAGE,
+            "bash",
+            "-lc",
+            command,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _validate_custom_https_payload(certificate, private_key):
+    if not isinstance(certificate, str) or not isinstance(private_key, str):
+        raise ValueError("Custom HTTPS requires a PEM certificate and private key.")
+    if len(certificate.encode("utf-8")) > 128 * 1024:
+        raise ValueError("The uploaded certificate is larger than 128 KiB.")
+    if len(private_key.encode("utf-8")) > 64 * 1024:
+        raise ValueError("The uploaded private key is larger than 64 KiB.")
+    if "-----BEGIN CERTIFICATE-----" not in certificate or "-----END CERTIFICATE-----" not in certificate:
+        raise ValueError("The custom certificate or full chain must be PEM encoded.")
+    if not re.search(r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----", private_key):
+        raise ValueError("The custom private key must be PEM encoded and unencrypted.")
+    return certificate.strip() + "\n", private_key.strip() + "\n"
+
+
+def _atomic_web_access_file(path, content, mode):
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    temp_path = path.with_name(f".{path.name}.{secrets.token_hex(6)}.tmp")
+    try:
+        temp_path.write_text(content, encoding="utf-8")
+        os.chmod(temp_path, mode)
+        os.replace(temp_path, path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def _restore_web_access_file(path, previous, mode):
+    if previous is None:
+        path.unlink(missing_ok=True)
+        return
+    temp_path = path.with_name(f".{path.name}.{secrets.token_hex(6)}.rollback")
+    try:
+        temp_path.write_bytes(previous)
+        os.chmod(temp_path, mode)
+        os.replace(temp_path, path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def configure_https(mode, certificate=None, private_key=None):
+    """Render, validate, and schedule a generated/custom HTTPS transition.
+
+    The active proxy is untouched until the new certificate configuration has
+    passed the same stack validation used by the Operate screen. On any
+    synchronous failure, both .env and operator certificate files are restored.
+    """
+    if mode not in ("https-local", "https-custom"):
+        raise ValueError("Web access mode must be generated HTTPS or custom HTTPS.")
+
+    current = read_env_values_safe()
+    current_mode = current.get("TORHOLE_WEB_MODE", "https-local")
+    if mode == "https-local" and current_mode == "https-local":
+        return _web_access_result(
+            "Generated HTTPS with Authelia SSO is already enabled.", scheduled=False
+        )
+
+    clean_cert = clean_key = None
+    if mode == "https-custom":
+        clean_cert, clean_key = _validate_custom_https_payload(certificate, private_key)
+
+    cert_path = ROOT_DIR / "monitoring/caddy/tls/custom.crt"
+    key_path = ROOT_DIR / "monitoring/caddy/tls/custom.key"
+    previous_cert = cert_path.read_bytes() if cert_path.exists() else None
+    previous_key = key_path.read_bytes() if key_path.exists() else None
+    backup_path = None
+
+    try:
+        if mode == "https-custom":
+            _atomic_web_access_file(cert_path, clean_cert, 0o644)
+            _atomic_web_access_file(key_path, clean_key, 0o600)
+
+        backup_path, _ = update_env_keys(
+            {"TORHOLE_WEB_MODE": mode, "TORHOLE_WEB_SCHEME": "https"},
+            allow_secret_keys=False,
+        )
+
+        render = run_auth_render()
+        if render.returncode != 0:
+            raise RuntimeError(
+                (render.stderr or render.stdout or "Authentication render failed.").strip()
+            )
+
+        validation = run_system_validation()
+        if validation.get("status") != "success":
+            raise RuntimeError(
+                validation.get("summary") or "HTTPS configuration validation failed."
+            )
+
+        scheduled = schedule_local_https_activation()
+        if scheduled.returncode != 0:
+            raise RuntimeError(
+                (scheduled.stderr or scheduled.stdout or "Failed to schedule HTTPS activation.").strip()
+            )
+    except Exception:
+        if backup_path is not None:
+            restore_env_from_backup(backup_path)
+        _restore_web_access_file(cert_path, previous_cert, 0o644)
+        _restore_web_access_file(key_path, previous_key, 0o600)
+        # Best effort: keep rendered files aligned with the restored mode.
+        run_auth_render()
+        run_script(str(ROOT_DIR / "ops/scripts/13-render-prometheus.sh"))
+        raise
+
+    label = "Custom HTTPS certificate" if mode == "https-custom" else "Generated HTTPS"
+    return _web_access_result(
+        f"{label} and Authelia SSO validated. Web services are restarting now.",
+        scheduled=True,
+    )
+
+
+def _web_access_result(message, scheduled):
+    values = read_env_values_safe()
+    host_ip = values.get("HOST_MGMT_IP", "")
+    domain = values.get("REVERSE_PROXY_DOMAIN", "")
+    torhole_host = values.get("TORHOLE_HOST_TORHOLE", "torhole")
+    local_mode = values.get("TORHOLE_WEB_MODE") == "https-local"
+    return {
+        "ok": True,
+        "message": message,
+        "config": get_config_values(),
+        "scheduled": scheduled,
+        "recovery_url": f"http://{host_ip}/" if host_ip else None,
+        "certificate_url": (
+            f"http://{host_ip}/torhole-local-ca.crt" if host_ip and local_mode else None
+        ),
+        "https_url": f"https://{torhole_host}.{domain}/" if domain else None,
+    }
+
+
 def delete_backup_archive(archive_name):
     archive_path = resolve_backup_archive(archive_name)
     archive_path.unlink()
@@ -404,6 +671,17 @@ def run_auth_render():
     return run_script(str(ROOT_DIR / "ops/scripts/18-render-auth.sh"))
 
 
+def enable_local_https():
+    """Prepare and queue generated HTTPS with Authelia SSO.
+
+    Configuration is rendered and fully validated before the live proxy is
+    touched. Any synchronous failure restores .env and the old auth render.
+    The actual Caddy recreation is delayed in a helper container so this API
+    response can complete through the existing HTTP proxy first.
+    """
+    return configure_https("https-local")
+
+
 def restart_authelia_container():
     """docker restart authelia. Used after an admin password change so
     the new users_database.yml is loaded. Returns a CompletedProcess.
@@ -452,6 +730,7 @@ _ADMIN_USER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9._-]{0,63}$")
 # .env and later sourced by shell scripts.
 _TIMEZONE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_+\-/]{0,63}$")
 _EDITION_RE = re.compile(r"^(home|advanced)$")
+_TOPOLOGY_RE = re.compile(r"^(single-lan|vlan)$")
 
 
 def apply_setup_config(requested):
@@ -459,14 +738,14 @@ def apply_setup_config(requested):
 
     Only non-secret, low-blast-radius keys are accepted:
       - TORHOLE_EDITION (home or advanced capability profile)
+      - TORHOLE_TOPOLOGY (single-lan or vlan; activated by a later deploy)
       - TORHOLE_ADMIN_USER
       - TZ (timezone)
 
-    Topology swaps, VLAN reconfiguration, blocklist URLs etc. are NOT
-    written here because each one has second-order effects (rerun
-    15-render-dnscrypt.sh, 10-vlan-interfaces.sh, restart Pi-hole, etc.)
-    that deserve their own apply flow. This endpoint establishes the
-    safe-write pattern first.
+    Network addresses, VLAN IDs, blocklist URLs etc. are NOT written here.
+    A topology selection is only recorded and still requires the explicit
+    maintenance deploy shown by the UI; no networking or containers change
+    inside this request.
 
     The write is a diff: only keys whose requested value differs from
     the current .env value are actually written. No-op requests return
@@ -475,7 +754,7 @@ def apply_setup_config(requested):
     to run `sudo ./deploy.sh` on the host to apply the change.
 
     Args:
-      requested: dict with optional keys {edition, admin_user, timezone}. Unknown
+      requested: dict with optional keys {edition, topology, admin_user, timezone}. Unknown
         keys are ignored. None or empty string means "don't touch this
         field".
 
@@ -492,6 +771,8 @@ def apply_setup_config(requested):
     field_map = {
         "edition": ("TORHOLE_EDITION", _EDITION_RE,
                     "Edition must be either 'home' or 'advanced'."),
+        "topology": ("TORHOLE_TOPOLOGY", _TOPOLOGY_RE,
+                     "Topology must be either 'single-lan' or 'vlan'."),
         "admin_user": ("TORHOLE_ADMIN_USER", _ADMIN_USER_RE,
                        "Admin user must start with a letter and contain only "
                        "letters, digits, dot, underscore or hyphen (max 64 chars)."),
@@ -722,17 +1003,22 @@ def build_public_links(values):
         return values.get(key, "").strip() or PUBLIC_HOST_DEFAULTS[key]
 
     def link(key, path=""):
-        return f"https://{host(key)}.{domain}{path}"
+        mode = values.get("TORHOLE_WEB_MODE", "https-local").strip()
+        scheme = "http" if mode == "http" else "https"
+        return f"{scheme}://{host(key)}.{domain}{path}"
 
-    return {
+    links = {
         "torhole": link("TORHOLE_HOST_TORHOLE"),
         "auth": link("TORHOLE_HOST_AUTH"),
         "grafana": link("TORHOLE_HOST_GRAFANA"),
         "prometheus": link("TORHOLE_HOST_PROMETHEUS"),
         "alertmanager": link("TORHOLE_HOST_ALERTMANAGER"),
         "pihole_trusted": link("TORHOLE_HOST_PIHOLE_TRUSTED", "/admin/"),
-        "pihole_iot": link("TORHOLE_HOST_PIHOLE_IOT", "/admin/"),
     }
+    topology = values.get("TORHOLE_TOPOLOGY", TORHOLE_TOPOLOGY)
+    if topology == "vlan":
+        links["pihole_iot"] = link("TORHOLE_HOST_PIHOLE_IOT", "/admin/")
+    return links
 
 
 def inspect_container(container_name):
@@ -1711,7 +1997,10 @@ def dnscrypt_identity_state(values):
     identities = {}
     duplicates = set()
 
-    for plane_id, label in (("trusted", "Trusted"), ("iot", "IoT")):
+    active_planes = [("trusted", "Flat LAN" if TORHOLE_TOPOLOGY == "single-lan" else "Trusted")]
+    if TORHOLE_TOPOLOGY == "vlan":
+        active_planes.append(("iot", "IoT"))
+    for plane_id, label in active_planes:
         user = values.get(f"DNSCRYPT_SOCKS_USER_{plane_id.upper()}", "").strip()
         password = values.get(f"DNSCRYPT_SOCKS_PASS_{plane_id.upper()}", "").strip()
         config_path = ROOT_DIR / f"dnscrypt/{plane_id}/dnscrypt-proxy.toml"
@@ -1760,7 +2049,7 @@ def dnscrypt_identity_state(values):
 
     overall_status = combine_statuses(*(plane["status"] for plane in planes))
     if overall_status == "healthy":
-        summary = "Three distinct SOCKS identities are configured for plane isolation."
+        summary = f"{len(planes)} dedicated SOCKS identity or identities are configured for the active DNS plane(s)."
     elif duplicates:
         summary = "Plane isolation is weakened because at least one SOCKS identity is reused."
     else:
@@ -1775,7 +2064,9 @@ def dnscrypt_identity_state(values):
 
 
 def tor_network_path_state():
-    dnscrypt_containers = ("dnscrypt-trusted", "dnscrypt-iot")
+    dnscrypt_containers = ["dnscrypt-trusted"]
+    if TORHOLE_TOPOLOGY == "vlan":
+        dnscrypt_containers.append("dnscrypt-iot")
     inspected = [inspect_container(name) for name in dnscrypt_containers]
     tor_payload = inspect_container("tor")
 
@@ -1800,7 +2091,7 @@ def tor_network_path_state():
     if dnscrypt_ok and tor_ok:
         return {
             "status": "healthy",
-            "detail": "dnscrypt planes are attached only to dns_int, and Tor is the bridge to tor_out.",
+            "detail": "Every active dnscrypt plane is attached only to dns_int, and Tor is the bridge to tor_out.",
         }
 
     return {
@@ -1823,7 +2114,7 @@ def build_tor_assurance(values):
     )
 
     if overall_status == "healthy":
-        summary = "Tor is bootstrapped and the isolation posture is intact across all three DNS planes."
+        summary = "Tor is bootstrapped and the isolation posture is intact across every active DNS plane."
     elif bootstrap["status"] == "offline":
         summary = "Tor runtime is offline. Configuration evidence is still available, but live privacy guarantees are not active."
     else:
@@ -1882,8 +2173,9 @@ def summarize_plane_api_health(values):
 
 
 def compose_status_sentence(overall_status, plane_api, recovery, notifications):
+    plane_total = plane_api["counts"].get("total", 0)
     stack_text = (
-        "Torhole is routing DNS for 3 networks through Tor."
+        f"Torhole is routing {plane_total} active DNS plane(s) through Tor."
         if overall_status == "healthy"
         else "Torhole is routing DNS through a degraded privacy stack."
         if overall_status == "degraded"
@@ -2004,7 +2296,10 @@ def build_notification_summary():
     }
 
 
-_CORE_DNS_CONTAINERS = frozenset({"tor", "dnscrypt-trusted", "dnscrypt-iot", "pihole_trusted", "pihole_iot"})
+_CORE_DNS_CONTAINERS = frozenset(
+    {"tor", "dnscrypt-trusted", "pihole_trusted"}
+    | ({"dnscrypt-iot", "pihole_iot"} if TORHOLE_TOPOLOGY == "vlan" else set())
+)
 _ALLOWED_ACTIONS = frozenset({"restart", "start", "stop"})
 
 
@@ -2047,11 +2342,17 @@ def service_action(service_id, action):
 
 
 def get_config_values():
-    """Read .env and return {key: value} with secrets masked."""
+    """Return active .env parameters with secrets masked.
+
+    Stale values for inactive capability profiles remain safely preserved in
+    .env, but are intentionally absent from the installed admin dashboard.
+    """
     values = read_env_values()
     values = {**PUBLIC_HOST_DEFAULTS, **values}
     masked = {}
     for key, value in values.items():
+        if not config_key_is_active(key):
+            continue
         if _SECRET_KEYS.search(key):
             masked[key] = "***" if value and value != "CHANGE_ME" else value
         else:
@@ -2066,6 +2367,10 @@ def set_config_value(key, value, force=False):
     """
     if not re.match(r"^[A-Z][A-Z0-9_]*$", key):
         raise ValueError("Key must be uppercase alphanumeric with underscores.")
+    if not config_key_is_active(key):
+        raise ValueError(
+            f"{key!r} is not active in the {TORHOLE_TOPOLOGY!r} topology."
+        )
     try:
         update_env_keys({key: value}, allow_secret_keys=force)
     except ValueError as exc:
@@ -3057,6 +3362,45 @@ class Handler(BaseHTTPRequestHandler):
             except FileNotFoundError:
                 return json_response(self, {"error": ".env file not found"}, status=HTTPStatus.NOT_FOUND)
             return json_response(self, {"message": f"{key} updated.", "config": config})
+
+        if self.path == "/api/config/web-access":
+            if recovery_busy():
+                return json_response(
+                    self,
+                    {"error": "Recovery is running. Wait until it finishes before changing web access."},
+                    status=HTTPStatus.CONFLICT,
+                )
+            content_length = int(self.headers.get("Content-Length", "0"))
+            if content_length > 196 * 1024:
+                return json_response(
+                    self,
+                    {"error": "Certificate upload is larger than 196 KiB."},
+                    status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                )
+            raw = self.rfile.read(content_length) if content_length else b"{}"
+            try:
+                body = json.loads(raw.decode("utf-8"))
+            except json.JSONDecodeError:
+                return json_response(self, {"error": "Invalid JSON body"}, status=HTTPStatus.BAD_REQUEST)
+            mode = body.get("mode", "https-local")
+            confirm_word = "UPLOAD" if mode == "https-custom" else "ENABLE"
+            if body.get("confirm") != confirm_word:
+                return json_response(
+                    self,
+                    {"error": f"Type {confirm_word} to confirm the HTTPS transition."},
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+            try:
+                result = configure_https(
+                    mode,
+                    certificate=body.get("certificate"),
+                    private_key=body.get("private_key"),
+                )
+            except ValueError as exc:
+                return json_response(self, {"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            except (OSError, RuntimeError) as exc:
+                return json_response(self, {"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return json_response(self, result, status=HTTPStatus.ACCEPTED if result.get("scheduled") else HTTPStatus.OK)
 
         if self.path == "/api/setup/apply":
             # Setup wizard apply — writes non-secret config keys from the

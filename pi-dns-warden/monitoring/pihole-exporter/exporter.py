@@ -32,12 +32,13 @@ TARGETS = [
         "url": os.environ.get("PIHOLE_TRUSTED_URL", "https://pihole_trusted/api"),
         "password": os.environ.get("PIHOLE_TRUSTED_PASSWORD", ""),
     },
-    {
+]
+if os.environ.get("TORHOLE_TOPOLOGY", "vlan") == "vlan":
+    TARGETS.append({
         "role": "iot",
         "url": os.environ.get("PIHOLE_IOT_URL", "https://pihole_iot/api"),
         "password": os.environ.get("PIHOLE_IOT_PASSWORD", ""),
-    },
-]
+    })
 
 SESSION_CACHE = {}
 SESSION_LOCK = threading.Lock()

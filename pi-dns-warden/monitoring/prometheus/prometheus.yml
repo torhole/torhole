@@ -126,8 +126,8 @@ scrape_configs:
       module: [http_2xx]
     static_configs:
       - targets:
-          - "http://pihole_trusted/admin/"
-          - "http://pihole_iot/admin/"
+          - "http://pihole_trusted/admin/login"
+          - "http://pihole_iot/admin/login"
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

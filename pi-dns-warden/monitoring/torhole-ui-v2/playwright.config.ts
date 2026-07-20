@@ -27,7 +27,7 @@ const AUTH_STATE_FILE = path.join(__dirname, "tests", ".auth", "state.json");
 export default defineConfig({
   testDir: "./tests",
   // Skip the global setup from being picked up as a test.
-  testIgnore: ["**/global-setup.ts", "**/.auth/**"],
+  testIgnore: ["**/global-setup.ts", "**/.auth/**", "**/bootstrap/**"],
   fullyParallel: false, // actions mutate shared state (Tor circuits), serialize
   forbidOnly: !!process.env.CI,
   retries: 1,

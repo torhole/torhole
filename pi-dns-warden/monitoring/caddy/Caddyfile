@@ -5,110 +5,99 @@
   }
 }
 
+# Both files are rendered from .env before validation. They keep the site
+# definitions identical across plain HTTP, Caddy-local HTTPS, and custom HTTPS.
 import auth-snippets.caddy
+import tls-snippets.caddy
 
-(tls_lan) {
-  tls internal
-}
-
-(authelia_gate) {
-  forward_auth authelia:9091 {
-    uri /api/authz/forward-auth?authelia_url=https://{$TORHOLE_HOST_AUTH}.{$REVERSE_PROXY_DOMAIN}
-    copy_headers Remote-User Remote-Groups Remote-Email Remote-Name
+(local_ca_download) {
+  @local_ca path /torhole-local-ca.crt
+  handle @local_ca {
+    root * /srv
+    header Content-Type application/x-x509-ca-cert
+    header Content-Disposition "attachment; filename=torhole-local-ca.crt"
+    file_server
   }
 }
 
-http://{$TORHOLE_HOST_AUTH}.{$REVERSE_PROXY_DOMAIN} {
-  redir https://{$TORHOLE_HOST_AUTH}.{$REVERSE_PROXY_DOMAIN}{uri} 308
+(recovery_health) {
+  @recovery_health path /health/recovery
+  handle @recovery_health {
+    uri replace /health/recovery /health
+    reverse_proxy backup-manager:8080
+  }
 }
 
-https://{$TORHOLE_HOST_AUTH}.{$REVERSE_PROXY_DOMAIN} {
-  import tls_lan
+(torhole_app) {
+  @api path /api/*
+  handle @api {
+    reverse_proxy backup-manager:8080 {
+      header_up Authorization "Bearer {$BACKUP_MANAGER_API_TOKEN}"
+      flush_interval -1
+    }
+  }
+
+  @v2_app path /v2 /v2/*
+  handle @v2_app {
+    root * /srv
+    try_files {path} /v2/index.html
+    file_server
+  }
+
+  @legacy_operate path /operate /operate.html /dns-planes /observability /recovery /system
+  handle @legacy_operate {
+    redir * /v2/#/operate 308
+  }
+
+  @legacy_privacy path /resolver /resolver.html /resolver-chain
+  handle @legacy_privacy {
+    redir * /v2/#/privacy 308
+  }
+
+  @legacy_configure path /access /access.html /edge-access
+  handle @legacy_configure {
+    redir * /v2/#/configure 308
+  }
+
+  handle {
+    redir * /v2/ 308
+  }
+}
+
+# Named access is the normal entry point. TORHOLE_WEB_SCHEME is derived from
+# TORHOLE_WEB_MODE by 18-render-auth.sh (http or https).
+{$TORHOLE_WEB_SCHEME}://{$TORHOLE_HOST_AUTH}.{$REVERSE_PROXY_DOMAIN} {
+  import tls_mode
   reverse_proxy authelia:9091
 }
 
-http://{$TORHOLE_HOST_TORHOLE}.{$REVERSE_PROXY_DOMAIN}, http://{$TORHOLE_ALIAS_TORHOLE}.{$REVERSE_PROXY_DOMAIN} {
-  redir https://{host}{uri} 308
-}
-
-https://{$TORHOLE_HOST_TORHOLE}.{$REVERSE_PROXY_DOMAIN}, https://{$TORHOLE_ALIAS_TORHOLE}.{$REVERSE_PROXY_DOMAIN} {
-  import tls_lan
+{$TORHOLE_WEB_SCHEME}://{$TORHOLE_HOST_TORHOLE}.{$REVERSE_PROXY_DOMAIN}, {$TORHOLE_WEB_SCHEME}://{$TORHOLE_ALIAS_TORHOLE}.{$REVERSE_PROXY_DOMAIN} {
+  import tls_mode
   route {
-    @recovery_health path /health/recovery
-    handle @recovery_health {
-      uri replace /health/recovery /health
-      reverse_proxy backup-manager:8080
-    }
-
-    # All /api/* paths go to backup-manager behind Authelia.
-    # /health/recovery is the only unauthenticated API path and it's matched
-    # above. Using a wildcard here avoids the regression class where adding
-    # a new endpoint to server.py also requires editing the Caddyfile —
-    # which is exactly how /api/config, /api/services, /api/dns/stats ended
-    # up returning the SPA index.html instead of JSON.
-    #
-    # flush_interval -1 disables response buffering so SSE endpoints
-    # (/api/stream/*) deliver events immediately. For regular JSON responses
-    # this has no observable effect — the body is small and sent in one chunk.
-    @api path /api/*
-    handle @api {
-      import authelia_gate
-      reverse_proxy backup-manager:8080 {
-        header_up Authorization "Bearer {$BACKUP_MANAGER_API_TOKEN}"
-        flush_interval -1
-      }
-    }
-
-    # v2 admin UI — the only UI, served from /srv/v2/ (built from
-    # monitoring/torhole-ui-v2/). Vite is configured with base: "/v2/" so
-    # all asset URLs are already /v2/assets/... We keep the path literal
-    # (no strip_prefix) because Caddy's auto-ordered directive list runs
-    # uri/try_files BEFORE forward_auth — stripping would let forward-auth
-    # capture the post-strip path and redirect to the wrong place after
-    # login.
-    @v2_app path /v2 /v2/*
-    handle @v2_app {
-      import authelia_gate
-      root * /srv
-      try_files {path} /v2/index.html
-      file_server
-    }
-
-    # Legacy URL redirects. The v1 UI had dedicated pages at /operate.html,
-    # /resolver.html, /access.html and hash routes like /dns-planes,
-    # /observability that lived on the old index.html. Forward any stragglers
-    # (bookmarks, saved links, monitoring checks) to the closest v2 route.
-    @legacy_operate path /operate /operate.html /dns-planes /observability /recovery /system
-    handle @legacy_operate {
-      redir * /v2/#/operate 308
-    }
-
-    @legacy_privacy path /resolver /resolver.html /resolver-chain
-    handle @legacy_privacy {
-      redir * /v2/#/privacy 308
-    }
-
-    @legacy_configure path /access /access.html /edge-access
-    handle @legacy_configure {
-      redir * /v2/#/configure 308
-    }
-
-    # Root / catch-all → /v2/. The redirect itself is unauthenticated; once
-    # the browser follows it, /v2/ enforces Authelia as normal.
-    handle {
-      redir * /v2/ 308
-    }
+    import local_ca_download
+    import recovery_health
+    import access_gate
+    import torhole_app
   }
 }
 
-http://{$TORHOLE_HOST_GRAFANA}.{$REVERSE_PROXY_DOMAIN}, http://{$TORHOLE_ALIAS_GRAFANA}.{$REVERSE_PROXY_DOMAIN} {
-  redir https://{host}{uri} 308
+# Permanent LAN recovery entry point. It intentionally stays on HTTP so an
+# incorrect hostname, DNS entry, or uploaded certificate cannot lock an
+# operator out. It is protected with the Torhole admin credentials and should
+# remain reachable only from the trusted management LAN.
+http://{$HOST_MGMT_IP:127.0.0.1} {
+  route {
+    import local_ca_download
+    import recovery_health
+    import ip_access_gate
+    import torhole_app
+  }
 }
 
-https://{$TORHOLE_HOST_GRAFANA}.{$REVERSE_PROXY_DOMAIN}, https://{$TORHOLE_ALIAS_GRAFANA}.{$REVERSE_PROXY_DOMAIN} {
-  import tls_lan
+{$TORHOLE_WEB_SCHEME}://{$TORHOLE_HOST_GRAFANA}.{$REVERSE_PROXY_DOMAIN}, {$TORHOLE_WEB_SCHEME}://{$TORHOLE_ALIAS_GRAFANA}.{$REVERSE_PROXY_DOMAIN} {
+  import tls_mode
   route {
-    import authelia_gate
+    import access_gate
     reverse_proxy 172.30.0.31:3000 {
       header_up X-WEBAUTH-USER {http.request.header.Remote-User}
       header_up X-WEBAUTH-NAME {http.request.header.Remote-Name}
@@ -118,73 +107,41 @@ https://{$TORHOLE_HOST_GRAFANA}.{$REVERSE_PROXY_DOMAIN}, https://{$TORHOLE_ALIAS
   }
 }
 
-http://{$TORHOLE_HOST_PROMETHEUS}.{$REVERSE_PROXY_DOMAIN}, http://{$TORHOLE_ALIAS_PROMETHEUS}.{$REVERSE_PROXY_DOMAIN} {
-  redir https://{host}{uri} 308
-}
-
-https://{$TORHOLE_HOST_PROMETHEUS}.{$REVERSE_PROXY_DOMAIN}, https://{$TORHOLE_ALIAS_PROMETHEUS}.{$REVERSE_PROXY_DOMAIN} {
-  import tls_lan
+{$TORHOLE_WEB_SCHEME}://{$TORHOLE_HOST_PROMETHEUS}.{$REVERSE_PROXY_DOMAIN}, {$TORHOLE_WEB_SCHEME}://{$TORHOLE_ALIAS_PROMETHEUS}.{$REVERSE_PROXY_DOMAIN} {
+  import tls_mode
   route {
-    import authelia_gate
-    handle {
-      reverse_proxy prometheus:9090
-    }
+    import access_gate
+    reverse_proxy prometheus:9090
   }
 }
 
-http://{$TORHOLE_HOST_ALERTMANAGER}.{$REVERSE_PROXY_DOMAIN}, http://{$TORHOLE_ALIAS_ALERTMANAGER}.{$REVERSE_PROXY_DOMAIN} {
-  redir https://{host}{uri} 308
-}
-
-https://{$TORHOLE_HOST_ALERTMANAGER}.{$REVERSE_PROXY_DOMAIN}, https://{$TORHOLE_ALIAS_ALERTMANAGER}.{$REVERSE_PROXY_DOMAIN} {
-  import tls_lan
+{$TORHOLE_WEB_SCHEME}://{$TORHOLE_HOST_ALERTMANAGER}.{$REVERSE_PROXY_DOMAIN}, {$TORHOLE_WEB_SCHEME}://{$TORHOLE_ALIAS_ALERTMANAGER}.{$REVERSE_PROXY_DOMAIN} {
+  import tls_mode
   route {
-    import authelia_gate
-    handle {
-      reverse_proxy alertmanager:9093
-    }
+    import access_gate
+    reverse_proxy alertmanager:9093
   }
 }
 
-http://{$TORHOLE_HOST_DOCKHAND}.{$REVERSE_PROXY_DOMAIN}, http://{$TORHOLE_ALIAS_DOCKHAND}.{$REVERSE_PROXY_DOMAIN} {
-  redir https://{host}{uri} 308
-}
-
-https://{$TORHOLE_HOST_DOCKHAND}.{$REVERSE_PROXY_DOMAIN}, https://{$TORHOLE_ALIAS_DOCKHAND}.{$REVERSE_PROXY_DOMAIN} {
-  import tls_lan
+{$TORHOLE_WEB_SCHEME}://{$TORHOLE_HOST_DOCKHAND}.{$REVERSE_PROXY_DOMAIN}, {$TORHOLE_WEB_SCHEME}://{$TORHOLE_ALIAS_DOCKHAND}.{$REVERSE_PROXY_DOMAIN} {
+  import tls_mode
   route {
-    import authelia_gate
+    import access_gate
     reverse_proxy dockhand:3000
   }
 }
 
-http://{$TORHOLE_HOST_PIHOLE_TRUSTED}.{$REVERSE_PROXY_DOMAIN}, http://{$TORHOLE_ALIAS_PIHOLE_TRUSTED}.{$REVERSE_PROXY_DOMAIN} {
-  redir https://{host}{uri} 308
-}
-
-https://{$TORHOLE_HOST_PIHOLE_TRUSTED}.{$REVERSE_PROXY_DOMAIN}, https://{$TORHOLE_ALIAS_PIHOLE_TRUSTED}.{$REVERSE_PROXY_DOMAIN} {
-  import tls_lan
+{$TORHOLE_WEB_SCHEME}://{$TORHOLE_HOST_PIHOLE_TRUSTED}.{$REVERSE_PROXY_DOMAIN}, {$TORHOLE_WEB_SCHEME}://{$TORHOLE_ALIAS_PIHOLE_TRUSTED}.{$REVERSE_PROXY_DOMAIN} {
+  import tls_mode
   route {
-    import authelia_gate
+    import access_gate
     @root path /
     redir @root /admin/ 302
     reverse_proxy pihole_trusted:80
   }
 }
 
-http://{$TORHOLE_HOST_PIHOLE_IOT}.{$REVERSE_PROXY_DOMAIN}, http://{$TORHOLE_ALIAS_PIHOLE_IOT}.{$REVERSE_PROXY_DOMAIN} {
-  redir https://{host}{uri} 308
-}
-
-https://{$TORHOLE_HOST_PIHOLE_IOT}.{$REVERSE_PROXY_DOMAIN}, https://{$TORHOLE_ALIAS_PIHOLE_IOT}.{$REVERSE_PROXY_DOMAIN} {
-  import tls_lan
-  route {
-    import authelia_gate
-    @root path /
-    redir @root /admin/ 302
-    reverse_proxy pihole_iot:80
-  }
-}
+import topology-sites.caddy
 
 http://:2019 {
   metrics /metrics

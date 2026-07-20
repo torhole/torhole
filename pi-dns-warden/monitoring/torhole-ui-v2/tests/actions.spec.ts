@@ -10,20 +10,16 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("Privacy actions", () => {
-  test("rotate identity on Trusted plane reaches success state", async ({ page }) => {
+  test("renew global Tor identity reaches success state", async ({ page }) => {
     await page.goto("/v2/#/privacy");
 
-    // Wait for the per-plane panel to render.
-    await expect(page.getByText("Per-plane circuit isolation")).toBeVisible();
+    await expect(page.getByText("DNS plane isolation")).toBeVisible();
 
-    // The rotate buttons render in order: Trusted, IoT. Click the first.
-    const rotateButtons = page.getByRole("button", { name: /rotate identity/i });
-    await expect(rotateButtons).toHaveCount(3);
-    await rotateButtons.first().click();
+    const renewButton = page.getByRole("button", { name: /renew Tor identity/i });
+    await expect(renewButton).toHaveCount(1);
+    await renewButton.click();
 
-    // The button should show a "rotating…" state, then "rotated", then return
-    // to "rotate identity". We assert the success state appears within ~5s.
-    await expect(page.getByRole("button", { name: /^rotated$/i })).toBeVisible({
+    await expect(page.getByRole("button", { name: /identity renewed/i })).toBeVisible({
       timeout: 5_000,
     });
   });
@@ -31,7 +27,7 @@ test.describe("Privacy actions", () => {
   test("run leak test shows a PASS result", async ({ page }) => {
     await page.goto("/v2/#/privacy");
 
-    await expect(page.getByText("DNS leak test", { exact: true })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /DNS leak test/i })).toBeVisible();
 
     // Click the run button. The backend does a real SOCKS5 → TLS → GET
     // through Tor to check.torproject.org and can take 5-15 seconds.

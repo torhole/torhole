@@ -3,7 +3,7 @@
  *
  * Verifies the three panels are rendering with live data from the backend:
  *   1. Privacy hero + proof tiles
- *   2. Per-plane Tor circuit cards (at least Trusted has circuits)
+ *   2. DNS-plane isolation cards and the global identity control
  *   3. Leak test panel
  *   4. Live query feed (SSE connected + events arriving)
  */
@@ -31,28 +31,30 @@ test.describe("Privacy screen", () => {
     }
   });
 
-  test("shows per-plane circuit isolation panel", async ({ page }) => {
+  test("shows DNS-plane isolation and one truthful global renewal control", async ({ page }) => {
+    const snapshotResponse = await page.request.get("/api/system/snapshot");
+    expect(snapshotResponse.ok()).toBeTruthy();
+    const snapshot = await snapshotResponse.json();
     await page.goto("/v2/#/privacy");
 
     // Wait for the page to hydrate by asserting the section title exists.
     // Section titles are <div>s, not <h*> elements, and contain the meta
     // text concatenated after the title — so no exact match.
-    await expect(page.getByText("Per-plane circuit isolation")).toBeVisible();
+    await expect(page.getByText("DNS plane isolation")).toBeVisible();
 
-    // Each plane card label (inside the circuit cards)
-    for (const plane of ["Trusted", "IoT"]) {
-      await expect(page.getByText(plane, { exact: true }).first()).toBeVisible();
+    // Every configured plane appears; Single-LAN and VLAN installations
+    // deliberately expose different plane sets.
+    for (const plane of snapshot.dns.planes as Array<{ label: string }>) {
+      await expect(page.getByText(plane.label, { exact: true }).first()).toBeVisible();
     }
 
-    // Three rotate buttons (one per plane card)
-    const rotateButtons = page.getByRole("button", { name: /rotate identity/i });
-    await expect(rotateButtons).toHaveCount(3);
+    await expect(page.getByRole("button", { name: /renew Tor identity/i })).toHaveCount(1);
   });
 
   test("shows the leak test panel with a run button", async ({ page }) => {
     await page.goto("/v2/#/privacy");
 
-    await expect(page.getByText("DNS leak test", { exact: true })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /DNS leak test/i })).toBeVisible();
     await expect(
       page.getByRole("button", { name: /run leak test now/i }),
     ).toBeVisible();
@@ -85,7 +87,7 @@ test.describe("Privacy screen", () => {
     // Their labels (substring match — the tab button also contains the meta)
     await expect(page.getByRole("tab", { name: /DNS leak test/i })).toBeVisible();
     await expect(page.getByRole("tab", { name: /live query feed/i })).toBeVisible();
-    await expect(page.getByRole("tab", { name: /internal circuits/i })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Tor circuits/i })).toBeVisible();
   });
 
   test("shows live Tor runtime strip above the fold", async ({ page }) => {

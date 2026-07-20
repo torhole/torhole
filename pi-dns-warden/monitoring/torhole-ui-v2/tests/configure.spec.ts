@@ -1,8 +1,8 @@
 /*
  * Smoke tests for the Configure screen.
  *
- * Configure is split into four tabs via SectionTabs: Identity (default),
- * Topology, Alert channels, Advanced. Tab content is mounted but hidden
+ * Configure is split into five tabs via SectionTabs: Identity (default),
+ * Topology, Alert channels, Banner, and App parameters. Tab content is mounted but hidden
  * when inactive, so tests for non-default tabs must click the tab before
  * asserting visibility.
  */
@@ -10,7 +10,7 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("Configure screen", () => {
-  test("loads and shows four section tabs", async ({ page }) => {
+  test("loads and shows five section tabs", async ({ page }) => {
     await page.goto("/v2/#/configure");
 
     await expect(
@@ -18,23 +18,32 @@ test.describe("Configure screen", () => {
     ).toBeVisible();
 
     const tabs = page.getByRole("tab");
-    await expect(tabs).toHaveCount(4);
+    await expect(tabs).toHaveCount(5);
 
     await expect(page.getByRole("tab", { name: /Identity & access/i })).toBeVisible();
     await expect(page.getByRole("tab", { name: /Topology/i })).toBeVisible();
     await expect(page.getByRole("tab", { name: /Alert channels/i })).toBeVisible();
-    await expect(page.getByRole("tab", { name: /Advanced/i })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Banner/i })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /App parameters/i })).toBeVisible();
   });
 
   test("default tab shows the admin user from .env", async ({ page }) => {
     await page.goto("/v2/#/configure");
+
+    const configResponse = await page.request.get("/api/config");
+    expect(configResponse.ok()).toBeTruthy();
+    const payload = (await configResponse.json()) as {
+      config: Record<string, string>;
+    };
+    const expectedAdmin = payload.config.TORHOLE_ADMIN_USER;
+    expect(expectedAdmin).toBeTruthy();
 
     // Identity tab is the default — no click needed.
     // Scope to the Identity tabpanel so we don't collide with the TORHOLE_ADMIN_USER
     // key that also appears in the Advanced tab's .env dump.
     const panel = page.getByRole("tabpanel", { name: /Identity & access/i });
     await expect(panel.getByText("Admin user")).toBeVisible();
-    await expect(panel.getByText("th-admin", { exact: true })).toBeVisible();
+    await expect(panel.getByText(expectedAdmin, { exact: true })).toBeVisible();
   });
 
   test("identity tab shows the admin password change form", async ({ page }) => {
@@ -89,17 +98,24 @@ test.describe("Configure screen", () => {
     await expect(panel.getByText(/must differ from the current/i)).toBeVisible();
   });
 
-  test("topology tab shows three VLAN cards", async ({ page }) => {
+  test("topology tab matches the installed capability profile", async ({ page }) => {
     await page.goto("/v2/#/configure");
 
     await page.getByRole("tab", { name: /Topology/i }).click();
 
-    for (const plane of ["Trusted", "IoT"]) {
-      await expect(page.getByText(plane, { exact: true }).first()).toBeVisible();
+    const singleLan = page.getByText("Single LAN", { exact: true });
+    if (await singleLan.isVisible()) {
+      await expect(page.getByText("Flat LAN", { exact: true })).toBeVisible();
+      await expect(page.getByText("IoT", { exact: true })).toHaveCount(0);
+      await expect(page.getByText("vlan id", { exact: true })).toHaveCount(0);
+    } else {
+      await expect(page.getByText("Segmented VLANs", { exact: true })).toBeVisible();
+      await expect(page.getByText("Trusted", { exact: true }).first()).toBeVisible();
+      await expect(page.getByText("IoT", { exact: true }).first()).toBeVisible();
+      await expect(page.getByText("vlan id").first()).toBeVisible();
     }
 
     await expect(page.getByText("parent").first()).toBeVisible();
-    await expect(page.getByText("vlan id").first()).toBeVisible();
     await expect(page.getByText("subnet").first()).toBeVisible();
     await expect(page.getByText("pihole ip").first()).toBeVisible();
   });
@@ -124,11 +140,12 @@ test.describe("Configure screen", () => {
   test("advanced tab is expanded by default in its tab", async ({ page }) => {
     await page.goto("/v2/#/configure");
 
-    await page.getByRole("tab", { name: /Advanced/i }).click();
+    await page.getByRole("tab", { name: /App parameters/i }).click();
 
     // Advanced is now auto-expanded when opened (since it's in its own tab
     // and no longer competes for vertical space with other sections).
     // We should see at least one categorized group header.
-    await expect(page.getByText(/Pi-hole|dnscrypt-proxy|Torhole/).first()).toBeVisible();
+    const panel = page.getByRole("tabpanel", { name: /App parameters/i });
+    await expect(panel.getByText("Pi-hole", { exact: true })).toBeVisible();
   });
 });

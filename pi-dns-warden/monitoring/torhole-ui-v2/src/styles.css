@@ -38,6 +38,9 @@
 
 :root {
   color-scheme: dark;
+  --th-grid-line: rgba(148, 163, 184, 0.035);
+  --th-orb: rgba(34, 197, 94, 0.08);
+  --th-scanline: rgba(255, 255, 255, 0.025);
   font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   background: var(--color-th-bg);
@@ -53,8 +56,34 @@ body,
 body {
   margin: 0;
   background:
-    radial-gradient(ellipse at 50% -10%, rgba(34, 197, 94, 0.06), transparent 60%),
+    linear-gradient(var(--th-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--th-grid-line) 1px, transparent 1px),
+    radial-gradient(ellipse at 50% -10%, var(--th-orb), transparent 58%),
     var(--color-th-bg);
+  background-size: 42px 42px, 42px 42px, auto, auto;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-th-bg:          #F3F7F5;
+  --color-th-bg-alt:      #E8F0EC;
+  --color-th-panel:       #FFFFFF;
+  --color-th-panel-alt:   #F7FAF8;
+  --color-th-line:        #D5E1DA;
+  --color-th-line-strong: #B9CBC1;
+  --color-th-text:        #102019;
+  --color-th-text-muted:  #5F7469;
+  --color-th-text-mono:   #40594C;
+  --color-th-primary:     #0F9F4A;
+  --color-th-accent:      #6554C0;
+  --color-th-success:     #0F9F4A;
+  --color-th-warning:     #B96D00;
+  --color-th-danger:      #D6343A;
+  --color-th-info:        #087FA4;
+  --th-grid-line: rgba(31, 75, 52, 0.045);
+  --th-orb: rgba(15, 159, 74, 0.11);
+  --th-scanline: rgba(16, 32, 25, 0.028);
 }
 
 * {
@@ -72,6 +101,69 @@ textarea {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+.th-hero-surface {
+  box-shadow:
+    0 26px 70px rgba(1, 8, 4, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.th-page-enter {
+  animation: th-page-enter 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.th-flow-label {
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 10px 28px rgba(1, 8, 4, 0.12);
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    transform 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.th-flow-label::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 28%, rgba(34, 197, 94, 0.09) 50%, transparent 72%);
+  transform: translateX(-115%);
+  transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.th-flow-label:hover {
+  border-color: color-mix(in srgb, var(--color-th-primary) 45%, var(--color-th-line));
+  background-color: color-mix(in srgb, var(--color-th-panel) 80%, transparent);
+  box-shadow: 0 14px 34px rgba(1, 8, 4, 0.18);
+  transform: translateX(-3px);
+}
+
+.th-flow-label:hover::after {
+  transform: translateX(115%);
+}
+
+@keyframes th-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+:root[data-theme="light"] .th-hero-surface {
+  box-shadow:
+    0 24px 70px rgba(29, 72, 49, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+:root[data-theme="light"] .th-flow-label {
+  box-shadow: 0 10px 28px rgba(29, 72, 49, 0.08);
 }
 
 ::selection {
@@ -101,9 +193,20 @@ a {
       to bottom,
       transparent 0,
       transparent 3px,
-      rgba(255, 255, 255, 0.025) 3px,
-      rgba(255, 255, 255, 0.025) 4px
+      var(--th-scanline) 3px,
+      var(--th-scanline) 4px
     );
     border-radius: inherit;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

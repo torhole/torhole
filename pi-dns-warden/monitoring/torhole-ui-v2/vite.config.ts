@@ -11,5 +11,8 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, "../caddy/v2"),
     emptyOutDir: true,
+    // Three.js is deliberately isolated in an idle-loaded 519 kB chunk; the
+    // operational shell remains below 450 kB and renders before it is fetched.
+    chunkSizeWarningLimit: 550,
   },
 });

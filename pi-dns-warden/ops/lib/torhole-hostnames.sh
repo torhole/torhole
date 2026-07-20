@@ -21,7 +21,7 @@ TORHOLE_ALIAS_PIHOLE_TRUSTED="${TORHOLE_ALIAS_PIHOLE_TRUSTED:-pt}"
 TORHOLE_ALIAS_PIHOLE_IOT="${TORHOLE_ALIAS_PIHOLE_IOT:-pi}"
 
 torhole_public_hosts_csv() {
-  printf '%s\n' \
+  local hosts=(
     "$TORHOLE_HOST_TORHOLE" \
     "$TORHOLE_HOST_AUTH" \
     "$TORHOLE_HOST_GRAFANA" \
@@ -29,33 +29,38 @@ torhole_public_hosts_csv() {
     "$TORHOLE_HOST_ALERTMANAGER" \
     "$TORHOLE_HOST_DOCKHAND" \
     "$TORHOLE_HOST_PIHOLE_TRUSTED" \
-    "$TORHOLE_HOST_PIHOLE_IOT" \
     "$TORHOLE_ALIAS_TORHOLE" \
     "$TORHOLE_ALIAS_GRAFANA" \
     "$TORHOLE_ALIAS_PROMETHEUS" \
     "$TORHOLE_ALIAS_ALERTMANAGER" \
     "$TORHOLE_ALIAS_DOCKHAND" \
-    "$TORHOLE_ALIAS_PIHOLE_TRUSTED" \
-    "$TORHOLE_ALIAS_PIHOLE_IOT" \
-    | awk 'NF' | paste -sd, -
+    "$TORHOLE_ALIAS_PIHOLE_TRUSTED"
+  )
+  if [[ "${TORHOLE_TOPOLOGY:-vlan}" == "vlan" ]]; then
+    hosts+=("$TORHOLE_HOST_PIHOLE_IOT" "$TORHOLE_ALIAS_PIHOLE_IOT")
+  fi
+  printf '%s\n' "${hosts[@]}" | awk 'NF' | paste -sd, -
 }
 
 torhole_protected_hosts_regex() {
-  printf '%s\n' \
+  local hosts=(
     "$TORHOLE_HOST_TORHOLE" \
     "$TORHOLE_HOST_GRAFANA" \
     "$TORHOLE_HOST_PROMETHEUS" \
     "$TORHOLE_HOST_ALERTMANAGER" \
     "$TORHOLE_HOST_DOCKHAND" \
     "$TORHOLE_HOST_PIHOLE_TRUSTED" \
-    "$TORHOLE_HOST_PIHOLE_IOT" \
     "$TORHOLE_ALIAS_TORHOLE" \
     "$TORHOLE_ALIAS_GRAFANA" \
     "$TORHOLE_ALIAS_PROMETHEUS" \
     "$TORHOLE_ALIAS_ALERTMANAGER" \
     "$TORHOLE_ALIAS_DOCKHAND" \
-    "$TORHOLE_ALIAS_PIHOLE_TRUSTED" \
-    "$TORHOLE_ALIAS_PIHOLE_IOT" \
+    "$TORHOLE_ALIAS_PIHOLE_TRUSTED"
+  )
+  if [[ "${TORHOLE_TOPOLOGY:-vlan}" == "vlan" ]]; then
+    hosts+=("$TORHOLE_HOST_PIHOLE_IOT" "$TORHOLE_ALIAS_PIHOLE_IOT")
+  fi
+  printf '%s\n' "${hosts[@]}" \
     | awk 'NF && !seen[$0]++ { gsub(/[][\\.^$*+?(){}|]/, "\\\\&"); print }' \
     | paste -sd'|' -
 }

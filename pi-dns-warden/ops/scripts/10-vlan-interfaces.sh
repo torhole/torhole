@@ -23,6 +23,25 @@ need() {
 }
 
 need PARENT_IF
+TORHOLE_TOPOLOGY="${TORHOLE_TOPOLOGY:-vlan}"
+
+if [[ "$TORHOLE_TOPOLOGY" == "single-lan" ]]; then
+  TRUSTED_PARENT="${TRUSTED_PARENT:-$PARENT_IF}"
+  for interface in "$PARENT_IF" "$TRUSTED_PARENT"; do
+    if ! ip link show "$interface" >/dev/null 2>&1; then
+      echo "ERROR: flat-LAN interface not found: $interface"
+      exit 1
+    fi
+  done
+  echo "OK: Advanced single-LAN parent ready: ${TRUSTED_PARENT}. No VLAN interfaces created."
+  exit 0
+fi
+
+if [[ "$TORHOLE_TOPOLOGY" != "vlan" ]]; then
+  echo "ERROR: TORHOLE_TOPOLOGY must be single-lan or vlan."
+  exit 1
+fi
+
 need TRUSTED_VLAN_ID
 need IOT_VLAN_ID
 
@@ -78,4 +97,4 @@ ensure_iface() {
 ensure_iface "$TRUSTED_PARENT" "$TRUSTED_VLAN_ID"
 ensure_iface "$IOT_PARENT" "$IOT_VLAN_ID"
 
-echo "OK: VLAN interfaces ready."
+echo "OK: Advanced VLAN interfaces ready."

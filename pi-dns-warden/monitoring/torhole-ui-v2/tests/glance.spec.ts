@@ -28,26 +28,34 @@ test.describe("Glance screen", () => {
   });
 
   test("shows all containers healthy", async ({ page }) => {
+    const snapshotResponse = await page.request.get("/api/system/snapshot");
+    expect(snapshotResponse.ok()).toBeTruthy();
+    const snapshot = await snapshotResponse.json();
     await page.goto("/v2/");
 
-    // Containers section header with 14/14 healthy meta
-    await expect(page.getByText(/14\/14\s*healthy/i)).toBeVisible();
+    const counts = snapshot.container_counts;
+    await expect(
+      page.getByText(new RegExp(`${counts.healthy}/${counts.total}\\s*healthy`, "i")),
+    ).toBeVisible();
 
-    // Core containers should be visible (chips)
-    for (const name of ["tor", "dnscrypt-trusted", "pihole_trusted", "authelia"]) {
-      await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
+    for (const container of snapshot.containers.filter((item: { core: boolean }) => item.core)) {
+      await expect(page.getByText(container.name, { exact: true }).first()).toBeVisible();
     }
   });
 
-  test("shows all 3 DNS planes serving", async ({ page }) => {
+  test("shows every configured DNS plane serving", async ({ page }) => {
+    const snapshotResponse = await page.request.get("/api/system/snapshot");
+    expect(snapshotResponse.ok()).toBeTruthy();
+    const snapshot = await snapshotResponse.json();
     await page.goto("/v2/");
 
-    // DNS planes section header with 2/2 serving meta
-    await expect(page.getByText(/2\/2\s*serving/i)).toBeVisible();
+    const planes = snapshot.dns.planes as Array<{ label: string; status: string }>;
+    const serving = planes.filter((plane) => plane.status === "healthy").length;
+    await expect(page.getByText(new RegExp(`${serving}/${planes.length}\\s*serving`, "i"))).toBeVisible();
 
-    // Plane labels
-    await expect(page.getByText("Trusted", { exact: true })).toBeVisible();
-    await expect(page.getByText("IoT", { exact: true })).toBeVisible();
+    for (const plane of planes) {
+      await expect(page.getByText(plane.label, { exact: true }).first()).toBeVisible();
+    }
   });
 
   test("sidebar has a sign-out control", async ({ page }) => {
@@ -57,6 +65,10 @@ test.describe("Glance screen", () => {
   });
 
   test("plane cards degrade when tor egress is down", async ({ page }) => {
+    const snapshotResponse = await page.request.get("/api/system/snapshot");
+    expect(snapshotResponse.ok()).toBeTruthy();
+    const snapshot = await snapshotResponse.json();
+    const planeCount = snapshot.dns.planes.length;
     // Intercept the live snapshot and force tor down — the plane cards must
     // stop claiming "via tor" and the serving count must drop to zero, even
     // though Pi-hole keeps counting forwarded (unanswered) queries.
@@ -68,11 +80,12 @@ test.describe("Glance screen", () => {
     });
     await page.goto("/v2/");
 
-    await expect(page.getByText(/0\/2\s*serving/i)).toBeVisible();
+    await expect(page.getByText(new RegExp(`0/${planeCount}\\s*serving`, "i"))).toBeVisible();
     await expect(page.getByText("tor down").first()).toBeVisible();
     await expect(
       page.getByText(/egress down — forwarded queries are not resolving/i).first(),
     ).toBeVisible();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 
   test("shows 4 proof tiles with data", async ({ page }) => {

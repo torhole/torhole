@@ -2,23 +2,21 @@
  * Configure screen — "Where do I set the things I'm allowed to set?"
  *
  * Iteration 1 scope:
- *   - Identity & access: read-only admin user, session info
+ *   - Identity & access: web-access status, CA download, admin password
  *   - Topology: read-only summary of network config from .env
  *   - Alerts: list notification channels, enable/disable toggle (wired)
- *   - Advanced: grouped read-only display of the full .env keyset
+ *   - Advanced: grouped per-key editor for non-secret .env values
  *
  * Scoped OUT of iteration 1 — each is its own session-worth of work:
- *   - Change admin password (needs Authelia re-render flow)
  *   - DNS upstream editor (per-plane dnscrypt resolver list)
  *   - Blocklist/gravity URL editor
  *   - Per-plane allow/deny domain editors
  *   - Backup schedule editor
  *   - Alert channel "Send test" buttons (no backend endpoint yet)
  *
- * Design principle: this screen is **read-heavy** and **write-safe**. The
- * only write action is toggling a notification channel, which is reversible.
- * Anything destructive or hard-to-reverse lives in Operate (with a
- * type-to-confirm modal once that's built).
+ * Design principle: this screen is **read-heavy** and **write-safe**. Generic
+ * parameter editing is limited to non-secrets and every .env write is atomic
+ * with a backup. Destructive runtime actions remain in Operate.
  */
 
 import { useEffect, useState } from "react";
@@ -27,6 +25,8 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Download,
+  ExternalLink,
   FileText,
   KeyRound,
   Mail,
@@ -36,13 +36,16 @@ import {
   Send,
   Shield,
   Terminal,
+  Upload,
   User,
 } from "lucide-react";
 import ConfirmModal from "../components/ConfirmModal";
 import SectionTabs, { type SectionTabDef } from "../components/SectionTabs";
 import {
+  applyCustomHttps,
   fetchConfig,
   fetchNotificationChannels,
+  enableLocalHttps,
   formatRelative,
   sendTestAlert,
   setNotificationChannel,
@@ -106,16 +109,16 @@ export default function ConfigureScreen() {
     },
     {
       id: "advanced",
-      eyebrow: "reference",
-      title: "Advanced",
-      meta: keyCount != null ? `${keyCount} keys` : undefined,
+      eyebrow: "admin",
+      title: "App parameters",
+      meta: keyCount != null ? `${keyCount} keys · editable` : undefined,
       icon: <Terminal size={11} />,
-      content: <AdvancedSection config={config} />,
+      content: <AdvancedSection config={config} onConfigChange={setConfig} />,
     },
   ];
 
   return (
-    <div className="px-6 py-7 lg:px-10 lg:py-9 xl:px-14 max-w-[1500px] 2xl:max-w-[1700px] mx-auto">
+    <div className="th-page-enter px-6 py-7 lg:px-10 lg:py-9 xl:px-14 max-w-[1500px] 2xl:max-w-[1700px] mx-auto">
       <Header state={state} />
 
       {configErr && (
@@ -155,23 +158,435 @@ function Header({ state }: { state: SnapshotState }) {
 }
 
 /* ----------------------------------------------------------------------- *
- * Identity & access — read-only for now
+ * Identity & access
  * ----------------------------------------------------------------------- */
 
-function IdentitySection({ config }: { config: Record<string, string> | null }) {
+function IdentitySection({
+  config,
+}: {
+  config: Record<string, string> | null;
+}) {
   const user = config?.TORHOLE_ADMIN_USER || "—";
   const reverseDomain = config?.REVERSE_PROXY_DOMAIN || "—";
   const authHost = config?.TORHOLE_HOST_AUTH || "auth";
+  const hostIp = config?.HOST_MGMT_IP || "";
+  const installRoot = config?.BACKUP_MANAGER_ROOT_DIR || "<torhole>/pi-dns-warden";
+  const webMode = config?.TORHOLE_WEB_MODE;
+  const httpsEnabled = Boolean(webMode && webMode !== "http");
   return (
     <TabPanel>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <KVRow label="Admin user" value={user} mono />
-        <KVRow label="Auth portal domain" value={`${authHost}.${reverseDomain}`} mono />
+        <KVRow
+          label="Named-host access"
+          value={httpsEnabled ? `Authelia SSO · ${authHost}.${reverseDomain}` : "HTTP Basic Auth"}
+          mono
+        />
       </div>
+      <div className="mt-3 text-[10.5px] text-th-text-muted font-mono leading-relaxed">
+        Direct-IP recovery always uses a browser password prompt. Authelia SSO is available on
+        the named host when HTTPS is enabled.
+      </div>
+      {!httpsEnabled && (
+        <WebAccessUpgrade
+          hostIp={hostIp}
+          installRoot={installRoot}
+        />
+      )}
+      {httpsEnabled && (
+        <WebAccessStatus
+          webMode={webMode || "https-local"}
+          hostIp={hostIp}
+          authHost={authHost}
+          reverseDomain={reverseDomain}
+        />
+      )}
       <div className="mt-6">
         <AdminPasswordForm />
       </div>
     </TabPanel>
+  );
+}
+
+function WebAccessStatus({
+  webMode,
+  hostIp,
+  authHost,
+  reverseDomain,
+}: {
+  webMode: string;
+  hostIp: string;
+  authHost: string;
+  reverseDomain: string;
+}) {
+  const generatedCertificate = webMode === "https-local";
+  const certificateUrl = hostIp ? `http://${hostIp}/torhole-local-ca.crt` : null;
+  const authUrl = reverseDomain !== "—" ? `https://${authHost}.${reverseDomain}/` : null;
+
+  return (
+    <div className="mt-4 rounded-md border border-th-primary/35 bg-th-primary/[0.06] p-4">
+      <div className="flex items-start gap-2">
+        <Shield size={14} className="mt-0.5 shrink-0 text-th-primary" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[12px] font-semibold text-th-primary">
+            HTTPS + Authelia SSO is active
+          </div>
+          <div className="mt-1 text-[11px] leading-relaxed text-th-text-muted">
+            {generatedCertificate
+              ? "This installation uses Torhole's generated local certificate authority. Install its certificate once on each device that administers Torhole."
+              : "This installation uses the custom certificate supplied during setup."}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {generatedCertificate && certificateUrl && (
+              <a
+                href={certificateUrl}
+                className="inline-flex min-h-[40px] items-center gap-2 rounded border border-th-primary/45 bg-th-primary/10 px-3 text-[10px] font-mono uppercase tracking-[0.12em] text-th-primary hover:bg-th-primary/20"
+              >
+                <Download size={13} />
+                download Torhole CA
+              </a>
+            )}
+            {authUrl && (
+              <a
+                href={authUrl}
+                className="inline-flex min-h-[40px] items-center gap-2 rounded border border-th-line px-3 text-[10px] font-mono uppercase tracking-[0.12em] text-th-text hover:border-th-primary/40 hover:text-th-primary"
+              >
+                <ExternalLink size={13} />
+                open Authelia login
+              </a>
+            )}
+          </div>
+          {generatedCertificate && certificateUrl && (
+            <div className="mt-3 break-all font-mono text-[10px] text-th-text-muted">
+              Certificate: {certificateUrl}
+            </div>
+          )}
+          {!generatedCertificate && <GeneratedCertificateSwitch />}
+          <CustomCertificateUpload replacing={webMode === "https-custom"} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GeneratedCertificateSwitch() {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [state, setState] = useState<WebAccessState>({ kind: "idle" });
+
+  const apply = async () => {
+    setModalOpen(false);
+    setState({ kind: "running" });
+    try {
+      const result = await enableLocalHttps();
+      setState({
+        kind: "success",
+        message: result.message,
+        recoveryUrl: result.recovery_url,
+        certificateUrl: result.certificate_url,
+        httpsUrl: result.https_url,
+      });
+    } catch (error) {
+      setState({ kind: "error", message: (error as Error).message });
+    }
+  };
+
+  return (
+    <div className="mt-4 border-t border-th-line/70 pt-4">
+      <button
+        type="button"
+        disabled={state.kind === "running"}
+        onClick={() => setModalOpen(true)}
+        className="inline-flex min-h-[38px] items-center gap-2 rounded border border-th-line px-3 font-mono text-[10px] uppercase tracking-[0.12em] text-th-text hover:border-th-primary/40 hover:text-th-primary disabled:cursor-wait disabled:opacity-50"
+      >
+        <Shield size={13} />
+        {state.kind === "running" ? "validating generated HTTPS…" : "use generated Torhole certificate"}
+      </button>
+      {state.kind === "success" && (
+        <div className="mt-3 text-[10.5px] text-th-primary">
+          {state.message} Reload this page when the proxy restart completes.
+        </div>
+      )}
+      {state.kind === "error" && (
+        <div className="mt-3 rounded border border-th-danger/35 bg-th-danger/10 px-3 py-2 font-mono text-[10.5px] text-th-danger">
+          {state.message}
+        </div>
+      )}
+      <ConfirmModal
+        open={modalOpen}
+        title="Use generated Torhole certificate"
+        confirmWord="ENABLE"
+        confirmLabel="Use generated HTTPS"
+        body={
+          <>
+            <p>This replaces the active custom certificate with Torhole's generated local CA certificate.</p>
+            <p className="mt-2 text-th-text-muted">You will need to install the downloadable Torhole CA on each administration device. Direct-IP recovery remains available.</p>
+          </>
+        }
+        onCancel={() => setModalOpen(false)}
+        onConfirm={() => void apply()}
+      />
+    </div>
+  );
+}
+
+function CustomCertificateUpload({ replacing }: { replacing: boolean }) {
+  const [certificate, setCertificate] = useState("");
+  const [certificateName, setCertificateName] = useState("");
+  const [privateKey, setPrivateKey] = useState("");
+  const [privateKeyName, setPrivateKeyName] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [state, setState] = useState<WebAccessState>({ kind: "idle" });
+
+  const readFile = async (
+    file: File | undefined,
+    setValue: (value: string) => void,
+    setName: (value: string) => void,
+  ) => {
+    if (!file) return;
+    setValue(await file.text());
+    setName(file.name);
+    setState({ kind: "idle" });
+  };
+
+  const apply = async () => {
+    setModalOpen(false);
+    setState({ kind: "running" });
+    try {
+      const result = await applyCustomHttps(certificate, privateKey);
+      setState({
+        kind: "success",
+        message: result.message,
+        recoveryUrl: result.recovery_url,
+        certificateUrl: result.certificate_url,
+        httpsUrl: result.https_url,
+      });
+      setPrivateKey("");
+    } catch (error) {
+      setState({ kind: "error", message: (error as Error).message });
+    }
+  };
+
+  if (state.kind === "success") {
+    return (
+      <div className="mt-4 rounded border border-th-primary/35 bg-th-bg/40 p-3">
+        <div className="flex items-start gap-2 text-[11px] text-th-primary">
+          <Check size={13} className="mt-0.5 shrink-0" />
+          <div>
+            <div className="font-semibold">Custom certificate accepted</div>
+            <div className="mt-1 text-th-text-muted">{state.message}</div>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="mt-3 min-h-[36px] rounded border border-th-primary/40 px-3 font-mono text-[10px] uppercase tracking-[0.12em] hover:bg-th-primary/10"
+            >
+              reload web access status
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 border-t border-th-line/70 pt-4">
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        className="inline-flex min-h-[38px] items-center gap-2 rounded border border-th-line px-3 font-mono text-[10px] uppercase tracking-[0.12em] text-th-text hover:border-th-primary/40 hover:text-th-primary"
+      >
+        <Upload size={13} />
+        {replacing ? "replace custom certificate" : "use my own certificate"}
+        <ChevronDown size={12} className={expanded ? "rotate-180" : ""} />
+      </button>
+
+      {expanded && (
+        <div className="mt-3 rounded border border-th-line bg-th-bg/35 p-3">
+          <div className="mb-3 text-[10.5px] leading-relaxed text-th-text-muted">
+            Upload a PEM certificate or full chain and its matching unencrypted private key.
+            Torhole validates the format, expiry, and public-key match before changing Caddy.
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <label className="min-h-[72px] cursor-pointer rounded border border-th-line p-3 hover:border-th-primary/40">
+              <span className="flex items-center gap-2 text-[11px] font-semibold text-th-text">
+                <Upload size={13} /> Certificate / full chain
+              </span>
+              <span className="mt-2 block break-all font-mono text-[10px] text-th-text-muted">
+                {certificateName || "Choose .crt or .pem"}
+              </span>
+              <input
+                className="sr-only"
+                type="file"
+                accept=".crt,.cer,.pem,application/x-pem-file"
+                onChange={(event) =>
+                  void readFile(event.target.files?.[0], setCertificate, setCertificateName)
+                }
+              />
+            </label>
+            <label className="min-h-[72px] cursor-pointer rounded border border-th-line p-3 hover:border-th-primary/40">
+              <span className="flex items-center gap-2 text-[11px] font-semibold text-th-text">
+                <Upload size={13} /> Private key
+              </span>
+              <span className="mt-2 block break-all font-mono text-[10px] text-th-text-muted">
+                {privateKeyName || "Choose .key or .pem"}
+              </span>
+              <input
+                className="sr-only"
+                type="file"
+                accept=".key,.pem,application/x-pem-file"
+                onChange={(event) =>
+                  void readFile(event.target.files?.[0], setPrivateKey, setPrivateKeyName)
+                }
+              />
+            </label>
+          </div>
+          <button
+            type="button"
+            disabled={!certificate || !privateKey || state.kind === "running"}
+            onClick={() => setModalOpen(true)}
+            className="mt-3 inline-flex min-h-[42px] items-center gap-2 rounded border border-th-primary/50 bg-th-primary/10 px-3 font-mono text-[10.5px] uppercase tracking-[0.13em] text-th-primary hover:bg-th-primary/20 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Shield size={13} />
+            {state.kind === "running" ? "validating certificate…" : "validate and use certificate"}
+          </button>
+          {state.kind === "error" && (
+            <div className="mt-3 rounded border border-th-danger/35 bg-th-danger/10 px-3 py-2 font-mono text-[10.5px] text-th-danger">
+              {state.message}
+            </div>
+          )}
+        </div>
+      )}
+
+      <ConfirmModal
+        open={modalOpen}
+        title={replacing ? "Replace custom certificate" : "Use custom HTTPS certificate"}
+        confirmWord="UPLOAD"
+        confirmLabel="Validate and apply"
+        body={
+          <>
+            <p>Torhole will validate the certificate, private key, expiry, and complete Caddy configuration before activating it.</p>
+            <p className="mt-2 text-th-text-muted">If validation fails, the active certificate and web configuration remain unchanged. Direct-IP recovery remains available.</p>
+          </>
+        }
+        onCancel={() => setModalOpen(false)}
+        onConfirm={() => void apply()}
+      />
+    </div>
+  );
+}
+
+type WebAccessState =
+  | { kind: "idle" }
+  | { kind: "running" }
+  | {
+      kind: "success";
+      message: string;
+      recoveryUrl?: string | null;
+      certificateUrl?: string | null;
+      httpsUrl?: string | null;
+    }
+  | { kind: "error"; message: string };
+
+function WebAccessUpgrade({
+  hostIp,
+  installRoot,
+}: {
+  hostIp: string;
+  installRoot: string;
+}) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [state, setState] = useState<WebAccessState>({ kind: "idle" });
+
+  const activate = async () => {
+    setState({ kind: "running" });
+    setModalOpen(false);
+    try {
+      const result = await enableLocalHttps();
+      setState({
+        kind: "success",
+        message: result.message,
+        recoveryUrl: result.recovery_url,
+        certificateUrl: result.certificate_url,
+        httpsUrl: result.https_url,
+      });
+    } catch (error) {
+      setState({ kind: "error", message: (error as Error).message });
+    }
+  };
+
+  if (state.kind === "success") {
+    return (
+      <div className="mt-4 rounded-md border border-th-primary/40 bg-th-primary/[0.06] p-4">
+        <div className="flex items-start gap-2">
+          <Check size={14} className="mt-0.5 shrink-0 text-th-primary" strokeWidth={2.5} />
+          <div>
+            <div className="text-[12px] font-semibold text-th-primary">HTTPS + Authelia SSO is activating</div>
+            <div className="mt-1 text-[11px] leading-relaxed text-th-text-muted">{state.message}</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {state.certificateUrl && (
+                <a href={state.certificateUrl} className="rounded border border-th-primary/40 px-3 py-2 text-[10px] font-mono uppercase tracking-[0.12em] text-th-primary hover:bg-th-primary/10">
+                  download local CA
+                </a>
+              )}
+              {state.httpsUrl && (
+                <a href={state.httpsUrl} className="rounded border border-th-line px-3 py-2 text-[10px] font-mono uppercase tracking-[0.12em] text-th-text hover:border-th-primary/40">
+                  open HTTPS login
+                </a>
+              )}
+            </div>
+            <div className="mt-3 text-[10px] font-mono text-th-text-muted">
+              If the proxy is still restarting, wait a few seconds. Recovery remains at {state.recoveryUrl || `http://${hostIp}/`}.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="mt-4 rounded-md border border-th-warning/35 bg-th-warning/[0.06] p-4 text-[11px] leading-relaxed">
+        <div className="font-semibold text-th-warning">Authelia SSO is currently off</div>
+        <div className="mt-1 text-th-text-muted">
+          HTTP uses Basic Auth, so every named service may show a browser password prompt.
+          Enable generated HTTPS here; do not rerun the setup installer.
+        </div>
+        <button
+          type="button"
+          disabled={state.kind === "running"}
+          onClick={() => setModalOpen(true)}
+          className="mt-3 inline-flex min-h-[42px] items-center gap-2 rounded-md border border-th-primary/50 bg-th-primary/12 px-3 text-[10.5px] font-mono uppercase tracking-[0.13em] text-th-primary transition-colors hover:bg-th-primary/20 disabled:cursor-wait disabled:opacity-50"
+        >
+          <Shield size={13} />
+          {state.kind === "running" ? "validating and applying…" : "enable HTTPS + Authelia SSO"}
+        </button>
+        <details className="mt-3 text-th-text-muted">
+          <summary className="cursor-pointer font-mono text-[10px] text-th-text-muted hover:text-th-text">manual fallback</summary>
+          <div className="mt-2">Set <span className="font-mono text-th-text-mono">TORHOLE_WEB_MODE=https-local</span>, then run:</div>
+          <div className="mt-2 overflow-x-auto rounded border border-th-line/70 bg-th-bg/70 px-3 py-2 font-mono text-[10.5px] text-th-text-mono">
+            cd {installRoot} &amp;&amp; sudo ./deploy.sh --skip-prereqs
+          </div>
+        </details>
+        {state.kind === "error" && (
+          <div className="mt-3 rounded border border-th-danger/35 bg-th-danger/10 px-3 py-2 font-mono text-[10.5px] text-th-danger">{state.message}</div>
+        )}
+      </div>
+
+      <ConfirmModal
+        open={modalOpen}
+        title="Enable HTTPS and Authelia SSO"
+        confirmWord="ENABLE"
+        confirmLabel="Enable HTTPS"
+        body={
+          <>
+            <p>This renders and validates generated HTTPS before recreating only Authelia and Caddy. Prometheus is restarted so its HTTPS probe target is current.</p>
+            <p className="mt-2 text-th-text-muted">The DNS privacy path is not restarted. Direct-IP recovery remains available at <span className="font-mono">http://{hostIp}/</span>.</p>
+          </>
+        }
+        onCancel={() => setModalOpen(false)}
+        onConfirm={() => void activate()}
+      />
+    </>
   );
 }
 
@@ -416,8 +831,9 @@ function TopologySection({ config }: { config: Record<string, string> | null }) 
   const parent = config?.PARENT_IF;
   const tz = config?.TZ;
   const hostIp = config?.HOST_MGMT_IP;
+  const topology = config?.TORHOLE_TOPOLOGY === "vlan" ? "vlan" : "single-lan";
 
-  const planes: Array<{
+  const allPlanes: Array<{
     id: "trusted" | "iot";
     label: string;
     parentKey: string;
@@ -428,7 +844,7 @@ function TopologySection({ config }: { config: Record<string, string> | null }) 
   }> = [
     {
       id: "trusted",
-      label: "Trusted",
+      label: topology === "vlan" ? "Trusted" : "Flat LAN",
       parentKey: "TRUSTED_PARENT",
       idKey: "TRUSTED_VLAN_ID",
       subnetKey: "TRUSTED_SUBNET_CIDR",
@@ -445,17 +861,19 @@ function TopologySection({ config }: { config: Record<string, string> | null }) 
       piholeIpKey: "PIHOLE_IOT_IP",
     },
   ];
+  const planes = topology === "vlan" ? allPlanes : allPlanes.slice(0, 1);
 
   return (
     <TabPanel>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+        <KVRow label="Installed topology" value={topology === "vlan" ? "Segmented VLANs" : "Single LAN"} mono />
         <KVRow label="Parent interface" value={parent} mono />
         <KVRow label="Host management IP" value={hostIp} mono />
         <KVRow label="Timezone" value={tz} mono />
       </div>
 
       <div className="text-[9.5px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono mb-2 mt-1">
-        VLANs
+        {topology === "vlan" ? "DNS planes · VLANs" : "DNS plane · flat LAN"}
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {planes.map((plane) => (
@@ -471,7 +889,7 @@ function TopologySection({ config }: { config: Record<string, string> | null }) 
             </div>
             <div className="space-y-1.5">
               <TinyKV label="parent" value={config?.[plane.parentKey]} />
-              <TinyKV label="vlan id" value={config?.[plane.idKey]} />
+              {topology === "vlan" && <TinyKV label="vlan id" value={config?.[plane.idKey]} />}
               <TinyKV label="subnet" value={config?.[plane.subnetKey]} />
               <TinyKV label="gateway" value={config?.[plane.gwKey]} />
               <TinyKV label="pihole ip" value={config?.[plane.piholeIpKey]} />
@@ -896,7 +1314,7 @@ function Toggle({
 }
 
 /* ----------------------------------------------------------------------- *
- * Advanced — read-only .env dump, collapsible
+ * Advanced — guarded per-key .env editor, collapsible
  * ----------------------------------------------------------------------- */
 
 const ADVANCED_CATEGORIES: Array<{
@@ -912,7 +1330,13 @@ const ADVANCED_CATEGORIES: Array<{
   { id: "torhole", label: "Torhole", prefixes: ["TORHOLE_", "TOR_", "BACKUP_"] },
 ];
 
-function AdvancedSection({ config }: { config: Record<string, string> | null }) {
+function AdvancedSection({
+  config,
+  onConfigChange,
+}: {
+  config: Record<string, string> | null;
+  onConfigChange: (config: Record<string, string>) => void;
+}) {
   // In the tab layout, Advanced no longer competes for space on the main
   // Configure page — it's always expanded when the tab is active.
   const [expanded, setExpanded] = useState(true);
@@ -960,14 +1384,11 @@ function AdvancedSection({ config }: { config: Record<string, string> | null }) 
       <div className="flex items-start gap-2 mb-3 p-3 bg-th-bg/40 border border-th-line/60 rounded text-[11px] text-th-text-muted leading-relaxed">
         <Shield size={13} className="text-th-text-muted/70 shrink-0 mt-0.5" />
         <div>
-          These values live in{" "}
-          <span className="font-mono text-th-text-mono">/opt/pi-dns-warden/.env</span>{" "}
-          on the host. Edit the file and re-run{" "}
-          <span className="font-mono text-th-text-mono">
-            docker compose up -d
-          </span>{" "}
-          (or the relevant render script) to apply. Secrets are masked; the real
-          values never leave the host.
+          Edit non-secret application parameters one key at a time. Each save is
+          written atomically to <span className="font-mono text-th-text-mono">.env</span>{" "}
+          with a backup. Saved does not mean applied: host networking, rendered
+          authentication, and most container settings require a maintenance deploy.
+          Secrets stay masked and use their dedicated editors or direct host access.
         </div>
       </div>
 
@@ -977,10 +1398,21 @@ function AdvancedSection({ config }: { config: Record<string, string> | null }) 
             (cat) =>
               groups[cat.id] &&
               groups[cat.id].length > 0 && (
-                <AdvancedGroup key={cat.id} label={cat.label} entries={groups[cat.id]} />
+                <AdvancedGroup
+                  key={cat.id}
+                  label={cat.label}
+                  entries={groups[cat.id]}
+                  onConfigChange={onConfigChange}
+                />
               ),
           )}
-          {other.length > 0 && <AdvancedGroup label="Other" entries={other} />}
+          {other.length > 0 && (
+            <AdvancedGroup
+              label="Other"
+              entries={other}
+              onConfigChange={onConfigChange}
+            />
+          )}
         </div>
       )}
     </TabPanel>
@@ -990,9 +1422,11 @@ function AdvancedSection({ config }: { config: Record<string, string> | null }) 
 function AdvancedGroup({
   label,
   entries,
+  onConfigChange,
 }: {
   label: string;
   entries: Array<[string, string]>;
+  onConfigChange: (config: Record<string, string>) => void;
 }) {
   return (
     <div>
@@ -1001,22 +1435,114 @@ function AdvancedGroup({
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
         {entries.map(([k, v]) => (
-          <div
+          <AdvancedConfigRow
             key={k}
-            className="flex items-baseline gap-2 py-0.5 text-[11px] font-mono border-b border-th-line/20"
-          >
-            <span className="text-th-text-muted/70 truncate w-[200px] shrink-0" title={k}>
-              {k}
-            </span>
-            <span
-              className={`truncate ${v === "***" ? "text-th-text-muted/50 italic" : "text-th-text-mono"}`}
-              title={v}
-            >
-              {v || "(empty)"}
-            </span>
-          </div>
+            configKey={k}
+            value={v}
+            onConfigChange={onConfigChange}
+          />
         ))}
       </div>
+    </div>
+  );
+}
+
+const SECRET_CONFIG_KEY = /(PASSWORD|SECRET|KEY|TOKEN|PASS)/i;
+
+function AdvancedConfigRow({
+  configKey,
+  value,
+  onConfigChange,
+}: {
+  configKey: string;
+  value: string;
+  onConfigChange: (config: Record<string, string>) => void;
+}) {
+  const secret = SECRET_CONFIG_KEY.test(configKey);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [saveState, setSaveState] = useState<
+    { kind: "idle" } | { kind: "saving" } | { kind: "error"; message: string }
+  >({ kind: "idle" });
+
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [editing, value]);
+
+  const save = async () => {
+    setSaveState({ kind: "saving" });
+    try {
+      const result = await updateConfigValue(configKey, draft);
+      if (result.config) onConfigChange(result.config);
+      setEditing(false);
+      setSaveState({ kind: "idle" });
+    } catch (error) {
+      setSaveState({ kind: "error", message: (error as Error).message });
+    }
+  };
+
+  return (
+    <div className="py-1 text-[11px] font-mono border-b border-th-line/20 min-w-0">
+      <div className="flex items-center gap-2 min-h-[30px]">
+        <span
+          className="text-th-text-muted/70 truncate w-[200px] shrink-0"
+          title={configKey}
+        >
+          {configKey}
+        </span>
+        {editing ? (
+          <>
+            <input
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              disabled={saveState.kind === "saving"}
+              aria-label={`Value for ${configKey}`}
+              className="min-w-0 flex-1 px-2 py-1.5 rounded border border-th-line bg-th-bg/70 text-th-text-mono outline-none focus:border-th-primary/50"
+            />
+            <button
+              type="button"
+              disabled={saveState.kind === "saving" || draft === value}
+              onClick={() => void save()}
+              className="px-2 min-h-[30px] rounded border border-th-primary/40 text-th-primary disabled:opacity-35"
+            >
+              {saveState.kind === "saving" ? "saving…" : "save"}
+            </button>
+            <button
+              type="button"
+              disabled={saveState.kind === "saving"}
+              onClick={() => {
+                setDraft(value);
+                setEditing(false);
+                setSaveState({ kind: "idle" });
+              }}
+              className="px-2 min-h-[30px] rounded border border-th-line text-th-text-muted"
+            >
+              cancel
+            </button>
+          </>
+        ) : (
+          <>
+            <span
+              className={`truncate flex-1 ${secret ? "text-th-text-muted/50 italic" : "text-th-text-mono"}`}
+              title={secret ? "Secret value masked" : value}
+            >
+              {secret ? value || "(secret not configured)" : value || "(empty)"}
+            </span>
+            {!secret && (
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="px-2 min-h-[30px] rounded border border-th-line text-th-text-muted hover:text-th-primary hover:border-th-primary/40"
+              >
+                edit
+              </button>
+            )}
+          </>
+        )}
+      </div>
+      {saveState.kind === "error" && (
+        <div className="mt-1 text-[10px] text-th-danger">{saveState.message}</div>
+      )}
     </div>
   );
 }

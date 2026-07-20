@@ -11,6 +11,7 @@ No network, no Docker, no filesystem writes outside tempdirs.
 
 import importlib.util
 import json
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -20,6 +21,202 @@ SERVER_PATH = Path(__file__).with_name("server.py")
 SPEC = importlib.util.spec_from_file_location("backup_manager_server_char", SERVER_PATH)
 server = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(server)
+
+
+class HostRootDetectionTests(unittest.TestCase):
+    def test_uses_workspace_bind_source_from_docker_metadata(self):
+        inspect_payload = json.dumps(
+            [
+                {
+                    "Mounts": [
+                        {
+                            "Type": "bind",
+                            "Source": "/home/debian/torhole/pi-dns-warden",
+                            "Destination": "/workspace",
+                        }
+                    ]
+                }
+            ]
+        )
+        completed = mock.Mock(returncode=0, stdout=inspect_payload)
+        with mock.patch.object(server.subprocess, "run", return_value=completed):
+            result = server._detect_host_root_dir(
+                Path("/workspace"), Path("/opt/pi-dns-warden")
+            )
+
+        self.assertEqual(result, Path("/home/debian/torhole/pi-dns-warden"))
+
+    def test_falls_back_to_configured_path_when_inspection_fails(self):
+        completed = mock.Mock(returncode=1, stdout="")
+        with mock.patch.object(server.subprocess, "run", return_value=completed):
+            result = server._detect_host_root_dir(
+                Path("/workspace"), Path("/srv/torhole")
+            )
+
+        self.assertEqual(result, Path("/srv/torhole"))
+
+
+class RecoveryBusyTests(unittest.TestCase):
+    def test_stale_running_status_does_not_count_as_busy(self):
+        with self.subTest("kernel lock is authoritative"):
+            import tempfile
+
+            with tempfile.TemporaryDirectory() as tmp:
+                lock_file = Path(tmp) / "recovery.lock"
+                with mock.patch.object(server, "RUN_DIR", Path(tmp)), mock.patch.object(
+                    server, "RECOVERY_LOCK_FILE", lock_file
+                ), mock.patch.object(
+                    server,
+                    "read_status",
+                    return_value={"status": "running"},
+                ):
+                    self.assertFalse(server.recovery_busy())
+
+    def test_active_kernel_lock_counts_as_busy(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            lock_file = Path(tmp) / "recovery.lock"
+            with lock_file.open("a+", encoding="utf-8") as holder:
+                server.fcntl.flock(holder.fileno(), server.fcntl.LOCK_EX)
+                with mock.patch.object(server, "RUN_DIR", Path(tmp)), mock.patch.object(
+                    server, "RECOVERY_LOCK_FILE", lock_file
+                ):
+                    self.assertTrue(server.recovery_busy())
+                server.fcntl.flock(holder.fileno(), server.fcntl.LOCK_UN)
+
+
+class WebAccessUpgradeTests(unittest.TestCase):
+    def test_http_upgrade_renders_validates_and_schedules_narrow_activation(self):
+        current = {"TORHOLE_WEB_MODE": "http", "HOST_MGMT_IP": "10.0.0.149"}
+        updated = {
+            "TORHOLE_WEB_MODE": "https-local",
+            "HOST_MGMT_IP": "10.0.0.149",
+            "REVERSE_PROXY_DOMAIN": "hplab.local",
+            "TORHOLE_HOST_TORHOLE": "torhole",
+        }
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch.object(
+            server, "read_env_values_safe", side_effect=[current, updated]
+        ), mock.patch.object(
+            server, "update_env_keys", return_value=(Path("/tmp/env-backup"), updated)
+        ) as update, mock.patch.object(
+            server, "run_auth_render", return_value=completed
+        ), mock.patch.object(
+            server,
+            "run_system_validation",
+            return_value={"status": "success", "summary": "ok"},
+        ), mock.patch.object(
+            server, "schedule_local_https_activation", return_value=completed
+        ) as schedule, mock.patch.object(
+            server, "get_config_values", return_value=updated
+        ):
+            result = server.enable_local_https()
+
+        update.assert_called_once_with(
+            {"TORHOLE_WEB_MODE": "https-local", "TORHOLE_WEB_SCHEME": "https"},
+            allow_secret_keys=False,
+        )
+        schedule.assert_called_once_with()
+        self.assertTrue(result["scheduled"])
+        self.assertEqual(result["https_url"], "https://torhole.hplab.local/")
+        self.assertEqual(
+            result["certificate_url"],
+            "http://10.0.0.149/torhole-local-ca.crt",
+        )
+
+    def test_custom_https_can_switch_back_to_generated_https(self):
+        current = {"TORHOLE_WEB_MODE": "https-custom"}
+        updated = {
+            "TORHOLE_WEB_MODE": "https-local",
+            "HOST_MGMT_IP": "10.0.0.149",
+            "REVERSE_PROXY_DOMAIN": "hplab.local",
+        }
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch.object(
+            server,
+            "read_env_values_safe",
+            side_effect=[current, updated],
+        ), mock.patch.object(
+            server, "update_env_keys", return_value=(Path("/tmp/env-backup"), updated)
+        ) as update, mock.patch.object(
+            server, "run_auth_render", return_value=completed
+        ), mock.patch.object(
+            server,
+            "run_system_validation",
+            return_value={"status": "success", "summary": "ok"},
+        ), mock.patch.object(
+            server, "schedule_local_https_activation", return_value=completed
+        ), mock.patch.object(server, "get_config_values", return_value=updated):
+            result = server.enable_local_https()
+
+        update.assert_called_once_with(
+            {"TORHOLE_WEB_MODE": "https-local", "TORHOLE_WEB_SCHEME": "https"},
+            allow_secret_keys=False,
+        )
+        self.assertTrue(result["scheduled"])
+        self.assertEqual(
+            result["certificate_url"],
+            "http://10.0.0.149/torhole-local-ca.crt",
+        )
+
+    def test_custom_https_writes_private_files_then_validates_and_schedules(self):
+        cert = "-----BEGIN CERTIFICATE-----\nCERT\n-----END CERTIFICATE-----\n"
+        key = "-----BEGIN PRIVATE KEY-----\nKEY\n-----END PRIVATE KEY-----\n"
+        completed = mock.Mock(returncode=0, stdout="", stderr="")
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
+            server, "ROOT_DIR", Path(tmp)
+        ), mock.patch.object(
+            server,
+            "read_env_values_safe",
+            side_effect=[
+                {"TORHOLE_WEB_MODE": "https-local"},
+                {
+                    "TORHOLE_WEB_MODE": "https-custom",
+                    "HOST_MGMT_IP": "10.0.0.149",
+                    "REVERSE_PROXY_DOMAIN": "hplab.local",
+                },
+            ],
+        ), mock.patch.object(
+            server,
+            "update_env_keys",
+            return_value=(Path(tmp) / ".env.backup", {}),
+        ), mock.patch.object(
+            server, "run_auth_render", return_value=completed
+        ), mock.patch.object(
+            server,
+            "run_system_validation",
+            return_value={"status": "success", "summary": "ok"},
+        ), mock.patch.object(
+            server, "schedule_local_https_activation", return_value=completed
+        ), mock.patch.object(server, "get_config_values", return_value={}):
+            result = server.configure_https("https-custom", cert, key)
+            cert_path = Path(tmp) / "monitoring/caddy/tls/custom.crt"
+            key_path = Path(tmp) / "monitoring/caddy/tls/custom.key"
+            self.assertEqual(cert_path.read_text(), cert)
+            self.assertEqual(key_path.read_text(), key)
+            self.assertEqual(key_path.stat().st_mode & 0o777, 0o600)
+
+        self.assertTrue(result["scheduled"])
+        self.assertIsNone(result["certificate_url"])
+
+    def test_custom_https_rejects_non_pem_before_writing(self):
+        with mock.patch.object(server, "update_env_keys") as update:
+            with self.assertRaisesRegex(ValueError, "must be PEM encoded"):
+                server.configure_https("https-custom", "not a cert", "not a key")
+        update.assert_not_called()
+
+    def test_activation_helper_mounts_project_at_real_host_path(self):
+        completed = mock.Mock(returncode=0, stdout="container-id", stderr="")
+        with mock.patch.object(server, "HOST_ROOT_DIR", Path("/srv/torhole")), mock.patch.object(
+            server.subprocess, "run", return_value=completed
+        ) as run:
+            result = server.schedule_local_https_activation()
+
+        self.assertEqual(result.returncode, 0)
+        command = run.call_args.args[0]
+        self.assertIn("/srv/torhole:/srv/torhole", command)
+        self.assertIn("./ops/scripts/25-apply-web-access.sh", command[-1])
 
 
 class ParseEnvTextTests(unittest.TestCase):
@@ -109,6 +306,34 @@ class ApplySetupConfigTests(unittest.TestCase):
         with mock.patch.object(server, "update_env_keys") as update:
             with self.assertRaisesRegex(ValueError, "home.*advanced"):
                 server.apply_setup_config({"edition": "enterprise"})
+        update.assert_not_called()
+
+    def test_records_advanced_single_lan_topology_for_explicit_deploy(self):
+        current = {
+            "TORHOLE_EDITION": "advanced",
+            "TORHOLE_TOPOLOGY": "vlan",
+        }
+        with mock.patch.object(
+            server, "read_env_values_safe", return_value=current
+        ), mock.patch.object(
+            server,
+            "update_env_keys",
+            return_value=(Path("/workspace/.env.bak-test"), {}),
+        ) as update:
+            result = server.apply_setup_config(
+                {"edition": "advanced", "topology": "single-lan"}
+            )
+
+        update.assert_called_once_with(
+            {"TORHOLE_TOPOLOGY": "single-lan"}, allow_secret_keys=False
+        )
+        self.assertEqual(result["changes"][0]["key"], "TORHOLE_TOPOLOGY")
+        self.assertIn("deploy.sh", result["message"])
+
+    def test_rejects_unknown_topology_before_writing(self):
+        with mock.patch.object(server, "update_env_keys") as update:
+            with self.assertRaisesRegex(ValueError, "single-lan.*vlan"):
+                server.apply_setup_config({"topology": "flat"})
         update.assert_not_called()
 
 
@@ -324,6 +549,51 @@ class PublicLinksTests(unittest.TestCase):
         self.assertTrue(links["pihole_trusted"].endswith("/admin/"))
         # Guest plane must not resurface (removed 2026-07-13).
         self.assertNotIn("pihole_guest", links)
+
+
+class ConfigCapabilityTests(unittest.TestCase):
+    def test_single_lan_config_hides_vlan_and_iot_parameters(self):
+        values = {
+            "TORHOLE_TOPOLOGY": "single-lan",
+            "PIHOLE_TRUSTED_IP": "10.0.0.151",
+            "TRUSTED_VLAN_ID": "1",
+            "PIHOLE_IOT_IP": "10.0.50.53",
+            "DNSCRYPT_SOCKS_USER_IOT": "iot",
+            "TORHOLE_HOST_PIHOLE_IOT": "pihole-iot",
+        }
+        with mock.patch.object(server, "TORHOLE_TOPOLOGY", "single-lan"), mock.patch.object(
+            server, "read_env_values", return_value=values
+        ):
+            result = server.get_config_values()
+
+        self.assertEqual(result["PIHOLE_TRUSTED_IP"], "10.0.0.151")
+        self.assertNotIn("TRUSTED_VLAN_ID", result)
+        self.assertNotIn("PIHOLE_IOT_IP", result)
+        self.assertNotIn("DNSCRYPT_SOCKS_USER_IOT", result)
+        self.assertNotIn("TORHOLE_HOST_PIHOLE_IOT", result)
+
+    def test_vlan_config_keeps_iot_parameters(self):
+        values = {
+            "TORHOLE_TOPOLOGY": "vlan",
+            "PIHOLE_IOT_IP": "10.0.50.53",
+            "DNSCRYPT_SOCKS_USER_IOT": "iot",
+        }
+        with mock.patch.object(server, "TORHOLE_TOPOLOGY", "vlan"), mock.patch.object(
+            server, "read_env_values", return_value=values
+        ):
+            result = server.get_config_values()
+
+        self.assertEqual(result["PIHOLE_IOT_IP"], "10.0.50.53")
+        self.assertEqual(result["DNSCRYPT_SOCKS_USER_IOT"], "iot")
+
+    def test_single_lan_rejects_direct_edit_of_inactive_iot_key(self):
+        with mock.patch.object(server, "TORHOLE_TOPOLOGY", "single-lan"), mock.patch.object(
+            server, "update_env_keys"
+        ) as update:
+            with self.assertRaisesRegex(ValueError, "not active.*single-lan"):
+                server.set_config_value("PIHOLE_IOT_IP", "10.0.50.53")
+
+        update.assert_not_called()
 
 
 class ValidationParsingTests(unittest.TestCase):

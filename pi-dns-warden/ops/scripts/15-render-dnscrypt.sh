@@ -87,6 +87,8 @@ PY
 }
 
 render_one trusted
-render_one iot
+if [[ "${TORHOLE_TOPOLOGY:-vlan}" == "vlan" ]]; then
+  render_one iot
+fi
 
-echo "OK: dnscrypt-proxy configs rendered (DNSCRYPT_RESOLVERS=$DNSCRYPT_RESOLVERS)"
+echo "OK: dnscrypt-proxy configs rendered for ${TORHOLE_TOPOLOGY:-vlan} (DNSCRYPT_RESOLVERS=$DNSCRYPT_RESOLVERS)"

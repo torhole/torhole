@@ -19,7 +19,7 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Trusted Pi-hole UDP",
+      "title": "Pi-hole UDP by DNS plane",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
@@ -27,68 +27,13 @@
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 4,
+        "w": 8,
         "h": 4
       },
       "targets": [
         {
-          "expr": "avg_over_time(probe_success{job=\"blackbox-dns-udp-pihole\",instance=\"pihole_trusted:53\"}[5m]) * 100",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "center"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "decimals": 1,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 90
-              },
-              {
-                "color": "green",
-                "value": 99
-              }
-            ]
-          }
-        }
-      }
-    },
-    {
-      "id": 2,
-      "type": "stat",
-      "title": "IoT Pi-hole UDP",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
-      },
-      "gridPos": {
-        "x": 4,
-        "y": 0,
-        "w": 4,
-        "h": 4
-      },
-      "targets": [
-        {
-          "expr": "avg_over_time(probe_success{job=\"blackbox-dns-udp-pihole\",instance=\"pihole_iot:53\"}[5m]) * 100",
+          "expr": "avg_over_time(probe_success{job=\"blackbox-dns-udp-pihole\"}[5m]) * 100",
+          "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ],
@@ -131,76 +76,21 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "Trusted dnscrypt TCP",
+      "title": "dnscrypt TCP by DNS plane",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 12,
+        "x": 8,
         "y": 0,
-        "w": 4,
+        "w": 8,
         "h": 4
       },
       "targets": [
         {
-          "expr": "avg_over_time(probe_success{job=\"blackbox-dns-tcp-dnscrypt\",instance=\"dnscrypt_trusted:5053\"}[5m]) * 100",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "center"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "decimals": 1,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 90
-              },
-              {
-                "color": "green",
-                "value": 99
-              }
-            ]
-          }
-        }
-      }
-    },
-    {
-      "id": 5,
-      "type": "stat",
-      "title": "IoT dnscrypt TCP",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
-      },
-      "gridPos": {
-        "x": 16,
-        "y": 0,
-        "w": 4,
-        "h": 4
-      },
-      "targets": [
-        {
-          "expr": "avg_over_time(probe_success{job=\"blackbox-dns-tcp-dnscrypt\",instance=\"dnscrypt_iot:5053\"}[5m]) * 100",
+          "expr": "avg_over_time(probe_success{job=\"blackbox-dns-tcp-dnscrypt\"}[5m]) * 100",
+          "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ],
@@ -243,7 +133,7 @@
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Pi-hole UDP success by VLAN",
+      "title": "Pi-hole UDP success by DNS plane",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
@@ -278,7 +168,7 @@
     {
       "id": 8,
       "type": "timeseries",
-      "title": "dnscrypt TCP success by role",
+      "title": "dnscrypt TCP success by DNS plane",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
@@ -313,7 +203,7 @@
     {
       "id": 9,
       "type": "timeseries",
-      "title": "Pi-hole probe latency by VLAN",
+      "title": "Pi-hole probe latency by DNS plane",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
@@ -346,7 +236,7 @@
     {
       "id": 10,
       "type": "timeseries",
-      "title": "dnscrypt probe latency by role",
+      "title": "dnscrypt probe latency by DNS plane",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
@@ -379,7 +269,7 @@
     {
       "id": 11,
       "type": "timeseries",
-      "title": "Pi-hole query rate by role",
+      "title": "Pi-hole query rate by DNS plane",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
@@ -412,7 +302,7 @@
     {
       "id": 12,
       "type": "timeseries",
-      "title": "Forwarded DNS queries by role",
+      "title": "Forwarded DNS queries by DNS plane",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
@@ -445,7 +335,7 @@
     {
       "id": 13,
       "type": "timeseries",
-      "title": "Pi-hole admin reachability by VLAN",
+      "title": "Pi-hole admin reachability by DNS plane",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
@@ -603,7 +493,7 @@
     {
       "id": 19,
       "type": "timeseries",
-      "title": "Blocked ratio by role",
+      "title": "Blocked ratio by DNS plane",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
@@ -638,7 +528,7 @@
     {
       "id": 20,
       "type": "timeseries",
-      "title": "Cache vs forwarded vs blocked by role",
+      "title": "Cache vs forwarded vs blocked by DNS plane",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
@@ -681,7 +571,7 @@
     {
       "id": 21,
       "type": "timeseries",
-      "title": "Cache hit ratio by role",
+      "title": "Cache hit ratio by DNS plane",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"

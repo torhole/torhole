@@ -1,6 +1,6 @@
-# Pi-hole per VLAN + dnscrypt-proxy over Tor + Monitoring (Raspberry Pi 5)
+# Advanced VLAN reference: Pi-hole + dnscrypt-proxy over Tor + Monitoring
 
-This project creates **2 local DNS endpoints** (one per VLAN): **Trusted** and **IoT**.
+This reference covers `TORHOLE_TOPOLOGY=vlan`, which creates **2 local DNS endpoints**: **Trusted** and **IoT**. For a flat network with the same Advanced SSO, monitoring, logging, alerting, backup, and control stack, choose `single-lan` in the web installer.
 
 Each VLAN uses its own Pi-hole container (static IP on that VLAN). Pi-hole forwards DNS to a dedicated **dnscrypt-proxy** instance, and dnscrypt-proxy resolves DNS **through Tor SOCKS** (TCP-only).
 
@@ -107,14 +107,14 @@ sudo ./deploy.sh --harden-host
 
 ### Web UIs
 - Trusted Pi-hole direct VLAN IP: `http://192.168.1.53/admin`
-- Reverse-proxy landing page: `https://th-torhole.home.arpa`
-- Auth portal: `https://th-auth.home.arpa`
-- Grafana: `https://th-grafana.home.arpa`
-- Prometheus: `https://th-prometheus.home.arpa`
-- Alertmanager: `https://th-alertmanager.home.arpa`
-- Dockhand: `https://th-dockhand.home.arpa`
-- Pi-hole Trusted: `https://th-pihole-trusted.home.arpa/admin/`
-- Pi-hole IoT: `https://th-pihole-iot.home.arpa/admin/`
+- Reverse-proxy landing page: `https://th-torhole.lan.home.arpa`
+- Auth portal: `https://th-auth.lan.home.arpa`
+- Grafana: `https://th-grafana.lan.home.arpa`
+- Prometheus: `https://th-prometheus.lan.home.arpa`
+- Alertmanager: `https://th-alertmanager.lan.home.arpa`
+- Dockhand: `https://th-dockhand.lan.home.arpa`
+- Pi-hole Trusted: `https://th-pihole-trusted.lan.home.arpa/admin/`
+- Pi-hole IoT: `https://th-pihole-iot.lan.home.arpa/admin/`
 
 The Torhole landing page, recovery API, Prometheus, and Alertmanager now sit behind a shared Authelia session. Grafana and Dockhand still use their application logins. Caddy uses an internal CA for LAN HTTPS, so you need to trust its root certificate on your devices to avoid browser warnings.
 
@@ -129,15 +129,17 @@ The stack can also publish a single LAN reverse proxy with local hostnames:
 - `https://th-pihole-trusted.<your-domain>/admin/`
 - `https://th-pihole-iot.<your-domain>/admin/`
 
-For example, `REVERSE_PROXY_DOMAIN=home.arpa` makes these resolve as `*.home.arpa`.
+For example, `REVERSE_PROXY_DOMAIN=lan.home.arpa` makes these resolve as
+`*.lan.home.arpa`. Do not use bare `home.arpa`: it is a special public suffix,
+so Authelia cannot set a session cookie for it.
 The actual `th-*` records are rendered from `.env` during deploy/update/restore using `TORHOLE_DNS_HOSTS`, so Pi-hole owns those local DNS entries automatically.
 You can also add arbitrary Pi-hole local DNS records in `.env` via `PIHOLE_LOCAL_DNS_RECORDS`. Use `host=ip;fqdn=ip`. Short names are expanded under `REVERSE_PROXY_DOMAIN`.
 
-The shared Torhole edge session is rendered from `.env` by `ops/scripts/18-render-auth.sh`. On first render it auto-generates the internal Authelia session and storage secrets plus `BACKUP_MANAGER_API_TOKEN` if they are blank, then writes them back into `.env`. Caddy presents that token to `backup-manager` after Authelia succeeds; direct internal API calls are rejected. `th-auth.<your-domain>` must resolve locally because it hosts the login form for the protected routes.
+The shared Torhole edge session is rendered from `.env` by `ops/scripts/18-render-auth.sh`. `TORHOLE_WEB_MODE` selects plain HTTP, Caddy-local HTTPS, or an uploaded custom certificate. HTTPS uses Authelia; HTTP and the permanent `http://HOST_MGMT_IP/` recovery route use Caddy authentication with the same admin credentials. On first render the script auto-generates internal Authelia secrets plus `BACKUP_MANAGER_API_TOKEN` if they are blank, then writes them back into `.env`. Caddy presents that token to `backup-manager`; direct internal API calls are rejected.
 
 ### Autostart
 Two systemd units are installed:
-- `pihole-tor-vlans.service` (creates VLAN sub-interfaces if needed)
+- `pihole-tor-vlans.service` (checks the flat parent or creates VLAN sub-interfaces, according to `TORHOLE_TOPOLOGY`)
 - `pihole-tor.service` (starts the Docker Compose stack)
 
 ## Tor-only egress model
@@ -148,7 +150,7 @@ Two systemd units are installed:
 - Dockhand is attached only to the internal `admin_net`, which it shares with Caddy; it is not directly reachable from workload containers on `dns_int`.
 - `reverse-proxy` is attached to both `dns_int` and `mgmt_net`, publishes one HTTP port to the host, and routes to the internal services by local hostname.
 - `authelia` stays on `dns_int` only and provides the shared login session for the landing page, Prometheus, Alertmanager, and the recovery API.
-- `pihole_*` containers use `dns_int` as the preferred internal route for upstream DNS and keep macvlan attachments for client traffic on each VLAN.
+- active `pihole_*` containers use `dns_int` as the preferred internal route for upstream DNS and keep macvlan attachments for client traffic. Single-LAN activates one plane; VLAN activates Trusted and IoT.
 - `loki` and `alloy` keep logs inside the stack so Grafana can correlate metrics, alerts, and service logs.
 - `pihole-exporter` authenticates to the Pi-hole v6 API and exposes real DNS/cache/client/upstream metrics to Prometheus.
 - This survives `docker compose down && docker compose up -d` because the network topology is defined in `docker-compose.yml`, not in temporary firewall state.
@@ -158,6 +160,7 @@ Two systemd units are installed:
 ```bash
 docker network inspect pi-dns-warden_dns_int
 docker inspect dnscrypt-trusted --format '{{json .NetworkSettings.Networks}}'
+# VLAN topology only:
 docker inspect dnscrypt-iot --format '{{json .NetworkSettings.Networks}}'
 docker inspect tor --format '{{json .NetworkSettings.Networks}}'
 docker inspect reverse-proxy --format '{{json .NetworkSettings.Networks}}'
