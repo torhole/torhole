@@ -3,7 +3,7 @@
   "title": "Pi DNS Warden - Tor Flow & Runtime",
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 6,
+  "version": 7,
   "refresh": "15s",
   "tags": [
     "tor",
@@ -1006,7 +1006,8 @@
           "expr": "tor_build_info",
           "refId": "A",
           "instant": true,
-          "range": false
+          "range": false,
+          "legendFormat": "{{version}}"
         }
       ],
       "options": {
@@ -1014,7 +1015,6 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "/^version$/",
           "values": false
         },
         "colorMode": "none",
@@ -1155,12 +1155,16 @@
         {
           "expr": "rate(tor_traffic_read_bytes_total[5m])",
           "refId": "A",
-          "legendFormat": "read"
+          "legendFormat": "read",
+          "instant": false,
+          "range": true
         },
         {
           "expr": "rate(tor_traffic_written_bytes_total[5m])",
           "refId": "B",
-          "legendFormat": "written"
+          "legendFormat": "written",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {

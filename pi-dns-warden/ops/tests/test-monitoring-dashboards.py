@@ -165,6 +165,29 @@ class MonitoringDashboardTests(unittest.TestCase):
                 name,
             )
 
+    def test_tor_version_card_renders_the_version_label(self):
+        panel = next(
+            panel
+            for dashboard in self.dashboards
+            for panel in dashboard["panels"]
+            if panel["title"] == "Tor version"
+        )
+        self.assertEqual(panel["options"]["textMode"], "name")
+        self.assertNotIn("fields", panel["options"]["reduceOptions"])
+        self.assertEqual(panel["targets"][0]["expr"], "tor_build_info")
+        self.assertEqual(panel["targets"][0]["legendFormat"], "{{version}}")
+
+    def test_tor_traffic_rate_targets_are_range_queries(self):
+        panel = next(
+            panel
+            for dashboard in self.dashboards
+            for panel in dashboard["panels"]
+            if panel["title"] == "Tor traffic rate (control-port counters)"
+        )
+        for target in panel["targets"]:
+            self.assertTrue(target["range"])
+            self.assertFalse(target["instant"])
+
 
 if __name__ == "__main__":
     unittest.main()
