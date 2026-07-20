@@ -196,8 +196,8 @@ services:
       # container sees current on-disk files on every read.
       #
       # Caddy only reads files it references (Caddyfile and its imports),
-      # so the extra files that end up under /etc/caddy (root.crt, v2/
-      # assets) are harmless. The v2/ assets are also mounted at /srv
+      # so the extra files that end up under /etc/caddy (root.crt, admin UI
+      # assets) are harmless. The admin-ui/ assets are also mounted at /srv
       # below for the file_server directive to serve.
       - ./monitoring/caddy:/etc/caddy:ro
       - ./monitoring/caddy:/srv:ro

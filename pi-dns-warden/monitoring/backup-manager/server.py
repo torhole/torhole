@@ -225,7 +225,7 @@ LEAK_TEST_TARGET_PATH = "/api/ip"
 TOR_BOOTSTRAP_PATTERN = re.compile(r"Bootstrapped (\d+)%.*?:\s*(.+)")
 TOR_HEARTBEAT_PATTERN = re.compile(r"Heartbeat: Tor's uptime is (.+?), with (\d+) circuits open\.")
 
-# Broken-pipe / reset sentinels. The v2 UI polls /api/system/snapshot
+# Broken-pipe / reset sentinels. The admin UI polls /api/system/snapshot
 # every 5 seconds and any tab close mid-response lands the server at
 # handler.wfile.write() with the client socket already gone. Swallow the
 # same way _sse_send does.
@@ -1230,12 +1230,12 @@ def send_test_alert():
                 "alertname": f"TorholeTest-{now_dt.strftime('%H%M%S')}",
                 "severity": "warning",
                 "service": "torhole-ui",
-                "source": "v2-admin",
+                "source": "torhole-admin",
             },
             "annotations": {
                 "summary": "Torhole test alert",
                 "description": (
-                    "This is a test notification triggered from the v2 admin UI. "
+                    "This is a test notification triggered from the Torhole admin UI. "
                     "If you see this in any channel, that channel is working."
                 ),
             },
@@ -2428,7 +2428,7 @@ def _normalize_top_clients(payload):
 
 
 def get_dns_insights(force=False):
-    """Per-plane ranking tables for the v2 UI. Never raises; a plane that
+    """Per-plane ranking tables for the admin UI. Never raises; a plane that
     can't be queried comes back with available=False and empty lists."""
     now = time.time()
     with _INSIGHTS_CACHE_LOCK:
@@ -2532,7 +2532,7 @@ def system_status_payload():
 
 
 # ---------------------------------------------------------------------------
-# /api/system/snapshot — single source of truth for the v2 admin UI.
+# /api/system/snapshot — single source of truth for the admin UI.
 #
 # Every screen in the new UI reads from this one shape. Cached server-side for
 # SNAPSHOT_CACHE_TTL_S to prevent thundering-herd against the Pi-hole API and
@@ -2579,7 +2579,7 @@ def build_snapshot(force=False):
 
 
 def _compose_snapshot_headline(privacy_intact, overall_status, plane_counts, container_counts):
-    """Single-line headline for the v2 UI hero. Privacy is always the lead."""
+    """Single-line headline for the admin UI hero. Privacy is always the lead."""
     healthy_planes = plane_counts.get("healthy", 0)
     total_planes = plane_counts.get("total", 0)
     offline_containers = container_counts.get("offline", 0)
@@ -2605,7 +2605,7 @@ _BANNER_LEVELS = frozenset({"critical", "warning", "info"})
 
 
 def _compose_banner(values):
-    """Operator-configured environment banner for the v2 UI (e.g. to mark a
+    """Operator-configured environment banner for the admin UI (e.g. to mark a
     staging instance). Driven by TORHOLE_BANNER_TEXT + TORHOLE_BANNER_LEVEL
     in .env — read live on every snapshot, so editing .env changes the banner
     without recreating any container. Returns None when no text is set."""
@@ -2687,7 +2687,7 @@ def _compute_snapshot():
         and plane_counts["healthy"] > 0
     )
 
-    # Public links for SSO targets, used by the v2 UI to link out to grafana etc.
+    # Public links for SSO targets, used by the admin UI to link out to grafana etc.
     links = build_public_links(values)
 
     # Latest backup, slimmed for the snapshot.
@@ -2738,7 +2738,7 @@ def _compute_snapshot():
                 privacy_intact, overall_status, plane_counts, container_counts
             ),
             # Legacy sentence kept for backwards-compat with /api/system/status
-            # consumers. Do not use in the v2 UI.
+            # consumers. Do not use in the admin UI.
             "summary_sentence": compose_status_sentence(
                 overall_status,
                 {"counts": plane_counts, "overall_status": plane_overall, "planes": dns_stats["planes"]},

@@ -1,9 +1,9 @@
 FROM node:22-alpine AS ui
 
 WORKDIR /src
-COPY monitoring/torhole-ui-v2/package.json monitoring/torhole-ui-v2/package-lock.json ./
+COPY monitoring/torhole-ui/package.json monitoring/torhole-ui/package-lock.json ./
 RUN npm ci
-COPY monitoring/torhole-ui-v2/ ./
+COPY monitoring/torhole-ui/ ./
 RUN npm run build -- --base=/ --outDir=/ui
 
 FROM docker:27-cli

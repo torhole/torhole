@@ -37,30 +37,40 @@ import tls-snippets.caddy
     }
   }
 
-  @v2_app path /v2 /v2/*
-  handle @v2_app {
-    root * /srv
-    try_files {path} /v2/index.html
+  # /v2 was the development-era public prefix. Keep old bookmarks working,
+  # but never generate or advertise versioned application URLs again.
+  @versioned_root path /v2 /v2/
+  handle @versioned_root {
+    redir * / 308
+  }
+
+  # Compatibility for asset requests from an already-open pre-migration tab.
+  # handle_path strips /v2 before looking in the canonical build directory.
+  handle_path /v2/* {
+    root * /srv/admin-ui
+    try_files {path} /index.html
     file_server
   }
 
   @legacy_operate path /operate /operate.html /dns-planes /observability /recovery /system
   handle @legacy_operate {
-    redir * /v2/#/operate 308
+    redir * /#/operate 308
   }
 
   @legacy_privacy path /resolver /resolver.html /resolver-chain
   handle @legacy_privacy {
-    redir * /v2/#/privacy 308
+    redir * /#/privacy 308
   }
 
   @legacy_configure path /access /access.html /edge-access
   handle @legacy_configure {
-    redir * /v2/#/configure 308
+    redir * /#/configure 308
   }
 
   handle {
-    redir * /v2/ 308
+    root * /srv/admin-ui
+    try_files {path} /index.html
+    file_server
   }
 }
 

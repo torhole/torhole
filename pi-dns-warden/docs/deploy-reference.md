@@ -107,32 +107,32 @@ sudo ./deploy.sh --harden-host
 
 ### Web UIs
 - Trusted Pi-hole direct VLAN IP: `http://192.168.1.53/admin`
-- Reverse-proxy landing page: `https://th-torhole.lan.home.arpa`
-- Auth portal: `https://th-auth.lan.home.arpa`
-- Grafana: `https://th-grafana.lan.home.arpa`
-- Prometheus: `https://th-prometheus.lan.home.arpa`
-- Alertmanager: `https://th-alertmanager.lan.home.arpa`
-- Dockhand: `https://th-dockhand.lan.home.arpa`
-- Pi-hole Trusted: `https://th-pihole-trusted.lan.home.arpa/admin/`
-- Pi-hole IoT: `https://th-pihole-iot.lan.home.arpa/admin/`
+- Reverse-proxy landing page: `https://torhole.lan.home.arpa`
+- Auth portal: `https://auth.lan.home.arpa`
+- Grafana: `https://grafana.lan.home.arpa`
+- Prometheus: `https://prometheus.lan.home.arpa`
+- Alertmanager: `https://alertmanager.lan.home.arpa`
+- Dockhand: `https://dockhand.lan.home.arpa`
+- Pi-hole Trusted: `https://pihole-trusted.lan.home.arpa/admin/`
+- Pi-hole IoT: `https://pihole-iot.lan.home.arpa/admin/`
 
 The Torhole landing page, recovery API, Prometheus, and Alertmanager now sit behind a shared Authelia session. Grafana and Dockhand still use their application logins. Caddy uses an internal CA for LAN HTTPS, so you need to trust its root certificate on your devices to avoid browser warnings.
 
 ### Reverse proxy
 The stack can also publish a single LAN reverse proxy with local hostnames:
-- `https://th-torhole.<your-domain>`
-- `https://th-auth.<your-domain>`
-- `https://th-grafana.<your-domain>`
-- `https://th-prometheus.<your-domain>`
-- `https://th-alertmanager.<your-domain>`
-- `https://th-dockhand.<your-domain>`
-- `https://th-pihole-trusted.<your-domain>/admin/`
-- `https://th-pihole-iot.<your-domain>/admin/`
+- `https://torhole.<your-domain>`
+- `https://auth.<your-domain>`
+- `https://grafana.<your-domain>`
+- `https://prometheus.<your-domain>`
+- `https://alertmanager.<your-domain>`
+- `https://dockhand.<your-domain>`
+- `https://pihole-trusted.<your-domain>/admin/`
+- `https://pihole-iot.<your-domain>/admin/`
 
 For example, `REVERSE_PROXY_DOMAIN=lan.home.arpa` makes these resolve as
 `*.lan.home.arpa`. Do not use bare `home.arpa`: it is a special public suffix,
 so Authelia cannot set a session cookie for it.
-The actual `th-*` records are rendered from `.env` during deploy/update/restore using `TORHOLE_DNS_HOSTS`, so Pi-hole owns those local DNS entries automatically.
+The canonical host records and their short aliases are rendered from `.env` during deploy, update, and restore, so Pi-hole owns those local DNS entries automatically.
 You can also add arbitrary Pi-hole local DNS records in `.env` via `PIHOLE_LOCAL_DNS_RECORDS`. Use `host=ip;fqdn=ip`. Short names are expanded under `REVERSE_PROXY_DOMAIN`.
 
 The shared Torhole edge session is rendered from `.env` by `ops/scripts/18-render-auth.sh`. `TORHOLE_WEB_MODE` selects plain HTTP, Caddy-local HTTPS, or an uploaded custom certificate. HTTPS uses Authelia; HTTP and the permanent `http://HOST_MGMT_IP/` recovery route use Caddy authentication with the same admin credentials. On first render the script auto-generates internal Authelia secrets plus `BACKUP_MANAGER_API_TOKEN` if they are blank, then writes them back into `.env`. Caddy presents that token to `backup-manager`; direct internal API calls are rejected.
@@ -255,7 +255,7 @@ The restore script:
 - re-renders and validates config before restart
 - requires explicit restore confirmation
 
-For unattended recovery from the landing page, the Torhole main page (`https://th-torhole.<your-domain>`) exposes a protected recovery panel. Use the Torhole admin credentials configured in `.env` for the protected monitoring surfaces to create a backup or schedule a restore without leaving the page.
+For unattended recovery from the landing page, the Torhole main page (`https://torhole.<your-domain>`) exposes a protected recovery panel. Use the Torhole admin credentials configured in `.env` for the protected monitoring surfaces to create a backup or schedule a restore without leaving the page.
 The recovery panel polls running jobs automatically and each archive reports how many service volumes were captured alongside the Pi-hole state.
 Backup deletion is also available there, but it requires repeated confirmation and the exact archive name before anything is removed.
 

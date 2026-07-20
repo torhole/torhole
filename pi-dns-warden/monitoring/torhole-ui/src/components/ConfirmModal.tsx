@@ -2,7 +2,7 @@
  * ConfirmModal — type-to-confirm gate for destructive operations.
  *
  * Rule from docs/admin-redesign.md §4.3: any irreversible operation in the
- * v2 UI (backup delete, backup restore, future bulk container stop, …) must
+ * admin UI (backup delete, backup restore, future bulk container stop, …) must
  * require typing a verb (DELETE / RESTORE / FORCE) or the resource name
  * into an input before the destructive button enables. Not a yes/no dialog.
  * The point is friction: make the operator stop and type, not click-through.

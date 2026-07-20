@@ -1,5 +1,5 @@
 /*
- * Torhole admin v2 — Glance screen, iteration 2.
+ * Torhole unified administration interface.
  *
  * Iteration 2 changes from iteration 1:
  *   - Fixed TOR.ISOLATION proof truncation by switching from a 3-col grid to
@@ -19,7 +19,7 @@
  *     two-column section (planes + containers), then quick actions.
  */
 
-import { lazy, Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Activity,
   AlertCircle,
@@ -47,6 +47,7 @@ import OperateScreen from "./screens/Operate";
 import ConfigureScreen from "./screens/Configure";
 import SetupScreen from "./screens/Setup";
 import HomeScreen from "./screens/Home";
+import DeferredPrivacyFlow from "./components/DeferredPrivacyFlow";
 import {
   createBackup,
   formatBytes,
@@ -63,35 +64,11 @@ import {
   type StatusKind,
 } from "./lib/snapshot";
 
-const SIDEBAR_COLLAPSED_KEY = "torhole.v2.sidebar.collapsed";
-const THEME_KEY = "torhole.v2.theme";
+const SIDEBAR_COLLAPSED_KEY = "torhole.sidebar.collapsed";
+const LEGACY_SIDEBAR_COLLAPSED_KEY = "torhole.v2.sidebar.collapsed";
+const THEME_KEY = "torhole.theme";
+const LEGACY_THEME_KEY = "torhole.v2.theme";
 type ThemePreference = "dark" | "light";
-const PrivacyFlowCanvas = lazy(() => import("./components/PrivacyFlowCanvas"));
-
-function DeferredPrivacyFlow({ active }: { active: boolean }) {
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const browserWindow = window as Window & {
-      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
-      cancelIdleCallback?: (handle: number) => void;
-    };
-    const handle = browserWindow.requestIdleCallback
-      ? browserWindow.requestIdleCallback(() => setReady(true), { timeout: 1400 })
-      : window.setTimeout(() => setReady(true), 500);
-    return () => {
-      if (browserWindow.cancelIdleCallback) browserWindow.cancelIdleCallback(handle);
-      else window.clearTimeout(handle);
-    };
-  }, []);
-  if (!ready) return null;
-  return (
-    <Suspense fallback={null}>
-      <PrivacyFlowCanvas active={active} />
-    </Suspense>
-  );
-}
-
 export default function App() {
   const [theme, setTheme] = useThemePreference();
   const developmentMode = import.meta.env.DEV
@@ -125,7 +102,7 @@ declare global {
 function useThemePreference(): [ThemePreference, (theme: ThemePreference) => void] {
   const [theme, setTheme] = useState<ThemePreference>(() => {
     try {
-      const stored = localStorage.getItem(THEME_KEY);
+      const stored = localStorage.getItem(THEME_KEY) ?? localStorage.getItem(LEGACY_THEME_KEY);
       if (stored === "light" || stored === "dark") return stored;
       return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     } catch {
@@ -157,7 +134,10 @@ function AdvancedApp({
   // the bottom of the sidebar to collapse on narrower screens (iPad).
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     try {
-      return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+      return (
+        localStorage.getItem(SIDEBAR_COLLAPSED_KEY) ??
+        localStorage.getItem(LEGACY_SIDEBAR_COLLAPSED_KEY)
+      ) === "true";
     } catch {
       return false;
     }
@@ -266,7 +246,7 @@ function signOut() {
   }
   const parts = window.location.hostname.split(".");
   const authHost = ["auth", ...parts.slice(1)].join(".");
-  const rd = encodeURIComponent(`${window.location.origin}/v2/`);
+  const rd = encodeURIComponent(`${window.location.origin}/`);
   window.location.href = `${window.location.protocol}//${authHost}/logout?rd=${rd}`;
 }
 

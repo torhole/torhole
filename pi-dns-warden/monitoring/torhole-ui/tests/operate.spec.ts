@@ -17,7 +17,7 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Operate screen", () => {
   test("loads and shows four section tabs", async ({ page }) => {
-    await page.goto("/v2/#/operate");
+    await page.goto("/#/operate");
 
     await expect(
       page.getByRole("heading", { name: "What do you need to change?" }),
@@ -35,7 +35,7 @@ test.describe("Operate screen", () => {
   });
 
   test("default tab shows the containers table", async ({ page }) => {
-    await page.goto("/v2/#/operate");
+    await page.goto("/#/operate");
 
     // Containers is the default tab — no click needed.
     // Core services should be in the table.
@@ -50,7 +50,7 @@ test.describe("Operate screen", () => {
   });
 
   test("shows the backups section", async ({ page }) => {
-    await page.goto("/v2/#/operate");
+    await page.goto("/#/operate");
 
     // Click the Backups tab first — content is hidden until the tab is active.
     await page.getByRole("tab", { name: /Backups/i }).click();
@@ -61,7 +61,7 @@ test.describe("Operate screen", () => {
   });
 
   test("shows the validation section", async ({ page }) => {
-    await page.goto("/v2/#/operate");
+    await page.goto("/#/operate");
 
     await page.getByRole("tab", { name: /Stack validation/i }).click();
 
@@ -75,7 +75,7 @@ test.describe("Operate screen", () => {
     // state written by any previous run. If someone ran validation in the
     // last session, we should see its result block. If not, the "no
     // validation run yet" placeholder.
-    await page.goto("/v2/#/operate");
+    await page.goto("/#/operate");
 
     await page.getByRole("tab", { name: /Stack validation/i }).click();
 
@@ -92,7 +92,7 @@ test.describe("Operate screen", () => {
   });
 
   test("insights tab shows Grafana dashboard tiles", async ({ page }) => {
-    await page.goto("/v2/#/operate");
+    await page.goto("/#/operate");
 
     await page.getByRole("tab", { name: /Insights/i }).click();
 

@@ -3,13 +3,13 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
 
-// Builds to ../caddy/v2/, served by the reverse-proxy at /v2/* on the
-// torhole virtual host. The legacy UI continues to live at /.
+// Builds to an internal Caddy asset directory. Public URLs are unversioned;
+// Caddy serves this SPA at the Torhole host root.
 export default defineConfig({
-  base: "/v2/",
+  base: "/",
   plugins: [react(), tailwindcss()],
   build: {
-    outDir: path.resolve(__dirname, "../caddy/v2"),
+    outDir: path.resolve(__dirname, "../caddy/admin-ui"),
     emptyOutDir: true,
     // Three.js is deliberately isolated in an idle-loaded 519 kB chunk; the
     // operational shell remains below 450 kB and renders before it is fetched.

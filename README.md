@@ -344,6 +344,132 @@ From the repository directory:
 Advanced operations and validation commands are documented under
 [`pi-dns-warden/docs/`](pi-dns-warden/docs/).
 
+## Update Torhole
+
+Updates keep the edition, topology, passwords, certificates, Pi-hole data, and
+other local configuration selected during setup. You do **not** need to run the
+setup wizard again for a normal update.
+
+Before updating, make sure the current dashboard is healthy and avoid changing
+router DNS settings until the update has completed. From the Torhole host:
+
+```bash
+cd ~/torhole
+curl -fsSL https://raw.githubusercontent.com/torhole/torhole/main/get-torhole.sh \
+  | TORHOLE_DOWNLOAD_ONLY=1 bash
+```
+
+The downloader accepts only a fast-forward update from the official Torhole
+repository. It refuses to overwrite an unrelated directory or local Git
+history.
+
+Then apply the downloaded version for the installed edition.
+
+For **Torhole Home**:
+
+```bash
+cd ~/torhole
+./install.sh install-home
+```
+
+For **Torhole Advanced**:
+
+```bash
+cd ~/torhole/pi-dns-warden
+sudo ./ops/scripts/40-update.sh
+```
+
+The Advanced updater validates the rendered configuration and creates a backup
+before replacing running containers. Home rebuilds its containers while
+retaining the persistent Pi-hole and Tor volumes. When the command finishes,
+open Torhole and run the privacy verification again.
+
+If an update fails, do not point clients at another resolver merely to make DNS
+work: that would bypass Torhole's privacy path. Inspect the logs first, or
+restore the previous Advanced snapshot from **Operate → Backups**.
+
+## Remove or uninstall Torhole
+
+Before removing Torhole, change the DNS server in your router or DHCP settings
+away from the Torhole address. Otherwise clients may lose DNS as soon as the
+containers stop.
+
+### Stop it temporarily
+
+For Home, the following command stops Torhole but keeps all configuration and
+Pi-hole data:
+
+```bash
+cd ~/torhole
+./install.sh stop
+```
+
+For Advanced, stop its system service:
+
+```bash
+sudo systemctl stop pihole-tor.service
+```
+
+Use this option when troubleshooting, moving the host, or when you may want to
+start Torhole again.
+
+### Remove running services but keep data
+
+This removes the containers and Docker networks while retaining local
+configuration and persistent data for a future reinstall.
+
+For Home:
+
+```bash
+cd ~/torhole/pi-dns-warden
+sudo docker compose --env-file .env.quickstart.local \
+  -f docker-compose.quickstart.yml down
+```
+
+For Advanced:
+
+```bash
+sudo systemctl disable --now pihole-tor.service \
+  pihole-tor-prometheus-watchdog.timer pihole-tor-vlans.service
+cd ~/torhole/pi-dns-warden
+sudo docker compose -f docker-compose.yml -f docker-compose.monitoring.yml down
+```
+
+The repository and its ignored local files remain the recovery copy. Do not
+delete it unless you have intentionally chosen the permanent-removal path.
+
+### Permanently remove all data
+
+Permanent removal also means deleting Pi-hole history and settings, Tor state,
+monitoring databases, backups, generated credentials, and local certificates.
+This cannot be undone without an external backup.
+
+Torhole does not yet advertise a one-command purge because Advanced installs
+host services and can create VLAN interfaces as well as Docker resources. A
+safe uninstaller must identify exactly what this installation owns before
+deleting it. Until that command is implemented and tested, use the detailed
+[uninstall checklist](pi-dns-warden/docs/uninstall.md) rather than improvising
+with broad Docker-volume or recursive-delete commands.
+
+## Routine maintenance and recovery
+
+- View generated URLs, the control PIN, and local passwords with
+  `./install.sh credentials`. Keep the output private.
+- Check Home containers with `./install.sh status` and follow their logs with
+  `./install.sh logs`.
+- In Advanced, use **Glance** for current health, **Privacy** for the live proof,
+  and **Operate → Stack validation** after configuration changes.
+- Create an Advanced snapshot under **Operate → Backups** before changing
+  networking, certificates, authentication, or topology.
+- Keep the host operating system and Docker security updates current, but avoid
+  unattended major distribution upgrades on a DNS server.
+- Test DNS and the Tor exit after router, firewall, VLAN, or certificate
+  changes. A green container status alone does not prove the complete privacy
+  path.
+- Keep the permanent Advanced recovery address
+  `http://<host-management-ip>/` on the trusted LAN. It remains useful when
+  local DNS, HTTPS, or SSO configuration is broken.
+
 ## Repository layout
 
 - `install.sh` and `get-torhole.sh` - the single guided installation entrypoint

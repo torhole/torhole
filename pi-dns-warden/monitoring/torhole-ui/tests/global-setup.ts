@@ -93,7 +93,7 @@ export default async function globalSetup(_config: FullConfig) {
 
   try {
     // Kick off the protected request; Authelia redirects us to the portal.
-    await page.goto(`${BASE_URL}/v2/`, { waitUntil: "domcontentloaded" });
+    await page.goto(`${BASE_URL}/`, { waitUntil: "domcontentloaded" });
 
     // Authelia uses Material-UI; inputs have IDs like "username-textfield"
     // and "password-textfield" but no `name` attribute. Use the IDs.

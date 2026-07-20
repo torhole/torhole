@@ -9,7 +9,7 @@ torhole is a privacy-first DNS platform. Contributions are welcome as long as th
 - Additional alert channels
 - Grafana dashboard improvements
 - Test coverage for `monitoring/backup-manager/server.py`
-- Config editor screens in the v2 admin UI (gravity lists, DNS upstreams, per-plane allow/deny — see `docs/admin-redesign.md`)
+- Config editor improvements in the admin UI (gravity lists, DNS upstreams, per-plane allow/deny — see `docs/admin-redesign.md`)
 
 ## What we will not merge
 
@@ -43,18 +43,18 @@ docker compose -f docker-compose.monitoring.yml up -d
 
 For macOS dev, macvlan does not work with the default Docker Desktop network driver. You can comment out the `macvlan_*` networks and the corresponding Pi-hole network attachments in `docker-compose.yml` — the stack will still function on `dns_int` alone for testing purposes.
 
-## v2 admin UI development
+## Admin UI development
 
-The admin UI lives in `monitoring/torhole-ui-v2/` as a Vite + React 19 + Tailwind 4 project. It builds into `monitoring/caddy/v2/` which Caddy serves at `/v2/*` behind Authelia.
+The admin UI lives in `monitoring/torhole-ui/` as a Vite + React 19 + Tailwind 4 project. It builds into `monitoring/caddy/admin-ui/`, which Caddy serves at the site root behind Authelia.
 
 ```bash
-cd monitoring/torhole-ui-v2
+cd monitoring/torhole-ui
 npm install
 
 # Type-check (strict tsc)
 npm run typecheck
 
-# Production build — writes into ../caddy/v2/
+# Production build — writes into ../caddy/admin-ui/
 npm run build
 
 # Hot-reload dev server (proxies /api/* to a local backup-manager)
@@ -66,7 +66,7 @@ npm run dev
 The E2E tests run against a live backup-manager + Caddy + Authelia stack — they're not unit tests. You'll need a reachable deployment (local or remote) and the test user credentials in `tests/.env.test`:
 
 ```bash
-cd monitoring/torhole-ui-v2
+cd monitoring/torhole-ui
 cp tests/.env.test.example tests/.env.test
 # fill in TORHOLE_BASE_URL, TORHOLE_TEST_USER, TORHOLE_TEST_PASSWORD
 
@@ -81,7 +81,7 @@ Visual regression baselines live in `tests/visual.spec.ts-snapshots/`. Update th
 
 A GitHub Actions workflow at `.github/workflows/ci.yml` runs on every PR and push to `main`:
 
-- **`ui`** — `npm ci` + `npm run typecheck` + `npm run build` in `monitoring/torhole-ui-v2`
+- **`ui`** — `npm ci` + `npm run typecheck` + `npm run build` in `monitoring/torhole-ui`
 - **`dashboards`** — JSON validity + unique UID check for every file in `monitoring/grafana/dashboards`
 - **`caddyfile`** — `caddy validate` against `monitoring/caddy/Caddyfile` in an ephemeral container
 
@@ -93,7 +93,7 @@ Playwright E2E is **not** in hosted CI — it needs the full 14-container stack 
 - If you change a compose file, run `docker compose config` to validate it before opening a PR.
 - If you change `monitoring/backup-manager/server.py`, run `python3 -m py_compile monitoring/backup-manager/server.py`.
 - If you change a Prometheus config, run `docker compose exec prometheus promtool check config /etc/prometheus/prometheus.yml`.
-- If you change the v2 UI, run `npm run typecheck && npm run build` at a minimum before opening the PR. `npm run test:e2e` should be run locally against a real stack.
+- If you change the admin UI, run `npm run typecheck && npm run build` at a minimum before opening the PR. `npm run test:e2e` should be run locally against a real stack.
 - For destructive UI operations, gate the action behind a `ConfirmModal` type-to-confirm input — see `docs/admin-redesign.md` §4.3.
 
 ## Commit style

@@ -3,7 +3,7 @@
 /*
  * Torhole brand tokens (self-contained — these values are the source of
  * truth for the UI's palette, typography and radii).
- * Additions for the v2 redesign:
+ * UI-specific additions:
  *   - mono font family (JetBrains Mono) for proof values
  *   - radius "none" (0) for terminal-feel surfaces
  *   - text-mono color for monospace data

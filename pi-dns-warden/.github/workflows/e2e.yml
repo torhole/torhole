@@ -34,7 +34,7 @@ on:
   # pull_request:
   #   branches: [main]
   #   paths:
-  #     - "monitoring/torhole-ui-v2/**"
+  #     - "monitoring/torhole-ui/**"
   #     - "monitoring/backup-manager/**"
   #     - "monitoring/caddy/Caddyfile"
   #     - ".github/workflows/e2e.yml"
@@ -52,7 +52,7 @@ jobs:
     runs-on: [self-hosted, torhole-e2e]
     defaults:
       run:
-        working-directory: monitoring/torhole-ui-v2
+        working-directory: monitoring/torhole-ui
     steps:
       - uses: actions/checkout@v4
 
@@ -61,7 +61,7 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: monitoring/torhole-ui-v2/package-lock.json
+          cache-dependency-path: monitoring/torhole-ui/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -99,5 +99,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-trace
-          path: monitoring/torhole-ui-v2/test-results/
+          path: monitoring/torhole-ui/test-results/
           retention-days: 7

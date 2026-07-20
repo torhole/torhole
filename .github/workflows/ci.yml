@@ -96,14 +96,14 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: pi-dns-warden/monitoring/torhole-ui-v2
+        working-directory: pi-dns-warden/monitoring/torhole-ui
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: pi-dns-warden/monitoring/torhole-ui-v2/package-lock.json
+          cache-dependency-path: pi-dns-warden/monitoring/torhole-ui/package-lock.json
       - name: Install deps
         run: npm ci
       - name: Typecheck

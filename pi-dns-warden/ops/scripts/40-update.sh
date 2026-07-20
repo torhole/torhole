@@ -9,6 +9,7 @@ source "$ROOT_DIR/ops/scripts/_compose.sh"
 
 bash "$ROOT_DIR/ops/scripts/12-sync-topology.sh"
 
+bash "$ROOT_DIR/ops/scripts/14-build-admin-ui.sh"
 bash "$ROOT_DIR/ops/scripts/17-render-alertmanager.sh"
 bash "$ROOT_DIR/ops/scripts/18-render-auth.sh"
 bash "$ROOT_DIR/ops/scripts/16-render-reverse-proxy-dns.sh"

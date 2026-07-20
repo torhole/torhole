@@ -12,7 +12,7 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Privacy screen", () => {
   test("loads and shows the privacy hero", async ({ page }) => {
-    await page.goto("/v2/#/privacy");
+    await page.goto("/#/privacy");
 
     await expect(
       page.getByRole("heading", { name: "What does Torhole prove?" }),
@@ -35,7 +35,7 @@ test.describe("Privacy screen", () => {
     const snapshotResponse = await page.request.get("/api/system/snapshot");
     expect(snapshotResponse.ok()).toBeTruthy();
     const snapshot = await snapshotResponse.json();
-    await page.goto("/v2/#/privacy");
+    await page.goto("/#/privacy");
 
     // Wait for the page to hydrate by asserting the section title exists.
     // Section titles are <div>s, not <h*> elements, and contain the meta
@@ -52,7 +52,7 @@ test.describe("Privacy screen", () => {
   });
 
   test("shows the leak test panel with a run button", async ({ page }) => {
-    await page.goto("/v2/#/privacy");
+    await page.goto("/#/privacy");
 
     await expect(page.getByRole("tab", { name: /DNS leak test/i })).toBeVisible();
     await expect(
@@ -61,7 +61,7 @@ test.describe("Privacy screen", () => {
   });
 
   test("shows the live query feed streaming events", async ({ page }) => {
-    await page.goto("/v2/#/privacy");
+    await page.goto("/#/privacy");
 
     // Live query feed is now behind a tab — click the tab button first.
     // The tab is a role=tab button with "Live query feed" in its label.
@@ -78,7 +78,7 @@ test.describe("Privacy screen", () => {
   });
 
   test("has three section tabs for the lower panels", async ({ page }) => {
-    await page.goto("/v2/#/privacy");
+    await page.goto("/#/privacy");
 
     // Three tab buttons with role=tab
     const tabs = page.getByRole("tab");
@@ -91,7 +91,7 @@ test.describe("Privacy screen", () => {
   });
 
   test("shows live Tor runtime strip above the fold", async ({ page }) => {
-    await page.goto("/v2/#/privacy");
+    await page.goto("/#/privacy");
 
     // The Tor runtime strip now lives directly under the Privacy hero — no
     // tab click, no scroll — because it's the privacy guarantee made live
@@ -138,7 +138,7 @@ test.describe("Privacy screen", () => {
       window.EventSource.prototype = Real.prototype;
     });
 
-    await page.goto("/v2/#/privacy");
+    await page.goto("/#/privacy");
     // Click the "Live query feed" tab so the panel activates.
     await page.getByRole("tab", { name: /live query feed/i }).click();
     await page.waitForFunction(

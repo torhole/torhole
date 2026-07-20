@@ -144,7 +144,8 @@ sudo ./deploy.sh
 - Open the URL printed by the deployer, or use the permanent recovery URL
   `http://<host-management-ip>/`
 - Log in with the admin credentials you set in `.env`
-- The Setup wizard under `/v2/#/setup` walks you through the rest
+- Normal administration opens at the root URL. The Setup wizard is a
+  first-run-only bootstrap and is not left in the installed navigation.
 
 ### Verify
 
@@ -176,24 +177,24 @@ admin credentials directly at Caddy.
 
 | URL | What |
 |---|---|
-| `<scheme>://th-torhole.<domain>/v2/` | The Torhole admin UI (5 screens) |
-| `<scheme>://th-grafana.<domain>` | Grafana (Prometheus datasource, auto-provisioned dashboards) |
-| `<scheme>://th-prometheus.<domain>` | Prometheus web UI |
-| `<scheme>://th-alertmanager.<domain>` | Alertmanager web UI |
-| `<scheme>://th-pihole-trusted.<domain>/admin/` | Pi-hole admin, per plane |
+| `<scheme>://torhole.<domain>/` | The Torhole admin UI |
+| `<scheme>://grafana.<domain>` | Grafana (Prometheus datasource, auto-provisioned dashboards) |
+| `<scheme>://prometheus.<domain>` | Prometheus web UI |
+| `<scheme>://alertmanager.<domain>` | Alertmanager web UI |
+| `<scheme>://pihole-trusted.<domain>/admin/` | Pi-hole admin, per plane |
 | `http://<host-management-ip>/` | Permanent password-protected recovery/configuration access |
 
 One sign-in session covers all of them.
 
 ## Development
 
-The admin UI is in [`monitoring/torhole-ui-v2/`](monitoring/torhole-ui-v2/).
+The admin UI is in [`monitoring/torhole-ui/`](monitoring/torhole-ui/).
 
 ```bash
-cd monitoring/torhole-ui-v2
+cd monitoring/torhole-ui
 npm install
 npm run dev      # vite dev server on http://localhost:5173
-npm run build    # build to monitoring/caddy/v2/
+npm run build    # build to monitoring/caddy/admin-ui/
 ```
 
 ### Tests
@@ -222,7 +223,7 @@ Covers 28 tests across 6 spec files:
 
 Issues and PRs welcome. Before submitting a PR:
 
-1. Run `npm run build` in `monitoring/torhole-ui-v2` — it must be clean
+1. Run `npm run build` in `monitoring/torhole-ui` — it must be clean
 2. Run `npm run test:e2e` — all tests must pass
 3. For destructive operations, use the `ConfirmModal` type-to-confirm gate — see [`docs/admin-redesign.md`](docs/admin-redesign.md) §4.3 for the rule
 
@@ -233,7 +234,7 @@ Issues and PRs welcome. Before submitting a PR:
 | [`docs/architecture.md`](docs/architecture.md) | How the pieces fit together (containers, networks, admin UI, Grafana dashboards) |
 | [`docs/privacy-model.md`](docs/privacy-model.md) | What Torhole protects against (and doesn't) |
 | [`docs/resolvers.md`](docs/resolvers.md) | dnscrypt-proxy resolver selection |
-| [`docs/admin-redesign.md`](docs/admin-redesign.md) | Design rationale for the v2 admin UI |
+| [`docs/admin-redesign.md`](docs/admin-redesign.md) | Design rationale and migration history for the admin UI |
 | [`docs/deploy-reference.md`](docs/deploy-reference.md) | Full operator manual (VLAN setup, hardening, systemd units) |
 | [`docs/demo-gif-recording.md`](docs/demo-gif-recording.md) | How to record the README walkthrough GIF |
 | [`docs/self-hosted-runner.md`](docs/self-hosted-runner.md) | Wire a self-hosted GitHub runner for Playwright E2E (optional) |
@@ -261,8 +262,7 @@ torhole/
 │   ├── authelia/                   # rendered from .env by ops/scripts/18-render-auth.sh
 │   ├── caddy/                      # reverse proxy
 │   ├── backup-manager/             # recovery API (server.py)
-│   ├── torhole-ui/                 # legacy admin UI (will be removed)
-│   └── torhole-ui-v2/              # current admin UI (Vite + React 19 + Tailwind 4)
+│   └── torhole-ui/                 # admin UI (Vite + React 19 + Tailwind 4)
 └── docs/                           # see above
 ```
 

@@ -158,5 +158,5 @@ export default function PrivacyFlowCanvas({ active }: { active: boolean }) {
     };
   }, [active]);
 
-  return <div ref={mountRef} className="absolute inset-y-0 right-0 w-[58%] opacity-70 [mask-image:linear-gradient(to_right,transparent,black_28%)]" aria-hidden="true" />;
+  return <div ref={mountRef} data-testid="privacy-flow-canvas" className="absolute inset-y-0 right-0 w-[58%] opacity-70 [mask-image:linear-gradient(to_right,transparent,black_28%)]" aria-hidden="true" />;
 }

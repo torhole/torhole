@@ -41,7 +41,7 @@ for attempt in {1..18}; do
 done
 
 echo "[verify] confirming password-protected IP recovery access"
-recovery_url="http://${HOST_MGMT_IP}/v2/"
+recovery_url="http://${HOST_MGMT_IP}/"
 unauthenticated_code=""
 for attempt in {1..10}; do
   unauthenticated_code="$(

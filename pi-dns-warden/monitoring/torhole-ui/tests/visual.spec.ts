@@ -48,7 +48,8 @@ async function gotoAndSettle(page: Page, path: string) {
   // appearance preference. Light mode has its own functional persistence
   // coverage; keep screenshot diffs deterministic in the dark brand theme.
   await page.addInitScript(() => {
-    localStorage.setItem("torhole.v2.theme", "dark");
+    localStorage.setItem("torhole.theme", "dark");
+    localStorage.removeItem("torhole.v2.theme");
   });
   await page.goto(path);
   // Wait for the snapshot poll to populate the page. 1s is enough for
@@ -58,7 +59,7 @@ async function gotoAndSettle(page: Page, path: string) {
 
 test.describe("visual regression", () => {
   test("Glance", async ({ page }) => {
-    await gotoAndSettle(page, "/v2/");
+    await gotoAndSettle(page, "/");
     await expect(page).toHaveScreenshot("glance.png", {
       clip: VIEWPORT_CLIP,
       mask: volatileMasks(page),
@@ -67,7 +68,7 @@ test.describe("visual regression", () => {
   });
 
   test("Privacy", async ({ page }) => {
-    await gotoAndSettle(page, "/v2/#/privacy");
+    await gotoAndSettle(page, "/#/privacy");
     await expect(page).toHaveScreenshot("privacy.png", {
       clip: VIEWPORT_CLIP,
       mask: volatileMasks(page),
@@ -76,7 +77,7 @@ test.describe("visual regression", () => {
   });
 
   test("Operate", async ({ page }) => {
-    await gotoAndSettle(page, "/v2/#/operate");
+    await gotoAndSettle(page, "/#/operate");
     await expect(page).toHaveScreenshot("operate.png", {
       clip: VIEWPORT_CLIP,
       mask: volatileMasks(page),
@@ -85,7 +86,7 @@ test.describe("visual regression", () => {
   });
 
   test("Configure", async ({ page }) => {
-    await gotoAndSettle(page, "/v2/#/configure");
+    await gotoAndSettle(page, "/#/configure");
     await expect(page).toHaveScreenshot("configure.png", {
       clip: VIEWPORT_CLIP,
       mask: volatileMasks(page),

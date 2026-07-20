@@ -194,6 +194,38 @@ async function mockAdvancedGlance(page: Page) {
   await page.goto("/?mode=advanced#/");
 }
 
+async function mockHome(page: Page) {
+  const now = new Date().toISOString();
+  await page.route("**/api/proof", (route) =>
+    route.fulfill({
+      json: {
+        protected: true,
+        checked_at: now,
+        tor: { ok: true, progress: 100 },
+        dns: { ok: true, answers: 2, ips: ["93.184.216.34"] },
+        blocking: { ok: true, answers: 1, ips: ["0.0.0.0"] },
+        exit: { ok: true, ip: "185.220.101.42", duration_ms: 412 },
+        bypass: { ok: true, detail: "Only Tor has external egress." },
+        circuit: {
+          ok: true,
+          relays: [
+            { role: "guard", nickname: "HomeGuard", country: "CH", address: "192.0.2.1", fingerprint: "A".repeat(40) },
+            { role: "middle", nickname: "HomeMiddle", country: "DE", address: "192.0.2.2", fingerprint: "B".repeat(40) },
+            { role: "exit", nickname: "HomeExit", country: "NL", address: "192.0.2.3", fingerprint: "C".repeat(40) },
+          ],
+        },
+        tests: {
+          tor: { query: "Tor Project exit check", expected: "IsTor=true" },
+          dns: { query: "example.com", expected: "A DNS answer" },
+          blocking: { query: "doubleclick.net", expected: "Blocked answer" },
+          bypass: { query: "Docker network inspection", expected: "No direct resolver egress" },
+        },
+      },
+    }),
+  );
+  await page.goto("/?mode=home");
+}
+
 async function chooseAdvanced(page: Page) {
   await page.getByText("Edition", { exact: true }).first().click();
   await page.getByText("Torhole Advanced", { exact: true }).click();
@@ -220,6 +252,28 @@ test("Home can select every curated blocklist and submits the exact list", async
   await submit(page);
   expect(submitted()?.edition).toBe("home");
   expect(submitted()?.blocklists).toEqual(["stevenblack", "oisd", "adguard"]);
+});
+
+test("installed Home keeps the root URL and shared visual privacy proof", async ({ page }) => {
+  await mockHome(page);
+
+  await expect(page).toHaveURL(/\/?mode=home$/);
+  await expect(page.getByText("Home", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Privacy is protected" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What happens to one DNS lookup" })).toBeVisible();
+  await expect(page.getByTestId("privacy-flow-canvas")).toBeVisible();
+  await expect(page.getByText("Glance", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Configure", { exact: true })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Light theme", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+
+  const versionedResources = await page.evaluate(() =>
+    performance.getEntriesByType("resource")
+      .map((entry) => new URL(entry.name).pathname)
+      .filter((path) => path.startsWith("/v2/")),
+  );
+  expect(versionedResources).toEqual([]);
 });
 
 test("Advanced exposes both topology options and editable blocklists", async ({ page }) => {

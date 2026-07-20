@@ -75,24 +75,24 @@ Monitoring containers that need DNS-plane visibility live on `dns_int` (no direc
 Trusted LAN browser
   → Caddy (reverse proxy, TLS, port 443)
     → Authelia (session gate, dns_int only)
-    → v2 admin UI (/v2/*, file_server) — React SPA
+    → Torhole admin UI (/, file_server) — React SPA
     → backup-manager (/api/*, :8080)        — Python HTTP + SSE
     → Grafana / Prometheus / Alertmanager    — th-*.<domain> subdomains
 ```
 
 Caddy is the single LAN entry point. All admin routes pass through an Authelia forward-auth check. Grafana and Dockhand also use application-level authentication.
 
-### v2 admin UI
+### Admin UI
 
-The admin UI is a Vite + React 19 + Tailwind 4 single-page app built from `monitoring/torhole-ui-v2/` into `monitoring/caddy/v2/`. Caddy serves the static build at `/v2/*` behind Authelia. The UI has five screens:
+The admin UI is a Vite + React 19 + Tailwind 4 single-page app built from `monitoring/torhole-ui/` into `monitoring/caddy/admin-ui/`. Caddy serves the static build at the site root behind Authelia. The installed Advanced UI has four operational screens; Setup is a separate first-run bootstrap mode:
 
 | Screen | Question it answers |
 |---|---|
-| **Glance** (`/v2/`) | "Is the privacy guarantee intact right now?" Overall health + container counts + per-plane status + Quick Actions strip. |
-| **Privacy** (`/v2/#/privacy`) | "What does Torhole prove?" Live Tor runtime strip, per-plane circuit panel with rotate buttons, DNS leak test, live query feed (SSE), internal circuits tab. |
-| **Operate** (`/v2/#/operate`) | "What do I need to change?" Containers, backups, stack validation, and an Insights tab linking out to every Grafana dashboard + raw Prometheus / Alertmanager / Pi-hole admin / Dockhand. |
-| **Configure** (`/v2/#/configure`) | "What can I tune?" Identity + admin password change, topology, alert channels, full .env reference. |
-| **Setup** (`/v2/#/setup`) | "How do I get from clone to live stack?" 9-step wizard with a review/apply step that writes `.env` atomically. |
+| **Glance** (`/`) | "Is the privacy guarantee intact right now?" Overall health + container counts + per-plane status + Quick Actions strip. |
+| **Privacy** (`/#/privacy`) | "What does Torhole prove?" Live Tor runtime strip, per-plane circuit panel with rotate buttons, DNS leak test, live query feed (SSE), internal circuits tab. |
+| **Operate** (`/#/operate`) | "What do I need to change?" Containers, backups, stack validation, and an Insights tab linking out to every Grafana dashboard + raw Prometheus / Alertmanager / Pi-hole admin / Dockhand. |
+| **Configure** (`/#/configure`) | "What can I tune?" Identity + admin password change, topology, alert channels, full `.env` reference. |
+| **Setup** (temporary bootstrap URL) | "How do I get from clone to a live stack?" Guided Home/Advanced installer that writes the selected configuration atomically and streams progress. |
 
 All five screens read from a single `/api/system/snapshot` endpoint served by `backup-manager`. Writes go through dedicated endpoints (`/api/tor/rotate*`, `/api/leak-test/run`, `/api/recovery/*`, `/api/identity/password`, `/api/setup/apply`, etc.).
 

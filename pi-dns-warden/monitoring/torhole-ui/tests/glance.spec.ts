@@ -2,7 +2,7 @@
  * Smoke tests for the Glance screen.
  *
  * Talks to the live Pi behind Authelia. The global-setup already ran a
- * login and saved the cookie, so these tests hit /v2/ directly and expect
+ * login and saved the cookie, so these tests hit / directly and expect
  * a logged-in session.
  */
 
@@ -10,7 +10,7 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Glance screen", () => {
   test("loads and shows the privacy hero", async ({ page }) => {
-    await page.goto("/v2/");
+    await page.goto("/");
 
     // Main content area header (eyebrow + title). Scoped to <main> because
     // "Glance" also appears in the sidebar nav link.
@@ -31,7 +31,7 @@ test.describe("Glance screen", () => {
     const snapshotResponse = await page.request.get("/api/system/snapshot");
     expect(snapshotResponse.ok()).toBeTruthy();
     const snapshot = await snapshotResponse.json();
-    await page.goto("/v2/");
+    await page.goto("/");
 
     const counts = snapshot.container_counts;
     await expect(
@@ -47,7 +47,7 @@ test.describe("Glance screen", () => {
     const snapshotResponse = await page.request.get("/api/system/snapshot");
     expect(snapshotResponse.ok()).toBeTruthy();
     const snapshot = await snapshotResponse.json();
-    await page.goto("/v2/");
+    await page.goto("/");
 
     const planes = snapshot.dns.planes as Array<{ label: string; status: string }>;
     const serving = planes.filter((plane) => plane.status === "healthy").length;
@@ -59,7 +59,7 @@ test.describe("Glance screen", () => {
   });
 
   test("sidebar has a sign-out control", async ({ page }) => {
-    await page.goto("/v2/");
+    await page.goto("/");
     // Button only (no click — clicking would destroy the shared test session).
     await expect(page.getByRole("button", { name: /sign out/i })).toBeVisible();
   });
@@ -78,7 +78,7 @@ test.describe("Glance screen", () => {
       json.tor.overall_status = "offline";
       await route.fulfill({ response: res, json });
     });
-    await page.goto("/v2/");
+    await page.goto("/");
 
     await expect(page.getByText(new RegExp(`0/${planeCount}\\s*serving`, "i"))).toBeVisible();
     await expect(page.getByText("tor down").first()).toBeVisible();
@@ -89,7 +89,7 @@ test.describe("Glance screen", () => {
   });
 
   test("shows 4 proof tiles with data", async ({ page }) => {
-    await page.goto("/v2/");
+    await page.goto("/");
 
     // Each of the 4 tiles should be visible by its label
     await expect(page.getByText("DNS", { exact: true }).first()).toBeVisible();
@@ -102,7 +102,7 @@ test.describe("Glance screen", () => {
   });
 
   test("shows live Quick Actions strip with four enabled buttons", async ({ page }) => {
-    await page.goto("/v2/");
+    await page.goto("/");
 
     // The Quick Actions section lives at the bottom of Glance. The four
     // buttons are live as of the post-Phase-A finishing pass — each one

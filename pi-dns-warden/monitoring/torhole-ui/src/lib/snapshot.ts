@@ -1,7 +1,7 @@
 /*
  * Typed client for /api/system/snapshot.
  *
- * The snapshot is the single source of truth for the v2 UI. Every screen
+ * The snapshot is the single source of truth for the admin UI. Every screen
  * reads from one shared hook (useSnapshot) which polls this endpoint at a
  * fixed interval. There is exactly one place that fetches it.
  *
@@ -272,7 +272,7 @@ export interface UseSnapshotResult {
 }
 
 /**
- * useSnapshot — single shared poller for the v2 UI.
+ * useSnapshot — single shared poller for the admin UI.
  *
  * Polls /api/system/snapshot every SNAPSHOT_POLL_MS, updates on success,
  * preserves the last known good snapshot on transient errors so screens

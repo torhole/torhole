@@ -304,7 +304,7 @@ class AdvancedConfigTests(unittest.TestCase):
             {
                 "mode": "https-custom",
                 "certificate": "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----",
-                "private_key": "-----BEGIN PRIVATE KEY-----\nTEST\n-----END PRIVATE KEY-----",
+                "private_key": "-----BEGIN PRIVATE KEY-----\nTEST\n-----END PRIVATE KEY-----",  # gitleaks:allow -- deliberately invalid PEM fixture
             }
         )
         self.assertEqual(result["mode"], "https-custom")

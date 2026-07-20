@@ -11,7 +11,7 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Configure screen", () => {
   test("loads and shows five section tabs", async ({ page }) => {
-    await page.goto("/v2/#/configure");
+    await page.goto("/#/configure");
 
     await expect(
       page.getByRole("heading", { name: "What can you tune?" }),
@@ -28,7 +28,7 @@ test.describe("Configure screen", () => {
   });
 
   test("default tab shows the admin user from .env", async ({ page }) => {
-    await page.goto("/v2/#/configure");
+    await page.goto("/#/configure");
 
     const configResponse = await page.request.get("/api/config");
     expect(configResponse.ok()).toBeTruthy();
@@ -47,7 +47,7 @@ test.describe("Configure screen", () => {
   });
 
   test("identity tab shows the admin password change form", async ({ page }) => {
-    await page.goto("/v2/#/configure");
+    await page.goto("/#/configure");
 
     // The password change form now requires THREE inputs: current + new + confirm.
     // We only verify gating — we do NOT submit the form, because submitting
@@ -99,7 +99,7 @@ test.describe("Configure screen", () => {
   });
 
   test("topology tab matches the installed capability profile", async ({ page }) => {
-    await page.goto("/v2/#/configure");
+    await page.goto("/#/configure");
 
     await page.getByRole("tab", { name: /Topology/i }).click();
 
@@ -121,7 +121,7 @@ test.describe("Configure screen", () => {
   });
 
   test("alerts tab shows channels with at least one configured", async ({ page }) => {
-    await page.goto("/v2/#/configure");
+    await page.goto("/#/configure");
 
     await page.getByRole("tab", { name: /Alert channels/i }).click();
 
@@ -138,7 +138,7 @@ test.describe("Configure screen", () => {
   });
 
   test("advanced tab is expanded by default in its tab", async ({ page }) => {
-    await page.goto("/v2/#/configure");
+    await page.goto("/#/configure");
 
     await page.getByRole("tab", { name: /App parameters/i }).click();
 

@@ -13,13 +13,13 @@ pihole
 backups
 run
 restore-safety
-monitoring/caddy/v2
+monitoring/caddy/admin-ui
 monitoring/authelia/configuration.yml
 monitoring/authelia/users_database.yml
 monitoring/caddy/auth-snippets.caddy
 
 # Test/browser output is not part of the runtime image.
-monitoring/torhole-ui-v2/.playwright-browsers
-monitoring/torhole-ui-v2/test-results
-monitoring/torhole-ui-v2/playwright-report
-monitoring/torhole-ui-v2/.vite
+monitoring/torhole-ui/.playwright-browsers
+monitoring/torhole-ui/test-results
+monitoring/torhole-ui/playwright-report
+monitoring/torhole-ui/.vite

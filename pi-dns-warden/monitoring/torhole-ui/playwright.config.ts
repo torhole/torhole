@@ -1,5 +1,5 @@
 /*
- * Playwright config for torhole-ui-v2.
+ * Playwright config for torhole-ui.
  *
  * Targets the live Pi at https://torhole.lab.torhole.com (configurable via
  * TORHOLE_BASE_URL in tests/.env.test). Uses a global setup that

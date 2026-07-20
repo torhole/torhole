@@ -10,6 +10,7 @@ import {
   RotateCw,
   ShieldCheck,
 } from "lucide-react";
+import DeferredPrivacyFlow from "../components/DeferredPrivacyFlow";
 
 type CheckResult = {
   ok: boolean;
@@ -267,12 +268,13 @@ function PrivacyHero({
   const protectedNow = proof?.protected === true;
   return (
     <section
-      className={`relative overflow-hidden border rounded-xl p-6 sm:p-8 th-scanlines ${
+      className={`relative overflow-hidden border rounded-xl p-6 sm:p-8 th-scanlines th-hero-surface ${
         protectedNow
           ? "border-th-primary/45 bg-th-primary/[0.045]"
           : "border-th-warning/35 bg-th-warning/[0.035]"
       }`}
     >
+      <DeferredPrivacyFlow active={protectedNow} />
       <div className="relative flex flex-col lg:flex-row lg:items-center gap-6">
         <div
           className={`w-14 h-14 rounded-full border flex items-center justify-center shrink-0 ${

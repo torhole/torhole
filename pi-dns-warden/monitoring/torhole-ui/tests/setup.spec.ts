@@ -9,7 +9,7 @@
 import { expect, test } from "@playwright/test";
 
 test("an installed setup bookmark redirects to Configure", async ({ page }) => {
-  await page.goto("/v2/#/setup");
+  await page.goto("/#/setup");
 
   await expect(page.getByRole("heading", { name: "What can you tune?" })).toBeVisible();
   await expect(page).toHaveURL(/#\/configure$/);
