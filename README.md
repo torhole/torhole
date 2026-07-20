@@ -96,6 +96,17 @@ These are not separate products or installers. Both use the same Torhole code
 and guided setup. Start with Home unless you already know why you need the
 Advanced capabilities.
 
+<table>
+<tr>
+<td width="50%"><strong>Torhole Home</strong><br><sub>One clear privacy proof and safe everyday controls.</sub></td>
+<td width="50%"><strong>Torhole Advanced</strong><br><sub>Live proof, topology, operations, monitoring, and recovery.</sub></td>
+</tr>
+<tr>
+<td><img src="pi-dns-warden/docs/images/screen-home.png" alt="Torhole Home live privacy dashboard" width="100%"></td>
+<td><img src="pi-dns-warden/docs/images/screen-glance.png" alt="Torhole Advanced Glance dashboard" width="100%"></td>
+</tr>
+</table>
+
 ## Prepare a host
 
 Torhole should run on a dedicated, always-on 64-bit Linux host connected to
@@ -470,6 +481,47 @@ with broad Docker-volume or recursive-delete commands.
   `http://<host-management-ip>/` on the trusted LAN. It remains useful when
   local DNS, HTTPS, or SSO configuration is broken.
 
+### Update Torhole containers
+
+Updates require shell access to the Torhole host and `sudo`. Take a VM or host
+backup first; Advanced users should also create a snapshot under **Operate →
+Backups**. Updating downloads newer images for the configured tags, rebuilds
+Torhole's local images, and recreates only containers whose image or
+configuration changed. Persistent Docker volumes are retained.
+
+For Home:
+
+```bash
+cd ~/torhole
+git pull --ff-only
+cd pi-dns-warden
+sudo docker compose --env-file .env.quickstart.local \
+  -f docker-compose.quickstart.yml pull --ignore-buildable
+sudo docker compose --env-file .env.quickstart.local \
+  -f docker-compose.quickstart.yml up -d --build
+cd ..
+./install.sh status
+```
+
+Then open the Home dashboard and run **Verify privacy**.
+
+For Advanced, the deployment script is the supported updater because it also
+renders configuration, rebuilds the local images, validates the stack, and
+verifies that DNS still exits through Tor:
+
+```bash
+cd ~/torhole
+git pull --ff-only
+cd pi-dns-warden
+sudo ./deploy.sh --skip-prereqs
+```
+
+Do not treat Dockhand's image-status banner as proof that images are current.
+Dockhand is deliberately isolated from public registries, so registry checks
+can report `Could not query registry` even though host-side Docker Compose
+pulls work normally. A failed check means the image status is unknown, not
+that the image is current.
+
 ## Repository layout
 
 - `install.sh` and `get-torhole.sh` - the single guided installation entrypoint
@@ -478,6 +530,19 @@ with broad Docker-volume or recursive-delete commands.
 - `scripts/` - repository-level bootstrap and validation helpers
 - `README-ALERTING.md`, `README-ANSIBLE.md`, `README-PROXMOX.md`, and
   `README-TESTING.md` - focused operator documentation
+
+## Built with Codex during OpenAI Build Week
+
+Torhole's public release, unified Home/Advanced installer, operational UI,
+privacy-aware monitoring audit, and live deployment validation were completed
+with Codex and GPT-5.6 during the Build Week submission period. The human
+operator set the privacy boundary, product direction, topology requirements,
+and release decisions; Codex accelerated repository-wide implementation,
+testing, dashboard analysis, live VM diagnosis, documentation, and release
+verification.
+
+See [BUILD_WEEK.md](BUILD_WEEK.md) for the dated work breakdown, collaboration
+details, verification evidence, and what should be considered new for judging.
 
 ## Security
 

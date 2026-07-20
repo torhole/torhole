@@ -81,7 +81,7 @@ export default function SectionTabs({
       : tabs.length === 3
       ? "grid-cols-1 md:grid-cols-3"
       : tabs.length === 4
-      ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-4"
+      ? "grid-cols-1 md:grid-cols-2 2xl:grid-cols-4"
       : "grid-cols-1 md:grid-cols-3";
 
   return (
