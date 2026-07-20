@@ -1585,10 +1585,24 @@ def get_leak_test_state():
         }
     last = history[-1]
     recent = history[-20:]
-    passed = sum(1 for r in recent if r.get("pass"))
-    rate = passed / len(recent) if recent else None
+    conclusive = [
+        result
+        for result in recent
+        if _tor_egress_verification_status(result)
+        in {"confirmed_tor", "confirmed_not_tor"}
+    ]
+    passed = sum(
+        1
+        for result in conclusive
+        if _tor_egress_verification_status(result) == "confirmed_tor"
+    )
+    rate = passed / len(conclusive) if conclusive else None
     slim_history = [
-        {"pass": bool(r.get("pass")), "ran_at": r.get("ran_at")}
+        {
+            "pass": bool(r.get("pass")),
+            "ran_at": r.get("ran_at"),
+            "verification_status": _tor_egress_verification_status(r),
+        }
         for r in history[-30:]
     ]
     return {
@@ -1597,6 +1611,7 @@ def get_leak_test_state():
         "last_result": last,
         "last_run_at": last.get("ran_at"),
         "history_count": len(history),
+        "conclusive_count": len(conclusive),
         "recent_pass_rate": rate,
         "history": slim_history,
     }

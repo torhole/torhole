@@ -115,11 +115,13 @@ export interface LeakTestResult {
   ran_at: string;
   duration_ms: number;
   error: string | null;
+  verification_status?: "confirmed_tor" | "confirmed_not_tor" | "unavailable";
 }
 
 export interface LeakTestHistoryEntry {
   pass: boolean;
   ran_at: string;
+  verification_status?: "confirmed_tor" | "confirmed_not_tor" | "unavailable";
 }
 
 export interface LeakTestState {
@@ -128,6 +130,7 @@ export interface LeakTestState {
   last_result: LeakTestResult | null;
   last_run_at: string | null;
   history_count: number;
+  conclusive_count?: number;
   recent_pass_rate: number | null;
   /** Optional on the type because an older backend (before we added this
    *  field) won't return it. Frontend must default to [] when reading. */
