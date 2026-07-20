@@ -11,6 +11,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 SCRAPE_TIMEOUT = float(os.environ.get("PIHOLE_EXPORTER_TIMEOUT_S", "10"))
 LISTEN_ADDR = os.environ.get("PIHOLE_EXPORTER_LISTEN_ADDR", "0.0.0.0")
 LISTEN_PORT = int(os.environ.get("PIHOLE_EXPORTER_LISTEN_PORT", "9617"))
+EXPORT_CLIENT_METRICS = os.environ.get(
+    "TORHOLE_EXPORT_CLIENT_METRICS", "false"
+).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _pihole_tls_context():
     """Verify against PIHOLE_CA_FILE if mounted (hostname check off — the pin
     is the CA, not the container-name SAN). Fallback: no verification —
@@ -191,7 +196,14 @@ def scrape_target(target):
         info_ftl = fetch_json(target, "/info/ftl")
         info_system = fetch_json(target, "/info/system")
         info_version = fetch_json(target, "/info/version")
-        top_clients = fetch_json(target, "/stats/top_clients")
+        # Client IP/name labels are locally identifying and create unbounded
+        # Prometheus cardinality. Keep them opt-in and avoid fetching the API
+        # endpoint at all when disabled.
+        top_clients = (
+            fetch_json(target, "/stats/top_clients")
+            if EXPORT_CLIENT_METRICS
+            else {"clients": []}
+        )
     except Exception as exc:  # noqa: BLE001
         metric(lines, "pihole_exporter_up", 0, {"role": role})
         metric(lines, "pihole_exporter_scrape_duration_seconds", time.time() - started, {"role": role})

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-ENV_FILE="${ROOT_DIR}/.env"
-OUT_FILE="${ROOT_DIR}/monitoring/alertmanager/alertmanager.yml"
+ENV_FILE="${TORHOLE_ENV_FILE:-${ROOT_DIR}/.env}"
+OUT_FILE="${ALERTMANAGER_OUTPUT_FILE:-${ROOT_DIR}/monitoring/alertmanager/alertmanager.yml}"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Missing .env at: $ENV_FILE" >&2
@@ -67,7 +67,10 @@ mkdir -p "$(dirname "$OUT_FILE")"
 {
   echo "route:"
   echo "  receiver: default"
-  echo "  group_by: ['alertname']"
+  # Preserve the target identity in each group. Several rules can fire for
+  # multiple jobs/planes at once; grouping only by alertname made CommonLabels
+  # and CommonAnnotations empty and produced notifications with no diagnosis.
+  echo "  group_by: ['alertname', 'job', 'instance', 'role', 'name']"
   echo "  group_wait: 30s"
   echo "  group_interval: 5m"
   echo "  repeat_interval: 1h"
@@ -91,11 +94,18 @@ mkdir -p "$(dirname "$OUT_FILE")"
     echo "        headers:"
     echo "          Subject: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'"
     echo "        text: |"
-    echo "          Summary: {{ .CommonAnnotations.summary }}"
-    echo "          Description: {{ .CommonAnnotations.description }}"
-    echo "          Instance: {{ .CommonLabels.instance }}"
+    echo "          {{ range .Alerts }}"
+    echo "          Severity: {{ .Labels.severity }}"
+    echo "          Summary: {{ .Annotations.summary }}"
+    echo "          Description: {{ .Annotations.description }}"
+    echo "          {{ with .Labels.instance }}Instance: {{ . }}{{ end }}"
+    echo "          {{ with .Labels.role }}Role: {{ . }}{{ end }}"
+    echo "          {{ with .Labels.name }}Container: {{ . }}{{ end }}"
+    echo "          {{ with .Annotations.runbook_url }}Runbook: {{ . }}{{ end }}"
+    echo "          {{ if .Annotations.dashboard_uid }}Dashboard: {{ .Annotations.dashboard_uid }}{{ with .Annotations.panel_id }} (panel {{ . }}){{ end }}{{ end }}"
     echo "          StartsAt: {{ .StartsAt }}"
     echo "          EndsAt: {{ .EndsAt }}"
+    echo "          {{ end }}"
   fi
 
   if [[ $telegram_enabled -eq 1 ]]; then
@@ -105,10 +115,16 @@ mkdir -p "$(dirname "$OUT_FILE")"
     echo "        send_resolved: true"
     echo "        message: |"
     echo "          [{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}"
-    echo "          Severity: {{ .CommonLabels.severity }}"
-    echo "          Summary: {{ .CommonAnnotations.summary }}"
-    echo "          Description: {{ .CommonAnnotations.description }}"
-    echo "          Instance: {{ .CommonLabels.instance }}"
+    echo "          {{ range .Alerts }}"
+    echo "          Severity: {{ .Labels.severity }}"
+    echo "          Summary: {{ .Annotations.summary }}"
+    echo "          Description: {{ .Annotations.description }}"
+    echo "          {{ with .Labels.instance }}Instance: {{ . }}{{ end }}"
+    echo "          {{ with .Labels.role }}Role: {{ . }}{{ end }}"
+    echo "          {{ with .Labels.name }}Container: {{ . }}{{ end }}"
+    echo "          {{ with .Annotations.runbook_url }}Runbook: {{ . }}{{ end }}"
+    echo "          {{ if .Annotations.dashboard_uid }}Dashboard: {{ .Annotations.dashboard_uid }}{{ with .Annotations.panel_id }} panel {{ . }}{{ end }}{{ end }}"
+    echo "          {{ end }}"
   fi
 
   if [[ $discord_enabled -eq 1 ]]; then
@@ -118,24 +134,22 @@ mkdir -p "$(dirname "$OUT_FILE")"
     echo "        send_resolved: true"
     echo "        title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'"
     echo "        message: |"
-    echo "          Severity: {{ .CommonLabels.severity }}"
-    echo "          Summary: {{ .CommonAnnotations.summary }}"
-    echo "          Description: {{ .CommonAnnotations.description }}"
-    echo "          Instance: {{ .CommonLabels.instance }}"
+    echo "          {{ range .Alerts }}"
+    echo "          Severity: {{ .Labels.severity }}"
+    echo "          Summary: {{ .Annotations.summary }}"
+    echo "          Description: {{ .Annotations.description }}"
+    echo "          {{ with .Labels.instance }}Instance: {{ . }}{{ end }}"
+    echo "          {{ with .Labels.role }}Role: {{ . }}{{ end }}"
+    echo "          {{ with .Labels.name }}Container: {{ . }}{{ end }}"
+    echo "          {{ with .Annotations.runbook_url }}Runbook: {{ . }}{{ end }}"
+    echo "          {{ if .Annotations.dashboard_uid }}Dashboard: {{ .Annotations.dashboard_uid }}{{ with .Annotations.panel_id }} panel {{ . }}{{ end }}{{ end }}"
+    echo "          {{ end }}"
   fi
 
   if [[ $email_enabled -eq 0 && $telegram_enabled -eq 0 && $discord_enabled -eq 0 ]]; then
     echo "    # No notification integrations configured."
     echo "    # Populate ALERT_EMAIL_*, ALERT_TELEGRAM_*, and/or ALERT_DISCORD_* in .env to enable delivery."
   fi
-
-  echo
-  echo "inhibit_rules:"
-  echo "  - source_matchers:"
-  echo "      - severity=\"critical\""
-  echo "    target_matchers:"
-  echo "      - severity=\"warning\""
-  echo "    equal: ['alertname']"
 } > "$OUT_FILE"
 
 echo "OK: alertmanager config rendered (email=$email_enabled telegram=$telegram_enabled discord=$discord_enabled)"

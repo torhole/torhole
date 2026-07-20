@@ -111,16 +111,26 @@ Caddy adds a generated bearer token to proxied API requests, and `backup-manager
 
 ### Grafana dashboards
 
-Six provisioned dashboards in `monitoring/grafana/dashboards/`, all linked from Operate › Insights:
+Advanced installs provision six dashboards in
+`monitoring/grafana/dashboards/`, all linked from Operate › Insights. Home does
+not deploy Grafana, Prometheus, or Loki. Both Advanced topologies use the same
+dashboards; queries discover the active one-plane Single-LAN or two-plane VLAN
+series at runtime.
 
 | UID | Title | Focus |
 |---|---|---|
-| `pidns-control` | Control Room | Top-level health, chain reachability, service state timeline |
+| `pidns-control` | Control Room | Current privacy evidence, alerts, chain reachability, service state |
 | `pidns-path` | DNS Path | Per-plane Pi-hole + dnscrypt probe latency, query/forward/cache rates |
 | `pidns-torflow` | Tor Flow & Runtime | Tor I/O, bootstrap, circuit state, entry guards — sourced from `/api/metrics/tor` |
-| `pidns-platform` | Edge & Egress | Reverse proxy health, HTTPS request share, Tor edge flow |
-| `pidns-visibility` | Visibility & Logs | Query status/type/reply mix, upstream share, Loki log panels, top clients |
-| `pidns-host` | Host Infrastructure | node-exporter + cadvisor (CPU, RAM, disk, network) |
+| `pidns-platform` | Edge & Egress | Reverse proxy health, management request mix, Tor edge flow |
+| `pidns-visibility` | Visibility & Logs | Aggregate DNS outcomes, upstream behavior, allowlisted operational logs |
+| `pidns-host` | Host Infrastructure | node-exporter + cAdvisor (CPU, RAM, disk, network) |
+
+The privacy headline combines independent evidence instead of treating an open
+port as proof: DNS-hop probes, Tor control/bootstrap/circuit state, and the age
+and outcome of the scheduled external Tor-egress verification. The historical
+`torhole_leak_test_*` metric name is retained for compatibility, but that check
+does not itself issue a DNS query through Pi-hole and dnscrypt.
 
 ## Host-level watchdog
 

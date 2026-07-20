@@ -3,7 +3,7 @@
   "title": "Pi DNS Warden - Tor Flow & Runtime",
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 5,
+  "version": 6,
   "refresh": "15s",
   "tags": [
     "tor",
@@ -19,7 +19,7 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Tor RX rate",
+      "title": "Tor egress verification",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
@@ -27,13 +27,15 @@
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 3,
+        "w": 4,
         "h": 4
       },
       "targets": [
         {
-          "expr": "sum(rate(container_network_receive_bytes_total{name=\"tor\"}[5m]))",
-          "refId": "A"
+          "expr": "torhole_leak_test_pass or on() vector(-1)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -44,34 +46,67 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
-        "graphMode": "area",
+        "colorMode": "background",
+        "graphMode": "none",
         "justifyMode": "center"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "Bps"
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "FAIL",
+                  "color": "red",
+                  "index": 1
+                },
+                "1": {
+                  "text": "PASS · DNS exits via Tor",
+                  "color": "green",
+                  "index": 2
+                },
+                "-1": {
+                  "text": "UNKNOWN",
+                  "color": "gray",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "PASS means the scheduled compatibility-named leak test sent an independent request through Tor SOCKS and the remote IsTor check observed a Tor exit. It does not trace a DNS query through Pi-hole or dnscrypt. UNKNOWN is not healthy.",
+      "links": [
+        {
+          "title": "Verify the privacy path",
+          "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/privacy-model.md#network-isolation-verification",
+          "targetBlank": true
+        }
+      ]
     },
     {
       "id": 2,
       "type": "stat",
-      "title": "Tor TX rate",
+      "title": "Tor egress verification age",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 3,
+        "x": 4,
         "y": 0,
-        "w": 3,
+        "w": 4,
         "h": 4
       },
       "targets": [
         {
-          "expr": "sum(rate(container_network_transmit_bytes_total{name=\"tor\"}[5m]))",
-          "refId": "A"
+          "expr": "torhole_leak_test_age_seconds or on() vector(-1)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -82,34 +117,79 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
-        "graphMode": "area",
+        "colorMode": "background",
+        "graphMode": "none",
         "justifyMode": "center"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "Bps"
+          "unit": "s",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "gray",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 3600
+              },
+              {
+                "color": "red",
+                "value": 7200
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "UNKNOWN",
+                  "color": "gray",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "Age of the latest scheduled compatibility-named leak test. Red at two hours (four missed 30-minute runs). The test covers an independent SOCKS request, not DNS-path tracing; UNKNOWN means it has never completed.",
+      "links": [
+        {
+          "title": "Verify the privacy path",
+          "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/privacy-model.md#network-isolation-verification",
+          "targetBlank": true
+        }
+      ]
     },
     {
       "id": 3,
       "type": "stat",
-      "title": "Tor RX (1h)",
+      "title": "Tor control port",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 6,
+        "x": 8,
         "y": 0,
-        "w": 3,
+        "w": 4,
         "h": 4
       },
       "targets": [
         {
-          "expr": "sum(increase(container_network_receive_bytes_total{name=\"tor\"}[1h]))",
-          "refId": "A"
+          "expr": "tor_control_port_up or on() vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -120,34 +200,77 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
-        "graphMode": "area",
+        "colorMode": "background",
+        "graphMode": "none",
         "justifyMode": "center"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes"
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "min": 0,
+          "max": 1,
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "unavailable",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "connected",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "Whether Prometheus can obtain authenticated Tor runtime data. A failed control-port scrape makes runtime metrics unknown.",
+      "links": [
+        {
+          "title": "Verify the privacy path",
+          "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/privacy-model.md#network-isolation-verification",
+          "targetBlank": true
+        }
+      ]
     },
     {
       "id": 4,
       "type": "stat",
-      "title": "Tor TX (1h)",
+      "title": "Directory information",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 9,
+        "x": 12,
         "y": 0,
-        "w": 3,
+        "w": 4,
         "h": 4
       },
       "targets": [
         {
-          "expr": "sum(increase(container_network_transmit_bytes_total{name=\"tor\"}[1h]))",
-          "refId": "A"
+          "expr": "tor_enough_dir_info or on() vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -158,15 +281,56 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
-        "graphMode": "area",
+        "colorMode": "background",
+        "graphMode": "none",
         "justifyMode": "center"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes"
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "min": 0,
+          "max": 1,
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "not ready",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "ready",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "Whether Tor has enough directory information to build circuits.",
+      "links": [
+        {
+          "title": "Verify the privacy path",
+          "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/privacy-model.md#network-isolation-verification",
+          "targetBlank": true
+        }
+      ]
     },
     {
       "id": 5,
@@ -178,47 +342,16 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 0,
-        "w": 3,
+        "y": 4,
+        "w": 4,
         "h": 4
       },
       "targets": [
         {
           "expr": "sum(rate(container_cpu_usage_seconds_total{name=\"tor\"}[5m]))",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "center"
-      }
-    },
-    {
-      "id": 6,
-      "type": "stat",
-      "title": "Tor memory",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
-      },
-      "gridPos": {
-        "x": 15,
-        "y": 0,
-        "w": 3,
-        "h": 4
-      },
-      "targets": [
-        {
-          "expr": "sum(container_memory_usage_bytes{name=\"tor\"})",
-          "refId": "A"
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -235,7 +368,48 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes"
+          "noValue": "UNKNOWN"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Tor memory",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PROM"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 4,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "sum(container_memory_usage_bytes{name=\"tor\"})",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "noValue": "UNKNOWN"
         }
       }
     },
@@ -248,15 +422,17 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 18,
-        "y": 0,
-        "w": 3,
+        "x": 20,
+        "y": 4,
+        "w": 4,
         "h": 4
       },
       "targets": [
         {
           "expr": "time() - container_start_time_seconds{name=\"tor\"}",
-          "refId": "A"
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -273,41 +449,9 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "s"
+          "unit": "s",
+          "noValue": "UNKNOWN"
         }
-      }
-    },
-    {
-      "id": 8,
-      "type": "stat",
-      "title": "Tor restarts (24h)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
-      },
-      "gridPos": {
-        "x": 21,
-        "y": 0,
-        "w": 3,
-        "h": 4
-      },
-      "targets": [
-        {
-          "expr": "sum(increase(container_restart_count_total{name=\"tor\"}[24h]))",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "center"
       }
     },
     {
@@ -320,7 +464,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 12,
+        "y": 8,
         "w": 12,
         "h": 8
       },
@@ -351,14 +495,14 @@
     {
       "id": 10,
       "type": "timeseries",
-      "title": "dnscrypt demand into Tor by role",
+      "title": "Resolver traffic by active plane",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
         "x": 12,
-        "y": 12,
+        "y": 8,
         "w": 12,
         "h": 8
       },
@@ -379,50 +523,8 @@
           "displayMode": "table",
           "placement": "bottom"
         }
-      }
-    },
-    {
-      "id": 11,
-      "type": "timeseries",
-      "title": "Chain demand vs Tor edge",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
       },
-      "gridPos": {
-        "x": 0,
-        "y": 20,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(container_network_transmit_bytes_total{name=~\"dnscrypt-(trusted|iot)\"}[5m]))",
-          "legendFormat": "dnscrypt to Tor",
-          "refId": "A"
-        },
-        {
-          "expr": "sum(rate(container_network_receive_bytes_total{name=\"tor\"}[5m]))",
-          "legendFormat": "Tor RX",
-          "refId": "B"
-        },
-        {
-          "expr": "sum(rate(container_network_transmit_bytes_total{name=\"tor\"}[5m]))",
-          "legendFormat": "Tor TX",
-          "refId": "C"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps"
-        }
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom"
-        }
-      }
+      "description": "Container-interface transmit rate for active dnscrypt resolvers. In single-LAN mode, the trusted label represents the Flat LAN plane. This is workload context, not Tor egress verification."
     },
     {
       "id": 12,
@@ -433,8 +535,8 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 12,
-        "y": 20,
+        "x": 0,
+        "y": 16,
         "w": 12,
         "h": 8
       },
@@ -457,7 +559,8 @@
           "displayMode": "table",
           "placement": "bottom"
         }
-      }
+      },
+      "description": "TCP reachability of Tor SOCKS. A reachable port does not verify Tor egress; use Tor egress verification for the independent SOCKS check."
     },
     {
       "id": 13,
@@ -468,8 +571,8 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 0,
-        "y": 28,
+        "x": 12,
+        "y": 16,
         "w": 12,
         "h": 8
       },
@@ -501,8 +604,8 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 12,
-        "y": 28,
+        "x": 0,
+        "y": 24,
         "w": 12,
         "h": 8
       },
@@ -534,14 +637,14 @@
     {
       "id": 15,
       "type": "timeseries",
-      "title": "Hourly Tor transfer volume",
+      "title": "Rolling 1-hour Tor transfer volume",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 0,
-        "y": 36,
+        "x": 12,
+        "y": 24,
         "w": 12,
         "h": 8
       },
@@ -570,214 +673,6 @@
       }
     },
     {
-      "id": 16,
-      "type": "timeseries",
-      "title": "Reverse proxy edge vs Tor edge",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 36,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(container_network_receive_bytes_total{name=\"reverse-proxy\"}[5m]))",
-          "legendFormat": "Reverse proxy RX",
-          "refId": "A"
-        },
-        {
-          "expr": "sum(rate(container_network_transmit_bytes_total{name=\"reverse-proxy\"}[5m]))",
-          "legendFormat": "Reverse proxy TX",
-          "refId": "B"
-        },
-        {
-          "expr": "sum(rate(container_network_receive_bytes_total{name=\"tor\"}[5m]))",
-          "legendFormat": "Tor RX",
-          "refId": "C"
-        },
-        {
-          "expr": "sum(rate(container_network_transmit_bytes_total{name=\"tor\"}[5m]))",
-          "legendFormat": "Tor TX",
-          "refId": "D"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps"
-        }
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom"
-        }
-      }
-    },
-    {
-      "id": 17,
-      "type": "piechart",
-      "title": "Tor edge split (1h)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 4,
-        "w": 8,
-        "h": 8
-      },
-      "targets": [
-        {
-          "expr": "sum(increase(container_network_receive_bytes_total{name=\"tor\"}[1h]))",
-          "legendFormat": "Tor RX",
-          "refId": "A"
-        },
-        {
-          "expr": "sum(increase(container_network_transmit_bytes_total{name=\"tor\"}[1h]))",
-          "legendFormat": "Tor TX",
-          "refId": "B"
-        }
-      ],
-      "options": {
-        "displayLabels": [
-          "name",
-          "percent"
-        ],
-        "legend": {
-          "displayMode": "table",
-          "placement": "right"
-        },
-        "pieType": "donut",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes"
-        }
-      }
-    },
-    {
-      "id": 18,
-      "type": "piechart",
-      "title": "dnscrypt demand share",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
-      },
-      "gridPos": {
-        "x": 8,
-        "y": 4,
-        "w": 8,
-        "h": 8
-      },
-      "targets": [
-        {
-          "expr": "sum by (name) (rate(container_network_transmit_bytes_total{name=~\"dnscrypt-(trusted|iot)\"}[5m]))",
-          "legendFormat": "{{name}}",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "displayLabels": [
-          "name",
-          "percent"
-        ],
-        "legend": {
-          "displayMode": "table",
-          "placement": "right"
-        },
-        "pieType": "donut",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps"
-        }
-      }
-    },
-    {
-      "id": 19,
-      "type": "gauge",
-      "title": "Tor availability snapshot",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
-      },
-      "gridPos": {
-        "x": 16,
-        "y": 4,
-        "w": 8,
-        "h": 8
-      },
-      "targets": [
-        {
-          "expr": "avg_over_time(probe_success{job=\"blackbox-tor-socks\"}[5m]) * 100",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "orientation": "auto",
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 100,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 90
-              },
-              {
-                "color": "green",
-                "value": 99
-              }
-            ]
-          }
-        }
-      }
-    },
-    {
       "id": 20,
       "type": "stat",
       "title": "Tor bootstrap",
@@ -786,15 +681,17 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 0,
-        "y": 44,
-        "w": 5,
+        "x": 16,
+        "y": 0,
+        "w": 4,
         "h": 4
       },
       "targets": [
         {
-          "expr": "tor_bootstrap_percent",
-          "refId": "A"
+          "expr": "tor_bootstrap_percent or on() vector(-1)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -828,7 +725,20 @@
                 "value": 99
               }
             ]
-          }
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "UNKNOWN",
+                  "color": "gray",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "noValue": "UNKNOWN"
         }
       },
       "description": "Tor bootstrap progress 0-100 read from the control port. 100 = ready to carry traffic. Sourced live from /api/metrics/tor."
@@ -842,15 +752,17 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 5,
-        "y": 44,
-        "w": 5,
+        "x": 20,
+        "y": 0,
+        "w": 4,
         "h": 4
       },
       "targets": [
         {
-          "expr": "tor_network_liveness",
-          "refId": "A"
+          "expr": "tor_network_liveness or on() vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -861,7 +773,7 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "center"
       },
@@ -881,6 +793,8 @@
               }
             ]
           },
+          "min": 0,
+          "max": 1,
           "mappings": [
             {
               "type": "value",
@@ -897,10 +811,18 @@
                 }
               }
             }
-          ]
+          ],
+          "noValue": "UNKNOWN"
         }
       },
-      "description": "1 if Tor believes the wider network is reachable, 0 if not. Read via GETINFO network-liveness."
+      "description": "Whether Tor believes the wider network is reachable. Missing runtime telemetry is treated as down.",
+      "links": [
+        {
+          "title": "Verify the privacy path",
+          "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/privacy-model.md#network-isolation-verification",
+          "targetBlank": true
+        }
+      ]
     },
     {
       "id": 22,
@@ -911,15 +833,17 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 10,
-        "y": 44,
-        "w": 5,
+        "x": 0,
+        "y": 4,
+        "w": 4,
         "h": 4
       },
       "targets": [
         {
-          "expr": "tor_circuit_established",
-          "refId": "A"
+          "expr": "tor_circuit_established or on() vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -930,7 +854,7 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "center"
       },
@@ -950,6 +874,8 @@
               }
             ]
           },
+          "min": 0,
+          "max": 1,
           "mappings": [
             {
               "type": "value",
@@ -966,10 +892,18 @@
                 }
               }
             }
-          ]
+          ],
+          "noValue": "UNKNOWN"
         }
       },
-      "description": "1 if Tor believes it can build new circuits right now."
+      "description": "Whether Tor believes it can build circuits. Missing runtime telemetry is treated as no.",
+      "links": [
+        {
+          "title": "Verify the privacy path",
+          "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/privacy-model.md#network-isolation-verification",
+          "targetBlank": true
+        }
+      ]
     },
     {
       "id": 23,
@@ -980,15 +914,17 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 15,
-        "y": 44,
+        "x": 4,
+        "y": 4,
         "w": 4,
         "h": 4
       },
       "targets": [
         {
-          "expr": "tor_entry_guards",
-          "refId": "A"
+          "expr": "tor_entry_guards or on() vector(-1)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -1016,12 +952,40 @@
               {
                 "color": "green",
                 "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 4
+              },
+              {
+                "color": "red",
+                "value": 10
               }
             ]
-          }
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "UNKNOWN",
+                  "color": "gray",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "noValue": "UNKNOWN"
         }
       },
-      "description": "Number of entry guards Tor currently has selected. A healthy client holds a small set (typically 1-3); counts in the teens indicate churn or forced rotation."
+      "description": "Number of entry guards Tor currently has selected. A healthy client holds a small set (typically 1-3); counts in the teens indicate churn or forced rotation.",
+      "links": [
+        {
+          "title": "Verify the privacy path",
+          "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/privacy-model.md#network-isolation-verification",
+          "targetBlank": true
+        }
+      ]
     },
     {
       "id": 24,
@@ -1032,15 +996,17 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 19,
-        "y": 44,
-        "w": 5,
+        "x": 8,
+        "y": 4,
+        "w": 4,
         "h": 4
       },
       "targets": [
         {
           "expr": "tor_build_info",
-          "refId": "A"
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -1067,7 +1033,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "noValue": "UNKNOWN"
         }
       },
       "description": "Version reported by the running tor process."
@@ -1082,7 +1049,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 48,
+        "y": 32,
         "w": 12,
         "h": 8
       },
@@ -1124,14 +1091,14 @@
     {
       "id": 26,
       "type": "timeseries",
-      "title": "Tor circuits by plane",
+      "title": "Tor circuits by credential plane",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
         "x": 12,
-        "y": 48,
+        "y": 32,
         "w": 12,
         "h": 8
       },
@@ -1168,7 +1135,7 @@
           "sort": "desc"
         }
       },
-      "description": "BUILT circuits isolated to each plane via dnscrypt-proxy's IsolateSOCKSAuth (SOCKS_USERNAME=<plane>). This is the live proof that per-plane circuit isolation is working."
+      "description": "BUILT circuits attributed through IsolateSOCKSAuth credentials. In single-LAN mode, trusted means Flat LAN and iot=0 is expected. Counts support diagnosis but do not replace Tor egress verification."
     },
     {
       "id": 27,
@@ -1180,7 +1147,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 56,
+        "y": 40,
         "w": 24,
         "h": 8
       },
@@ -1192,7 +1159,7 @@
         },
         {
           "expr": "rate(tor_traffic_written_bytes_total[5m])",
-          "refId": "A",
+          "refId": "B",
           "legendFormat": "written"
         }
       ],
@@ -1222,7 +1189,7 @@
           "sort": "desc"
         }
       },
-      "description": "Bytes/sec in and out of Tor as reported by the control port. More accurate than the container_network_* metrics for Tor's own workload because cadvisor counts all traffic on the interface including control-port chatter."
+      "description": "Tor read/write rate from authenticated control-port counters. Prefer this over container-interface traffic when diagnosing Tor workload."
     }
   ],
   "links": [
@@ -1278,6 +1245,24 @@
       "targetBlank": false,
       "keepTime": true,
       "includeVars": true,
+      "asDropdown": false
+    },
+    {
+      "title": "Operator guide",
+      "type": "link",
+      "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md",
+      "targetBlank": true,
+      "keepTime": false,
+      "includeVars": false,
+      "asDropdown": false
+    },
+    {
+      "title": "Privacy model",
+      "type": "link",
+      "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/privacy-model.md#network-isolation-verification",
+      "targetBlank": true,
+      "keepTime": false,
+      "includeVars": false,
       "asDropdown": false
     }
   ]

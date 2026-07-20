@@ -3,7 +3,7 @@
   "title": "Pi DNS Warden - DNS Path",
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 7,
+  "version": 8,
   "refresh": "15s",
   "tags": [
     "dns",
@@ -19,7 +19,7 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Pi-hole UDP by DNS plane",
+      "title": "Pi-hole UDP by active plane",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
@@ -27,14 +27,16 @@
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 8,
+        "w": 4,
         "h": 4
       },
       "targets": [
         {
-          "expr": "avg_over_time(probe_success{job=\"blackbox-dns-udp-pihole\"}[5m]) * 100",
+          "expr": "(avg_over_time(probe_success{job=\"blackbox-dns-udp-pihole\"}[5m]) * 100) or on() vector(0)",
           "legendFormat": "{{instance}}",
-          "refId": "A"
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -69,29 +71,33 @@
                 "value": 99
               }
             ]
-          }
+          },
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "Five-minute probe success for configured targets only. Single-LAN has one active plane; VLAN mode has Trusted and IoT."
     },
     {
       "id": 4,
       "type": "stat",
-      "title": "dnscrypt TCP by DNS plane",
+      "title": "dnscrypt TCP by active plane",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 8,
+        "x": 4,
         "y": 0,
-        "w": 8,
+        "w": 5,
         "h": 4
       },
       "targets": [
         {
-          "expr": "avg_over_time(probe_success{job=\"blackbox-dns-tcp-dnscrypt\"}[5m]) * 100",
+          "expr": "(avg_over_time(probe_success{job=\"blackbox-dns-tcp-dnscrypt\"}[5m]) * 100) or on() vector(0)",
           "legendFormat": "{{instance}}",
-          "refId": "A"
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -126,9 +132,11 @@
                 "value": 99
               }
             ]
-          }
+          },
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "Five-minute probe success for configured targets only. Single-LAN has one active plane; VLAN mode has Trusted and IoT."
     },
     {
       "id": 7,
@@ -140,7 +148,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 12,
+        "y": 4,
         "w": 12,
         "h": 8
       },
@@ -175,7 +183,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 12,
+        "y": 4,
         "w": 12,
         "h": 8
       },
@@ -210,7 +218,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 20,
+        "y": 12,
         "w": 12,
         "h": 8
       },
@@ -243,7 +251,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 20,
+        "y": 12,
         "w": 12,
         "h": 8
       },
@@ -276,7 +284,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 28,
+        "y": 20,
         "w": 12,
         "h": 8
       },
@@ -297,7 +305,8 @@
           "displayMode": "table",
           "placement": "bottom"
         }
-      }
+      },
+      "description": "In single-LAN mode, the trusted role is the Flat LAN plane."
     },
     {
       "id": 12,
@@ -309,7 +318,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 28,
+        "y": 20,
         "w": 12,
         "h": 8
       },
@@ -330,7 +339,8 @@
           "displayMode": "table",
           "placement": "bottom"
         }
-      }
+      },
+      "description": "In single-LAN mode, the trusted role is the Flat LAN plane."
     },
     {
       "id": 13,
@@ -342,8 +352,8 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 36,
-        "w": 8,
+        "y": 28,
+        "w": 12,
         "h": 8
       },
       "targets": [
@@ -376,9 +386,9 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 8,
-        "y": 36,
-        "w": 8,
+        "x": 12,
+        "y": 28,
+        "w": 12,
         "h": 8
       },
       "targets": [
@@ -409,9 +419,9 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 16,
+        "x": 0,
         "y": 36,
-        "w": 8,
+        "w": 12,
         "h": 8
       },
       "targets": [
@@ -435,22 +445,24 @@
     },
     {
       "id": 18,
-      "type": "gauge",
-      "title": "DNS path health floor",
+      "type": "stat",
+      "title": "Tor egress verification",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 16,
-        "y": 4,
-        "w": 8,
-        "h": 8
+        "x": 9,
+        "y": 0,
+        "w": 5,
+        "h": 4
       },
       "targets": [
         {
-          "expr": "min(avg_over_time(probe_success{job=~\"blackbox-dns-udp-pihole|blackbox-dns-tcp-dnscrypt\"}[5m])) * 100",
-          "refId": "A"
+          "expr": "torhole_leak_test_pass or on() vector(-1)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -461,34 +473,46 @@
           "fields": "",
           "values": false
         },
-        "orientation": "auto",
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 100,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 90
-              },
-              {
-                "color": "green",
-                "value": 99
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "FAIL",
+                  "color": "red",
+                  "index": 1
+                },
+                "1": {
+                  "text": "PASS · DNS exits via Tor",
+                  "color": "green",
+                  "index": 2
+                },
+                "-1": {
+                  "text": "UNKNOWN",
+                  "color": "gray",
+                  "index": 0
+                }
               }
-            ]
-          }
+            }
+          ],
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "PASS means the scheduled compatibility-named leak test sent an independent request through Tor SOCKS and the remote IsTor check observed a Tor exit. It does not trace a DNS query through Pi-hole or dnscrypt. UNKNOWN is not healthy.",
+      "links": [
+        {
+          "title": "Verify the privacy path",
+          "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/privacy-model.md#network-isolation-verification",
+          "targetBlank": true
+        }
+      ]
     },
     {
       "id": 19,
@@ -499,9 +523,9 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 0,
-        "y": 44,
-        "w": 8,
+        "x": 12,
+        "y": 36,
+        "w": 12,
         "h": 8
       },
       "targets": [
@@ -523,7 +547,8 @@
           "displayMode": "table",
           "placement": "bottom"
         }
-      }
+      },
+      "description": "In single-LAN mode, the trusted role is the Flat LAN plane."
     },
     {
       "id": 20,
@@ -534,9 +559,9 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 8,
+        "x": 0,
         "y": 44,
-        "w": 16,
+        "w": 12,
         "h": 8
       },
       "targets": [
@@ -566,7 +591,8 @@
           "displayMode": "table",
           "placement": "bottom"
         }
-      }
+      },
+      "description": "In single-LAN mode, the trusted role is the Flat LAN plane."
     },
     {
       "id": 21,
@@ -577,10 +603,10 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 0,
-        "y": 52,
-        "w": 24,
-        "h": 7
+        "x": 12,
+        "y": 44,
+        "w": 12,
+        "h": 8
       },
       "targets": [
         {
@@ -615,7 +641,7 @@
           "sort": "desc"
         }
       },
-      "description": "Share of queries answered from Pi-hole's cache per plane. Higher is better \u2014 every cache hit is a query we don't have to forward through dnscrypt \u2192 Tor."
+      "description": "Share of queries answered from Pi-hole's cache per plane. Higher is better — every cache hit is a query we don't have to forward through dnscrypt → Tor. In single-LAN mode, the trusted role is the Flat LAN plane."
     },
     {
       "id": 22,
@@ -626,15 +652,17 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 0,
-        "y": 4,
-        "w": 8,
-        "h": 8
+        "x": 14,
+        "y": 0,
+        "w": 5,
+        "h": 4
       },
       "targets": [
         {
-          "expr": "sum(rate(pihole_queries_total[1m]))",
-          "refId": "A"
+          "expr": "sum(rate(pihole_queries_total[1m])) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -660,10 +688,11 @@
                 "value": null
               }
             ]
-          }
+          },
+          "noValue": "UNKNOWN"
         }
       },
-      "description": "Combined DNS query rate across all three planes. Live pulse of how busy the stack is."
+      "description": "Combined live query rate across active Pi-hole planes (one in single-LAN, two in VLAN mode)."
     },
     {
       "id": 23,
@@ -674,15 +703,17 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 8,
-        "y": 4,
-        "w": 8,
-        "h": 8
+        "x": 19,
+        "y": 0,
+        "w": 5,
+        "h": 4
       },
       "targets": [
         {
-          "expr": "sum(pihole_dns_cache_entries{state=\"valid\"})",
-          "refId": "A"
+          "expr": "sum(pihole_dns_cache_entries{state=\"valid\"}) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -708,10 +739,11 @@
                 "value": null
               }
             ]
-          }
+          },
+          "noValue": "UNKNOWN"
         }
       },
-      "description": "Total valid cache entries across the three Pi-hole instances. Every hit here is a query we didn't have to forward through Tor."
+      "description": "Valid cache entries across active Pi-hole instances. Missing telemetry is shown as zero and should be checked against Pi-hole probe health."
     }
   ],
   "links": [
@@ -767,6 +799,24 @@
       "targetBlank": false,
       "keepTime": true,
       "includeVars": true,
+      "asDropdown": false
+    },
+    {
+      "title": "Operator guide",
+      "type": "link",
+      "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md",
+      "targetBlank": true,
+      "keepTime": false,
+      "includeVars": false,
+      "asDropdown": false
+    },
+    {
+      "title": "Privacy model",
+      "type": "link",
+      "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/privacy-model.md#network-isolation-verification",
+      "targetBlank": true,
+      "keepTime": false,
+      "includeVars": false,
       "asDropdown": false
     }
   ]

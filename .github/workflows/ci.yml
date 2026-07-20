@@ -34,7 +34,10 @@ jobs:
         run: python3 monitoring/backup-manager/test_security.py
 
       - name: Backend characterization tests
-        run: python3 monitoring/backup-manager/test_characterization.py
+        run: |
+          python3 monitoring/backup-manager/test_characterization.py
+          python3 monitoring/pihole-exporter/test_exporter.py
+          python3 ops/tests/test-monitoring-dashboards.py
 
       - name: Bootstrap and Home backend tests
         run: |
@@ -48,6 +51,7 @@ jobs:
           bash ops/tests/test-load-env.sh
           bash ops/tests/test-security-compose.sh
           bash ops/tests/test-topology-compose.sh
+          bash ops/tests/test-prometheus-render.sh
           bash ops/tests/test-get-torhole.sh
 
       - name: Validate dnscrypt configs (TOML)

@@ -827,5 +827,101 @@ class SendTestAlertTests(unittest.TestCase):
         self.assertIn("OSError", result["message"])
 
 
+class TorEgressMetricTests(unittest.TestCase):
+    def tearDown(self):
+        with server._LEAK_TEST_LOCK:
+            server._LEAK_TEST_HISTORY.clear()
+
+    def _render(self, history, backup_age=None, backup_interval=24):
+        with server._LEAK_TEST_LOCK:
+            server._LEAK_TEST_HISTORY[:] = history
+        with mock.patch.object(
+            server, "_latest_backup_age_seconds", return_value=backup_age
+        ), mock.patch.object(
+            server,
+            "_backup_schedule_config",
+            return_value=(backup_interval, 7),
+        ):
+            return server.render_tor_metrics_prom(
+                {"available": False}, {"available": False}
+            )
+
+    def test_no_history_and_no_backup_emit_explicit_unavailable_state(self):
+        metrics = self._render([])
+        self.assertIn("torhole_leak_test_result_available 0", metrics)
+        self.assertIn("torhole_leak_test_pass 0", metrics)
+        self.assertIn("torhole_tor_egress_verifier_available 0", metrics)
+        self.assertIn("torhole_leak_test_age_seconds 0", metrics)
+        self.assertIn("torhole_backup_archive_available 0", metrics)
+        self.assertIn("torhole_last_backup_age_seconds 0", metrics)
+
+    def test_valid_non_tor_response_is_distinct_from_verifier_error(self):
+        non_tor = {
+            "pass": False,
+            "ran_at": datetime.now(timezone.utc).isoformat(),
+            "verification_status": "confirmed_not_tor",
+            "error": "leak detected: response says IsTor=false",
+        }
+        metrics = self._render([non_tor])
+        self.assertIn("torhole_leak_test_result_available 1", metrics)
+        self.assertIn("torhole_tor_egress_verifier_available 1", metrics)
+        self.assertIn("torhole_leak_test_pass 0", metrics)
+
+        unavailable = dict(non_tor, verification_status="unavailable", error="HTTP 503")
+        metrics = self._render([unavailable])
+        self.assertIn("torhole_tor_egress_verifier_available 0", metrics)
+        self.assertIn("torhole_leak_test_pass 0", metrics)
+
+    def test_legacy_result_status_is_normalized_without_api_break(self):
+        self.assertEqual(
+            server._tor_egress_verification_status({"pass": True}),
+            "confirmed_tor",
+        )
+        self.assertEqual(
+            server._tor_egress_verification_status(
+                {"pass": False, "error": "leak detected: response says IsTor=false"}
+            ),
+            "confirmed_not_tor",
+        )
+        self.assertEqual(
+            server._tor_egress_verification_status(
+                {"pass": False, "error": "TimeoutError: timed out"}
+            ),
+            "unavailable",
+        )
+
+    def _run_with_verifier_payload(self, payload):
+        class FakeSocket:
+            def close(self):
+                return None
+
+        class FakeContext:
+            def wrap_socket(self, sock, server_hostname=None):
+                return sock
+
+        sock = FakeSocket()
+        body = json.dumps(payload).encode("utf-8")
+        with mock.patch.object(
+            server, "_socks5_connect", return_value=sock
+        ), mock.patch.object(
+            server.ssl, "create_default_context", return_value=FakeContext()
+        ), mock.patch.object(
+            server, "_http_get_via_socket", return_value=(200, {}, body)
+        ):
+            return server.run_leak_test()
+
+    def test_only_explicit_false_is_confirmed_non_tor(self):
+        missing = self._run_with_verifier_payload({"IP": "198.51.100.1"})
+        self.assertEqual(missing["verification_status"], "unavailable")
+
+        non_tor = self._run_with_verifier_payload(
+            {"IsTor": False, "IP": "198.51.100.1"}
+        )
+        self.assertEqual(non_tor["verification_status"], "confirmed_not_tor")
+
+        tor = self._run_with_verifier_payload({"IsTor": True, "IP": "192.0.2.1"})
+        self.assertEqual(tor["verification_status"], "confirmed_tor")
+
+
 if __name__ == "__main__":
     unittest.main()

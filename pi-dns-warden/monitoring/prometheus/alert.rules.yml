@@ -9,16 +9,61 @@ groups:
           severity: critical
         annotations:
           summary: "Blackbox exporter offline"
-          description: "Prometheus cannot scrape blackbox-exporter for more than 2 minutes."
+          description: "Prometheus cannot scrape blackbox-exporter for more than 2 minutes. Inspect `docker logs blackbox-exporter` and restart that service before trusting probe-based health panels."
+          runbook_url: "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md#validation"
+          dashboard_uid: "pidns-control"
+          panel_id: "17"
 
       - alert: MetricsTargetDown
-        expr: up{job=~"node|cadvisor|caddy|loki|alloy|pihole-exporter"} == 0
+        expr: up{job=~"node|cadvisor|caddy|pihole-exporter|alertmanager"} == 0
         for: 2m
         labels:
           severity: warning
         annotations:
           summary: "Metrics target offline"
-          description: "{{ $labels.job }} is not reachable for more than 2 minutes."
+          description: "Prometheus cannot scrape {{ $labels.job }} at {{ $labels.instance }}. Inspect the matching container logs and restart only that service if necessary."
+          runbook_url: "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md#validation"
+          dashboard_uid: "pidns-control"
+          panel_id: "21"
+
+      # This scrape carries bootstrap, control-port, circuit, egress-verifier,
+      # and backup posture metrics. Treat its absence as a privacy-observability
+      # failure instead of allowing all dependent alerts to disappear silently.
+      - alert: TorholeTelemetryDown
+        expr: up{job="torhole-tor"} == 0 or absent(up{job="torhole-tor"})
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Torhole privacy telemetry offline"
+          description: "Prometheus cannot scrape backup-manager's /api/metrics/tor endpoint. Privacy status is unknown; inspect `docker logs backup-manager` and its connection to Tor."
+          runbook_url: "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md#validation"
+          dashboard_uid: "pidns-torflow"
+          panel_id: "3"
+
+      - alert: TorholeTelemetrySchemaMissing
+        expr: (absent(tor_control_port_up) or absent(torhole_leak_test_result_available) or absent(torhole_backup_archive_available)) and on() (up{job="torhole-tor"} == 1)
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Torhole privacy metrics are incomplete"
+          description: "The Torhole metrics endpoint is scrapeable but required fail-closed state metrics are absent. Verify the running backup-manager version and inspect its logs before trusting privacy status."
+          runbook_url: "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md#validation"
+          dashboard_uid: "pidns-torflow"
+          panel_id: "3"
+
+      - alert: TorControlTelemetryDown
+        expr: tor_control_port_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Tor control telemetry unavailable"
+          description: "backup-manager is reachable but cannot query Tor's control port. Check TOR_CONTROL_PASSWORD, `docker logs tor`, and `docker logs backup-manager`; privacy runtime status is unknown."
+          runbook_url: "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md#validation"
+          dashboard_uid: "pidns-torflow"
+          panel_id: "3"
 
       - alert: PiHoleTelemetryDown
         expr: pihole_exporter_up == 0
@@ -27,7 +72,10 @@ groups:
           severity: warning
         annotations:
           summary: "Pi-hole telemetry offline"
-          description: "The authenticated Pi-hole API scrape for {{ $labels.role }} is failing for more than 3 minutes."
+          description: "The authenticated Pi-hole API scrape for {{ $labels.role }} is failing. Check that plane's Pi-hole container, password, and `docker logs pihole-exporter`."
+          runbook_url: "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md#functional-dns-checks"
+          dashboard_uid: "pidns-control"
+          panel_id: "7"
 
       - alert: LokiDown
         expr: up{job="loki"} == 0
@@ -36,7 +84,10 @@ groups:
           severity: warning
         annotations:
           summary: "Loki offline"
-          description: "Prometheus cannot scrape Loki for more than 2 minutes."
+          description: "Prometheus cannot scrape Loki. DNS service is unaffected, but investigation logs are unavailable; inspect `docker logs loki` and disk space."
+          runbook_url: "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md#validation"
+          dashboard_uid: "pidns-visibility"
+          panel_id: "2"
 
       - alert: LogPipelineDown
         expr: up{job="alloy"} == 0
@@ -45,16 +96,22 @@ groups:
           severity: warning
         annotations:
           summary: "Log pipeline offline"
-          description: "Grafana Alloy is not reachable for more than 2 minutes."
+          description: "Grafana Alloy is not reachable. DNS service is unaffected, but new logs are not reaching Loki; inspect `docker logs alloy`."
+          runbook_url: "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md#validation"
+          dashboard_uid: "pidns-visibility"
+          panel_id: "2"
 
       - alert: MonitoringServiceDown
-        expr: probe_success{job="blackbox-monitoring-tcp"} == 0
+        expr: probe_success{job="blackbox-monitoring-tcp",instance!="alertmanager:9093"} == 0
         for: 2m
         labels:
-          severity: critical
+          severity: warning
         annotations:
           summary: "Monitoring service offline"
-          description: "{{ $labels.instance }} is not reachable for more than 2 minutes."
+          description: "{{ $labels.instance }} is not reachable. DNS privacy may still be intact, but the management surface needs attention; inspect its container and reverse-proxy logs."
+          runbook_url: "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md#validation"
+          dashboard_uid: "pidns-control"
+          panel_id: "17"
 
       - alert: PiholeDnsDown
         expr: probe_success{job="blackbox-dns-udp-pihole"} == 0
@@ -63,7 +120,10 @@ groups:
           severity: critical
         annotations:
           summary: "Pi-hole DNS offline"
-          description: "{{ $labels.instance }} is failing UDP DNS probes for more than 2 minutes."
+          description: "{{ $labels.instance }} is failing real UDP DNS probes. Check the plane's Pi-hole and dnscrypt containers; clients on that plane cannot resolve reliably."
+          runbook_url: "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md#functional-dns-checks"
+          dashboard_uid: "pidns-path"
+          panel_id: "7"
 
       - alert: PiholeWebDown
         expr: probe_success{job="blackbox-pihole-http"} == 0
@@ -72,7 +132,10 @@ groups:
           severity: warning
         annotations:
           summary: "Pi-hole web UI offline"
-          description: "{{ $labels.instance }} is failing HTTP probes for more than 5 minutes."
+          description: "{{ $labels.instance }} is failing HTTP probes. DNS may still work; inspect the Pi-hole web service and reverse-proxy logs."
+          runbook_url: "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md#functional-dns-checks"
+          dashboard_uid: "pidns-path"
+          panel_id: "13"
 
       - alert: DnscryptDown
         expr: probe_success{job="blackbox-dns-tcp-dnscrypt"} == 0
@@ -81,7 +144,10 @@ groups:
           severity: critical
         annotations:
           summary: "dnscrypt offline"
-          description: "{{ $labels.instance }} is failing TCP DNS probes for more than 2 minutes."
+          description: "{{ $labels.instance }} is failing real TCP DNS probes. Check its dnscrypt container, resolver configuration, and Tor reachability."
+          runbook_url: "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md#functional-dns-checks"
+          dashboard_uid: "pidns-path"
+          panel_id: "8"
 
       - alert: TorSocksDown
         expr: probe_success{job="blackbox-tor-socks"} == 0
@@ -90,7 +156,10 @@ groups:
           severity: critical
         annotations:
           summary: "Tor SOCKS offline"
-          description: "{{ $labels.instance }} is not reachable on SOCKS port 9050 for more than 2 minutes."
+          description: "{{ $labels.instance }} is not reachable on SOCKS port 9050. Torhole fails closed, so upstream DNS resolution should stop until Tor recovers."
+          runbook_url: "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md#failure-mode-check"
+          dashboard_uid: "pidns-torflow"
+          panel_id: "12"
 
       - alert: ProbeFailureRateHigh
         expr: avg_over_time(probe_success{job=~"blackbox-.*"}[5m]) < 0.8
@@ -99,16 +168,10 @@ groups:
           severity: warning
         annotations:
           summary: "Probe success below 80%"
-          description: "{{ $labels.instance }} has probe success below 80% over the last 10 minutes."
-
-      - alert: ContainerRestarts
-        expr: increase(container_restart_count_total{name=~"tor|dnscrypt-(trusted|iot)|pihole_(trusted|iot)|prometheus|grafana|alertmanager|blackbox-exporter|dockhand|reverse-proxy"}[1h]) > 2
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Container restarting frequently"
-          description: "{{ $labels.name }} restarted more than 2 times in the last hour."
+          description: "{{ $labels.instance }} has remained below 80% five-minute probe success for 10 minutes. Inspect the relevant service before restarting it."
+          runbook_url: "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md#validation"
+          dashboard_uid: "pidns-control"
+          panel_id: "11"
 
       # Tor can be "up" (control + SOCKS ports answering) while completely
       # unable to reach the network — e.g. an egress firewall blocking relay
@@ -123,39 +186,62 @@ groups:
         annotations:
           summary: "Tor stuck bootstrapping"
           description: "Tor has been at {{ $value }}% bootstrap for more than 5 minutes — no privacy path. Check egress firewall to Tor relays and `docker logs tor`."
+          runbook_url: "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md#failure-mode-check"
+          dashboard_uid: "pidns-torflow"
+          panel_id: "20"
 
-      # The scheduled leak test (every 30 min) SOCKS-connects through
-      # tor:9050 to check.torproject.org and verifies IsTor. A failure means
-      # DNS may be exiting outside Tor — the core guarantee is broken.
-      - alert: LeakTestFailed
-        expr: torhole_leak_test_pass == 0
+      # The compatibility-named leak-test metrics describe an independent Tor
+      # SOCKS egress verification. A conclusive IsTor=false is critical; target
+      # HTTP/TLS failures are tracked separately and do not claim a DNS leak.
+      - alert: TorEgressVerificationFailed
+        expr: torhole_leak_test_result_available == 1 and torhole_tor_egress_verifier_available == 1 and torhole_leak_test_pass == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "Tor leak test failed"
-          description: "The last leak test did not confirm IsTor via check.torproject.org. The privacy guarantee may be compromised."
+          summary: "Tor egress verification confirmed non-Tor"
+          description: "check.torproject.org conclusively reported IsTor=false for the independent SOCKS verification. Treat Tor egress as unsafe; inspect Tor bootstrap and egress before restoring DNS service."
+          runbook_url: "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md#failure-mode-check"
+          dashboard_uid: "pidns-torflow"
+          panel_id: "1"
+
+      - alert: TorEgressVerifierUnavailable
+        expr: torhole_leak_test_result_available == 1 and torhole_tor_egress_verifier_available == 0
+        for: 35m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tor egress verifier unavailable"
+          description: "The verifier has not produced a conclusive check.torproject.org result for 35 minutes. This is not proof of a DNS leak; inspect Tor connectivity and backup-manager logs."
+          runbook_url: "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md#validation"
+          dashboard_uid: "pidns-torflow"
+          panel_id: "1"
 
       # Scheduled backups stopped happening: the newest archive is older than
-      # 1.5x the configured interval. Only meaningful when scheduling is on
-      # (interval > 0); a fresh install with no archives yet exports no age
-      # metric and stays silent.
+      # 1.5x the configured interval. The explicit archive-available metric
+      # catches a scheduler that never manages to create its first archive.
       - alert: BackupStale
-        expr: torhole_last_backup_age_seconds > (torhole_backup_schedule_interval_hours * 3600 * 1.5) and torhole_backup_schedule_interval_hours > 0
+        expr: torhole_backup_schedule_interval_hours > 0 and (torhole_backup_archive_available == 0 or torhole_last_backup_age_seconds > (torhole_backup_schedule_interval_hours * 3600 * 1.5))
         for: 30m
         labels:
           severity: warning
         annotations:
           summary: "Scheduled backups are stale"
-          description: "The newest backup archive is older than 1.5x the configured interval. Check the backup-manager scheduler and disk space."
+          description: "No backup archive exists or the newest archive is older than 1.5x the configured interval. Check the backup-manager scheduler and disk space."
+          runbook_url: "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md#backup-and-restore"
+          dashboard_uid: "pidns-control"
+          panel_id: "1"
 
-      # Catches a dead leak-test scheduler (or a backup-manager that cannot
-      # complete a test at all): no fresh result in 2 hours = 4 missed runs.
-      - alert: LeakTestStale
-        expr: torhole_leak_test_age_seconds > 7200
+      # Catches both a scheduler that never produced its first result and a
+      # previously working scheduler whose newest result is over two hours old.
+      - alert: TorEgressVerificationStale
+        expr: torhole_leak_test_scheduler_enabled == 1 and (torhole_leak_test_result_available == 0 or torhole_leak_test_age_seconds > 7200)
         for: 10m
         labels:
           severity: warning
         annotations:
-          summary: "Leak test results are stale"
-          description: "No leak test has completed in over 2 hours (scheduler runs every 30 minutes). Privacy verification is not happening."
+          summary: "Tor egress verification is stale"
+          description: "Scheduled Tor egress verification has no result or has not completed in over two hours. Inspect the backup-manager scheduler and logs; current egress verification is unknown."
+          runbook_url: "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md#validation"
+          dashboard_uid: "pidns-torflow"
+          panel_id: "2"

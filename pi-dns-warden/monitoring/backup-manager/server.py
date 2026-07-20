@@ -214,8 +214,10 @@ def is_backend_request_authorized(headers, expected_token=None):
     supplied = authorization[len(prefix):]
     return secrets.compare_digest(supplied.encode("utf-8"), token.encode("utf-8"))
 
-# Tor SOCKS proxy — used by run_leak_test() to verify the privacy guarantee
-# end-to-end (every query through Tor exits via a Tor relay).
+# Tor SOCKS proxy — used by the legacy-named run_leak_test() API to verify
+# that an independent SOCKS request exits through Tor. It does not itself
+# exercise the Pi-hole -> dnscrypt path, so user-facing semantics call this a
+# Tor egress verification while keeping the existing endpoint/API names.
 TOR_SOCKS_HOST = os.environ.get("TOR_SOCKS_HOST", "tor")
 TOR_SOCKS_PORT = int(os.environ.get("TOR_SOCKS_PORT", "9050"))
 LEAK_TEST_TIMEOUT_S = float(os.environ.get("TORHOLE_LEAK_TEST_TIMEOUT_S", "20"))
@@ -1086,7 +1088,8 @@ def container_runtime_state(container_name):
 
 
 # ---------------------------------------------------------------------------
-# Scheduled leak test — optional background thread that runs run_leak_test()
+# Scheduled Tor egress verification — optional background thread that runs the
+# compatibility-named run_leak_test().
 # on a fixed interval. Drives the "recent_pass_rate" in the snapshot so the
 # Privacy screen's leak test panel shows a trend over time, not just the
 # last manual click.
@@ -1262,12 +1265,13 @@ def send_test_alert():
 
 
 # ---------------------------------------------------------------------------
-# DNS leak test — verify that traffic through tor:9050 actually exits via Tor.
+# Tor egress verification — verify that traffic through tor:9050 exits via Tor.
 #
 # Connects via SOCKS5 (with username "leaktest" so the circuit pool is
 # isolated from the planes' circuits) to https://check.torproject.org/api/ip
-# and checks that the JSON response has IsTor=true. This is the canonical
-# privacy proof: if Torhole's routing is intact, every query exits via Tor.
+# and checks that the JSON response has IsTor=true. This proves the Tor SOCKS
+# egress path; the fail-closed Docker topology separately proves that dnscrypt
+# has no direct internet route.
 #
 # Implemented with raw sockets to avoid pulling in pysocks/requests.
 # ---------------------------------------------------------------------------
@@ -1424,7 +1428,9 @@ def _decode_chunked(body):
 def run_leak_test():
     """Connect via tor:9050 SOCKS5 to check.torproject.org/api/ip and check
     IsTor=true. Returns a result dict suitable for store_leak_test_result()
-    and the snapshot. Always returns a result — never raises."""
+    and the snapshot. Existing names are retained for API compatibility; this
+    is a Tor egress verification, not an end-to-end DNS query. Always returns a
+    result — never raises."""
     started_at = time.monotonic()
     started_iso = utc_now()
 
@@ -1453,6 +1459,7 @@ def run_leak_test():
                 "target": f"https://{LEAK_TEST_TARGET_HOST}{LEAK_TEST_TARGET_PATH}",
                 "ran_at": started_iso,
                 "duration_ms": int((time.monotonic() - started_at) * 1000),
+                "verification_status": "unavailable",
                 "error": f"HTTP {status} from leak-test target",
             }
         try:
@@ -1465,9 +1472,24 @@ def run_leak_test():
                 "target": f"https://{LEAK_TEST_TARGET_HOST}{LEAK_TEST_TARGET_PATH}",
                 "ran_at": started_iso,
                 "duration_ms": int((time.monotonic() - started_at) * 1000),
+                "verification_status": "unavailable",
                 "error": f"failed to parse JSON: {exc}",
             }
-        is_tor = bool(data.get("IsTor"))
+        # Only an explicit JSON boolean false is a confirmed non-Tor result.
+        # A missing/changed field is a verifier protocol failure and must not
+        # be escalated as a privacy leak.
+        if not isinstance(data.get("IsTor"), bool):
+            return {
+                "pass": False,
+                "is_tor": False,
+                "ip": None,
+                "target": f"https://{LEAK_TEST_TARGET_HOST}{LEAK_TEST_TARGET_PATH}",
+                "ran_at": started_iso,
+                "duration_ms": int((time.monotonic() - started_at) * 1000),
+                "verification_status": "unavailable",
+                "error": "verifier response did not contain a boolean IsTor field",
+            }
+        is_tor = data["IsTor"]
         ip = data.get("IP")
         return {
             "pass": is_tor,
@@ -1476,6 +1498,7 @@ def run_leak_test():
             "target": f"https://{LEAK_TEST_TARGET_HOST}{LEAK_TEST_TARGET_PATH}",
             "ran_at": started_iso,
             "duration_ms": int((time.monotonic() - started_at) * 1000),
+            "verification_status": "confirmed_tor" if is_tor else "confirmed_not_tor",
             "error": None if is_tor else "leak detected: response says IsTor=false",
         }
     except Exception as exc:  # noqa: BLE001
@@ -1486,6 +1509,7 @@ def run_leak_test():
             "target": f"https://{LEAK_TEST_TARGET_HOST}{LEAK_TEST_TARGET_PATH}",
             "ran_at": started_iso,
             "duration_ms": int((time.monotonic() - started_at) * 1000),
+            "verification_status": "unavailable",
             "error": f"{exc.__class__.__name__}: {exc}",
         }
     finally:
@@ -1520,12 +1544,26 @@ QUERY_FEED_BATCH_N = int(os.environ.get("TORHOLE_QUERY_FEED_BATCH_N", "20"))
 
 
 def store_leak_test_result(result):
-    """Append a leak test result to the in-memory ring buffer. Older entries
-    are dropped when the buffer exceeds LEAK_TEST_HISTORY_MAX."""
+    """Append a Tor egress result to the compatibility history buffer."""
+    result = dict(result)
+    result["verification_status"] = _tor_egress_verification_status(result)
     with _LEAK_TEST_LOCK:
         _LEAK_TEST_HISTORY.append(result)
         if len(_LEAK_TEST_HISTORY) > LEAK_TEST_HISTORY_MAX:
             del _LEAK_TEST_HISTORY[: len(_LEAK_TEST_HISTORY) - LEAK_TEST_HISTORY_MAX]
+
+
+def _tor_egress_verification_status(result):
+    """Normalize new and legacy result dictionaries without breaking clients."""
+    status = result.get("verification_status")
+    if status in {"confirmed_tor", "confirmed_not_tor", "unavailable"}:
+        return status
+    if result.get("pass"):
+        return "confirmed_tor"
+    error = str(result.get("error") or "").lower()
+    if "istor=false" in error.replace(" ", "") or "leak detected" in error:
+        return "confirmed_not_tor"
+    return "unavailable"
 
 
 def get_leak_test_state():
@@ -1882,37 +1920,79 @@ def render_tor_metrics_prom(runtime_info, circuits_info):
         for plane in ("trusted", "iot"):
             lines.append(f'tor_circuits_by_plane{{plane="{plane}"}} {len(by_plane.get(plane, []))}')
 
-    # Latest scheduled leak-test result — the alerting-grade privacy proof.
-    # torhole_leak_test_pass: 1 = IsTor confirmed via check.torproject.org,
-    # 0 = failed or not-tor. torhole_leak_test_age_seconds lets rules catch a
-    # stale/stopped scheduler (runs every LEAK_TEST_SCHEDULE_INTERVAL_S).
+    # Latest scheduled Tor egress verification. Legacy metric names remain for
+    # dashboard/API compatibility, but explicit availability metrics let alert
+    # rules distinguish confirmed non-Tor egress, verifier outages, and a
+    # scheduler that has never produced a result.
     with _LEAK_TEST_LOCK:
         last_leak = _LEAK_TEST_HISTORY[-1] if _LEAK_TEST_HISTORY else None
-    if last_leak is not None:
-        ran_at = parse_iso_datetime(last_leak.get("ran_at"))
-        lines.append("# HELP torhole_leak_test_pass 1 if the last leak test confirmed IsTor, else 0")
-        lines.append("# TYPE torhole_leak_test_pass gauge")
-        lines.append(f"torhole_leak_test_pass {1 if last_leak.get('pass') else 0}")
-        if ran_at is not None:
-            if ran_at.tzinfo is None:
-                ran_at = ran_at.replace(tzinfo=timezone.utc)
-            age = max((datetime.now(timezone.utc) - ran_at).total_seconds(), 0.0)
-            lines.append("# HELP torhole_leak_test_age_seconds Seconds since the last leak test ran")
-            lines.append("# TYPE torhole_leak_test_age_seconds gauge")
-            lines.append(f"torhole_leak_test_age_seconds {age:.0f}")
+    result_available = last_leak is not None
+    verification_status = (
+        _tor_egress_verification_status(last_leak) if result_available else "unavailable"
+    )
+    verifier_available = verification_status in {"confirmed_tor", "confirmed_not_tor"}
+    verified_tor = verification_status == "confirmed_tor"
+    ran_at = parse_iso_datetime(last_leak.get("ran_at")) if result_available else None
+    age = 0.0
+    if ran_at is not None:
+        if ran_at.tzinfo is None:
+            ran_at = ran_at.replace(tzinfo=timezone.utc)
+        age = max((datetime.now(timezone.utc) - ran_at).total_seconds(), 0.0)
+
+    _emit(
+        "torhole_leak_test_scheduler_enabled",
+        "1 if scheduled Tor egress verification is enabled, else 0",
+        "gauge",
+        1 if LEAK_TEST_SCHEDULE_INTERVAL_S > 0 else 0,
+    )
+    _emit(
+        "torhole_leak_test_result_available",
+        "1 after the first Tor egress verification result is recorded, else 0",
+        "gauge",
+        1 if result_available else 0,
+    )
+    _emit(
+        "torhole_leak_test_pass",
+        "Compatibility metric: 1 if the last Tor egress verification confirmed IsTor, else 0",
+        "gauge",
+        1 if verified_tor else 0,
+    )
+    _emit(
+        "torhole_tor_egress_verifier_available",
+        "1 if the last Tor egress verifier response conclusively reported IsTor, else 0",
+        "gauge",
+        1 if verifier_available else 0,
+    )
+    _emit(
+        "torhole_leak_test_age_seconds",
+        "Seconds since the last Tor egress verification; 0 before the first result",
+        "gauge",
+        round(age),
+    )
 
     # Backup posture — lets Prometheus alert when scheduled backups stop
     # happening (BackupStale) instead of the operator noticing "never" on
     # the UI tile weeks later.
     backup_age = _latest_backup_age_seconds()
     interval_h, _keep = _backup_schedule_config()
-    lines.append("# HELP torhole_backup_schedule_interval_hours Configured backup interval (0 = scheduling disabled)")
-    lines.append("# TYPE torhole_backup_schedule_interval_hours gauge")
-    lines.append(f"torhole_backup_schedule_interval_hours {interval_h:g}")
-    if backup_age is not None:
-        lines.append("# HELP torhole_last_backup_age_seconds Seconds since the newest backup archive was created")
-        lines.append("# TYPE torhole_last_backup_age_seconds gauge")
-        lines.append(f"torhole_last_backup_age_seconds {backup_age:.0f}")
+    _emit(
+        "torhole_backup_schedule_interval_hours",
+        "Configured backup interval (0 = scheduling disabled)",
+        "gauge",
+        f"{interval_h:g}",
+    )
+    _emit(
+        "torhole_backup_archive_available",
+        "1 if at least one backup archive exists, else 0",
+        "gauge",
+        1 if backup_age is not None else 0,
+    )
+    _emit(
+        "torhole_last_backup_age_seconds",
+        "Seconds since the newest backup archive; 0 when no archive exists",
+        "gauge",
+        f"{backup_age:.0f}" if backup_age is not None else 0,
+    )
 
     lines.append("")  # trailing newline
     return "\n".join(lines)

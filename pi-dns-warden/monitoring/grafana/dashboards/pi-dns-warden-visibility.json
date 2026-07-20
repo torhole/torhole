@@ -3,7 +3,7 @@
   "title": "Pi DNS Warden - Visibility & Logs",
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 6,
+  "version": 8,
   "refresh": "15s",
   "tags": [
     "visibility",
@@ -32,8 +32,10 @@
       },
       "targets": [
         {
-          "expr": "min(pihole_exporter_up) * 100",
-          "refId": "A"
+          "expr": "(min(pihole_exporter_up) * 100) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -52,9 +54,28 @@
         "defaults": {
           "unit": "percent",
           "min": 0,
-          "max": 100
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 99
+              }
+            ]
+          },
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "Worst authenticated Pi-hole API scrape across active topology planes."
     },
     {
       "id": 2,
@@ -72,8 +93,10 @@
       },
       "targets": [
         {
-          "expr": "avg(up{job=~\"loki|alloy\"}) * 100",
-          "refId": "A"
+          "expr": "(min(up{job=~\"loki|alloy\"}) * 100) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -92,9 +115,28 @@
         "defaults": {
           "unit": "percent",
           "min": 0,
-          "max": 100
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 99
+              }
+            ]
+          },
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "Worst current scrape state across Alloy and Loki."
     },
     {
       "id": 3,
@@ -112,8 +154,10 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(caddy_http_request_duration_seconds_count{code=~\"5..\"}[1h]))",
-          "refId": "A"
+          "expr": "sum(increase(caddy_http_request_duration_seconds_count{code=~\"5..\"}[1h])) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -131,9 +175,11 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "min": 0
+          "min": 0,
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "Server errors during the last hour. Investigate by host and logs when non-zero; a raw count is not a rate or error ratio."
     },
     {
       "id": 4,
@@ -151,8 +197,10 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(caddy_http_request_duration_seconds_count{code=~\"401|403\"}[1h]))",
-          "refId": "A"
+          "expr": "sum(increase(caddy_http_request_duration_seconds_count{code=~\"401|403\"}[1h])) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -170,9 +218,11 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "min": 0
+          "min": 0,
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "Authentication denials during the last hour. Some denials are expected; investigate changes rather than treating every event as failure."
     },
     {
       "id": 5,
@@ -190,8 +240,10 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(pihole_queries_blocked_total[1h]))",
-          "refId": "A"
+          "expr": "sum(increase(pihole_queries_blocked_total[1h])) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -209,9 +261,11 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "min": 0
+          "min": 0,
+          "noValue": "UNKNOWN"
         }
-      }
+      },
+      "description": "Queries blocked during the last hour. This is activity, not a health score."
     },
     {
       "id": 6,
@@ -229,8 +283,10 @@
       },
       "targets": [
         {
-          "expr": "avg(up{job=\"caddy\"}) * 100",
-          "refId": "A"
+          "expr": "(avg(up{job=\"caddy\"}) * 100) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -249,29 +305,49 @@
         "defaults": {
           "unit": "percent",
           "min": 0,
-          "max": 100
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 90
+              },
+              {
+                "color": "green",
+                "value": 99
+              }
+            ]
+          },
+          "noValue": "UNKNOWN"
         }
       }
     },
     {
       "id": 7,
       "type": "piechart",
-      "title": "Query status mix",
+      "title": "Query status mix over selected range",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
         "x": 0,
-        "y": 4,
-        "w": 6,
+        "y": 8,
+        "w": 8,
         "h": 8
       },
       "targets": [
         {
-          "expr": "topk(10, sum by (status) (pihole_query_status_total))",
+          "expr": "topk(10, sum by (status) (increase(pihole_query_status_total[$__range])))",
           "legendFormat": "{{status}}",
-          "refId": "A"
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -305,71 +381,24 @@
     {
       "id": 8,
       "type": "piechart",
-      "title": "Query type mix",
+      "title": "Query type mix over selected range",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 6,
-        "y": 4,
-        "w": 6,
+        "x": 8,
+        "y": 8,
+        "w": 8,
         "h": 8
       },
       "targets": [
         {
-          "expr": "topk(8, sum by (query_type) (pihole_query_types_total))",
+          "expr": "topk(8, sum by (query_type) (increase(pihole_query_types_total[$__range])))",
           "legendFormat": "{{query_type}}",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "displayLabels": [
-          "name",
-          "percent"
-        ],
-        "legend": {
-          "displayMode": "table",
-          "placement": "right"
-        },
-        "pieType": "donut",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        }
-      }
-    },
-    {
-      "id": 9,
-      "type": "piechart",
-      "title": "Upstream share",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 4,
-        "w": 6,
-        "h": 8
-      },
-      "targets": [
-        {
-          "expr": "sum by (upstream) (pihole_upstream_queries_total{upstream!=\"blocklist\",upstream!=\"cache\"})",
-          "legendFormat": "{{upstream}}",
-          "refId": "A"
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -410,8 +439,8 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 12,
-        "w": 12,
+        "y": 16,
+        "w": 24,
         "h": 8
       },
       "targets": [
@@ -441,152 +470,8 @@
           "displayMode": "table",
           "placement": "bottom"
         }
-      }
-    },
-    {
-      "id": 12,
-      "type": "timeseries",
-      "title": "Upstream latency by role",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
       },
-      "gridPos": {
-        "x": 12,
-        "y": 12,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "expr": "avg by (role, upstream) (pihole_upstream_response_seconds{upstream!=\"blocklist\",upstream!=\"cache\"})",
-          "legendFormat": "{{role}} -> {{upstream}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        }
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom"
-        }
-      }
-    },
-    {
-      "id": 15,
-      "type": "bargauge",
-      "title": "Top clients by query volume",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 20,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "expr": "topk(10, sum by (client_name) (pihole_top_client_queries_total))",
-          "legendFormat": "{{client_name}}",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "displayMode": "gradient",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showUnfilled": false
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "min": 0
-        }
-      }
-    },
-    {
-      "id": 16,
-      "type": "bargauge",
-      "title": "Top upstreams by volume",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 20,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "expr": "topk(8, sum by (upstream) (pihole_upstream_queries_total{upstream!=\"blocklist\",upstream!=\"cache\"}))",
-          "legendFormat": "{{upstream}}",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "displayMode": "gradient",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showUnfilled": false
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "min": 0
-        }
-      }
-    },
-    {
-      "id": 17,
-      "type": "logs",
-      "title": "Resolver logs",
-      "datasource": {
-        "type": "loki",
-        "uid": "LOKI"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 28,
-        "w": 12,
-        "h": 10
-      },
-      "targets": [
-        {
-          "expr": "{container=~\"tor|dnscrypt-trusted|dnscrypt-iot|pihole_trusted|pihole_iot\"}",
-          "queryType": "range",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "dedupStrategy": "none",
-        "enableLogDetails": true,
-        "prettifyLogMessage": true,
-        "showCommonLabels": false,
-        "showLabels": true,
-        "showTime": true,
-        "sortOrder": "Descending",
-        "wrapLogMessage": true
-      }
+      "description": "Per-role cached, forwarded, and blocked rates. In single-LAN mode, trusted represents Flat LAN."
     },
     {
       "id": 18,
@@ -597,9 +482,9 @@
         "uid": "LOKI"
       },
       "gridPos": {
-        "x": 12,
-        "y": 28,
-        "w": 12,
+        "x": 0,
+        "y": 24,
+        "w": 24,
         "h": 10
       },
       "targets": [
@@ -618,7 +503,9 @@
         "showTime": true,
         "sortOrder": "Descending",
         "wrapLogMessage": true
-      }
+      },
+      "timeFrom": "30m",
+      "description": "Recent control-plane logs for diagnosis (30-minute panel range). Raw resolver/client logs are intentionally excluded from the default dashboard."
     },
     {
       "id": 19,
@@ -630,14 +517,16 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 38,
-        "w": 4,
+        "y": 4,
+        "w": 8,
         "h": 4
       },
       "targets": [
         {
-          "expr": "sum(rate(loki_distributor_lines_received_total[5m]))",
-          "refId": "A"
+          "expr": "sum(rate(loki_distributor_lines_received_total[5m])) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -658,43 +547,39 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "blue",
                 "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              },
-              {
-                "color": "green",
-                "value": 5
               }
             ]
           },
-          "unit": "lps"
+          "unit": "lps",
+          "min": 0,
+          "noValue": "UNKNOWN"
         }
       },
-      "description": "Log lines per second arriving at Loki. If this drops to 0, the log pipeline (Alloy \u2192 Loki) is broken even if the 'Log pipeline' health check looks green."
+      "description": "Observed log ingest volume. Quiet networks may legitimately be near zero; component health is reported separately."
     },
     {
       "id": 20,
       "type": "piechart",
-      "title": "Reply types mix",
+      "title": "Reply types over selected range",
       "datasource": {
         "type": "prometheus",
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 18,
-        "y": 4,
-        "w": 6,
+        "x": 16,
+        "y": 8,
+        "w": 8,
         "h": 8
       },
       "targets": [
         {
-          "expr": "topk(8, sum by (reply) (pihole_query_replies_total))",
+          "expr": "topk(8, sum by (reply) (increase(pihole_query_replies_total[$__range])))",
           "refId": "A",
-          "legendFormat": "{{reply}}"
+          "legendFormat": "{{reply}}",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -729,151 +614,6 @@
       "description": "DNS reply kinds reported by Pi-hole (IP, CNAME, NODATA, NXDOMAIN, etc). Sits naturally next to Query status and Query type mix."
     },
     {
-      "id": 21,
-      "type": "stat",
-      "title": "Log lines (1h)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
-      },
-      "gridPos": {
-        "x": 4,
-        "y": 38,
-        "w": 4,
-        "h": 4
-      },
-      "targets": [
-        {
-          "expr": "sum(increase(loki_distributor_lines_received_total[1h]))",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "center"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        }
-      },
-      "description": "Total log lines shipped to Loki in the last hour."
-    },
-    {
-      "id": 22,
-      "type": "stat",
-      "title": "Active streams",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
-      },
-      "gridPos": {
-        "x": 8,
-        "y": 38,
-        "w": 4,
-        "h": 4
-      },
-      "targets": [
-        {
-          "expr": "sum(loki_ingester_memory_streams)",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "center"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        }
-      },
-      "description": "Active log streams held in the Loki ingester memory."
-    },
-    {
-      "id": 23,
-      "type": "stat",
-      "title": "Chunks stored/s",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PROM"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 38,
-        "w": 4,
-        "h": 4
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(loki_ingester_chunks_stored_total[5m]))",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "center"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "decimals": 2
-        }
-      },
-      "description": "Rate of chunks flushed to storage. A healthy sign that ingester is not stuck."
-    },
-    {
       "id": 24,
       "type": "stat",
       "title": "Write failures/s",
@@ -882,15 +622,17 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 16,
-        "y": 38,
-        "w": 4,
+        "x": 8,
+        "y": 4,
+        "w": 8,
         "h": 4
       },
       "targets": [
         {
-          "expr": "sum(rate(loki_write_failures_logged_total[5m]))",
-          "refId": "A"
+          "expr": "sum(rate(loki_write_failures_logged_total[5m])) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -907,7 +649,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "ops",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -925,10 +667,18 @@
               }
             ]
           },
-          "decimals": 2
+          "decimals": 2,
+          "noValue": "UNKNOWN"
         }
       },
-      "description": "Loki write failures per second. Should sit at 0."
+      "description": "Loki write failures per second. Any sustained non-zero value warrants checking Loki and Alloy logs.",
+      "links": [
+        {
+          "title": "Open the operator guide",
+          "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md",
+          "targetBlank": true
+        }
+      ]
     },
     {
       "id": 25,
@@ -939,15 +689,17 @@
         "uid": "PROM"
       },
       "gridPos": {
-        "x": 20,
-        "y": 38,
-        "w": 4,
+        "x": 16,
+        "y": 4,
+        "w": 8,
         "h": 4
       },
       "targets": [
         {
-          "expr": "sum(rate(loki_discarded_bytes_total[5m]))",
-          "refId": "A"
+          "expr": "sum(rate(loki_discarded_bytes_total[5m])) or vector(0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "options": {
@@ -981,10 +733,18 @@
                 "value": 100
               }
             ]
-          }
+          },
+          "noValue": "UNKNOWN"
         }
       },
-      "description": "Bytes Loki had to discard (rate limits, too-old, too-far-behind)."
+      "description": "Bytes per second discarded by Loki. Check Loki reason labels and limits when non-zero.",
+      "links": [
+        {
+          "title": "Open the operator guide",
+          "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md",
+          "targetBlank": true
+        }
+      ]
     }
   ],
   "links": [
@@ -1040,6 +800,24 @@
       "targetBlank": false,
       "keepTime": true,
       "includeVars": true,
+      "asDropdown": false
+    },
+    {
+      "title": "Operator guide",
+      "type": "link",
+      "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/deploy-reference.md",
+      "targetBlank": true,
+      "keepTime": false,
+      "includeVars": false,
+      "asDropdown": false
+    },
+    {
+      "title": "Privacy model",
+      "type": "link",
+      "url": "https://github.com/torhole/torhole/blob/main/pi-dns-warden/docs/privacy-model.md#network-isolation-verification",
+      "targetBlank": true,
+      "keepTime": false,
+      "includeVars": false,
       "asDropdown": false
     }
   ]

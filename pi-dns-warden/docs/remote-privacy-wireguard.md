@@ -64,12 +64,13 @@ down is **no DNS** until it reconnects:
 From a device on LTE with the tunnel up:
 
 1. `dig example.com` (or open any site) — should resolve.
-2. Open **Operate → Insights** in the torhole UI: the device should appear
-   under **Top clients** with its VPN-subnet IP within a minute.
-3. Open `https://check.torproject.org` *after* doing a DNS-heavy browse and
-   confirm your DNS behavior via the Privacy screen's leak-test history —
-   `torhole_leak_test_pass` stays 1 regardless of where clients query from,
-   because the exit path is unchanged.
+2. Check the Pi-hole query log for the trusted plane and confirm the VPN client
+   is using that resolver. Client identities are intentionally not shown on the
+   default Grafana dashboards.
+3. In the Privacy screen, confirm the DNS-hop probes, Tor control state, and
+   scheduled Tor-egress verification are all current. The historical
+   `torhole_leak_test_pass` metric confirms external Tor egress; it does not by
+   itself trace an individual DNS query through Pi-hole and dnscrypt.
 4. Kill the tunnel: DNS should **stop working** (fail closed). If it still
    resolves, the device has a leaking fallback — fix the profile.
 
