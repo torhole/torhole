@@ -107,6 +107,22 @@ Advanced capabilities.
 </tr>
 </table>
 
+### Light and dark themes
+
+The Advanced workspace supports both appearances without changing the privacy
+proof or operational controls.
+
+<table>
+<tr>
+<td width="50%"><strong>Dark</strong></td>
+<td width="50%"><strong>Light</strong></td>
+</tr>
+<tr>
+<td><img src="pi-dns-warden/docs/images/screen-glance.png" alt="Torhole Advanced Glance dashboard in dark theme" width="100%"></td>
+<td><img src="pi-dns-warden/docs/images/screen-glance-light.png" alt="Torhole Advanced Glance dashboard in light theme" width="100%"></td>
+</tr>
+</table>
+
 ## Prepare a host
 
 Torhole should run on a dedicated, always-on 64-bit Linux host connected to
