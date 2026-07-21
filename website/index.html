@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Torhole | Verifiable DNS privacy for real networks</title>
+<meta name="description" content="Pi-hole blocking, encrypted DNS, and enforced Tor egress. Torhole keeps upstream DNS from leaving through your public IP. Live proof, not a badge." />
+<meta property="og:title" content="Torhole | Verifiable DNS privacy for real networks" />
+<meta property="og:description" content="Pi-hole blocking · encrypted DNS · enforced Tor egress. Live proof, not a badge." />
+<meta property="og:type" content="website" />
+<link rel="icon" href="favicon.ico" sizes="any" />
+<link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script>
+  (function(){
+    try{
+      var saved=localStorage.getItem("torhole.theme");
+      var systemLight=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches;
+      var theme=saved||(systemLight?"light":"dark");
+      document.documentElement.dataset.theme=theme;
+      document.documentElement.style.colorScheme=theme;
+    }catch(e){}
+  })();
+</script>
+<style>
+  :root{
+    --bg:#080b11; --bg-2:#0b0f17;
+    --panel:#0e1420; --panel-2:#121a28;
+    --line:rgba(126,162,204,.10); --line-strong:rgba(126,162,204,.20);
+    --text:#e9eff6; --muted:#8b98aa; --faint:#5c6878;
+    --green:#37e07a; --green-bright:#63f39a; --green-dim:#1c8f4e;
+    --cyan:#4fd6e0;
+    --display:'Space Grotesk',system-ui,-apple-system,sans-serif;
+    --body:'Inter',system-ui,-apple-system,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+    --col:1080px;
+  }
+  :root[data-theme="light"]{
+    --bg:#dce4df; --bg-2:#d2dcd6;
+    --panel:#e8eeea; --panel-2:#d5dfd9;
+    --line:rgba(20,58,39,.14); --line-strong:rgba(20,58,39,.27);
+    --text:#111c16; --muted:#4d5f55; --faint:#687970;
+    --green:#086c3c; --green-bright:#087e46; --green-dim:#3f976b;
+    --cyan:#086c76;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  body{
+    background:var(--bg); color:var(--text); font-family:var(--body);
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;transition:background-color .28s ease,color .28s ease;
+  }
+  ::selection{background:rgba(55,224,122,.25);color:#fff}
+  a{color:inherit;text-decoration:none}
+
+  /* ---------- WebGL canvas ---------- */
+  #scene{position:fixed;inset:0;width:100%;height:100%;z-index:0;display:block;
+    transition:opacity .3s ease,filter .28s ease;pointer-events:none;filter:saturate(1.08)}
+  :root[data-theme="light"] #scene{
+    filter:saturate(2.25) contrast(1.24) brightness(.86) drop-shadow(0 0 10px rgba(5,125,65,.24));
+    mix-blend-mode:multiply}
+  /* CSS fallback hero shown when WebGL unavailable */
+  .fallback-core{position:fixed;inset:0;z-index:0;display:none;pointer-events:none;
+    background:
+      radial-gradient(closest-side at 32% 42%, rgba(55,224,122,.16), transparent 60%),
+      radial-gradient(closest-side at 32% 42%, rgba(55,224,122,.08), transparent 75%);}
+  .fallback-core .ring{position:absolute;left:32%;top:42%;transform:translate(-50%,-50%);
+    border:1px solid rgba(55,224,122,.18);border-radius:50%;}
+  body.no-webgl #scene{display:none}
+  body.no-webgl .fallback-core{display:block}
+
+  .veil{position:fixed;inset:0;z-index:1;pointer-events:none;
+    background:linear-gradient(180deg,rgba(8,11,17,0) 0%,rgba(8,11,17,.35) 55%,var(--bg) 100%);}
+  :root[data-theme="light"] .veil{
+    background:linear-gradient(180deg,rgba(220,228,223,0) 0%,rgba(220,228,223,.42) 55%,var(--bg) 100%)}
+
+  /* ---------- layout shell ---------- */
+  .wrap{position:relative;z-index:2}
+  .col{max-width:var(--col);margin:0 auto;padding:0 28px}
+
+  /* ---------- nav ---------- */
+  nav{position:sticky;top:0;z-index:20;backdrop-filter:blur(10px);
+    background:linear-gradient(180deg,rgba(8,11,17,.86),rgba(8,11,17,.55));
+    border-bottom:1px solid var(--line);transition:background .28s ease,border-color .28s ease}
+  :root[data-theme="light"] nav{
+    background:linear-gradient(180deg,rgba(220,228,223,.94),rgba(220,228,223,.78))}
+  .nav-in{max-width:var(--col);margin:0 auto;padding:14px 28px;
+    display:flex;align-items:center;justify-content:space-between;gap:20px}
+  .brand{display:flex;align-items:center;gap:10px;font-family:var(--mono);
+    font-weight:600;letter-spacing:.02em;font-size:14px}
+  .brand .glyph{width:32px;height:32px;border-radius:8px;overflow:hidden;
+    box-shadow:0 0 22px rgba(55,224,122,.24);flex:0 0 auto;position:relative}
+  .brand .glyph img{position:absolute;width:46px;height:46px;max-width:none;
+    left:-7px;top:-3px;object-fit:cover}
+  .brand .wordmark{display:inline-flex;gap:0;line-height:1;color:var(--text)}
+  .brand .wordmark b{color:var(--text)} .brand .wordmark i{color:var(--green);font-style:normal}
+  .nav-links{display:flex;gap:26px;align-items:center;font-family:var(--mono);
+    font-size:12.5px;letter-spacing:.04em;color:var(--muted)}
+  .nav-links a{transition:color .18s}
+  .nav-links a:hover{color:var(--green)}
+  .nav-gh{color:var(--text)!important;border:1px solid var(--line-strong);
+    padding:7px 13px;border-radius:8px;display:inline-flex;align-items:center;gap:8px}
+  .nav-gh svg{width:15px;height:15px;fill:currentColor}
+  .nav-gh:hover{border-color:var(--green);color:var(--green)!important}
+  .theme-toggle{width:34px;height:34px;border:1px solid var(--line-strong);border-radius:8px;
+    display:grid;place-items:center;background:transparent;color:var(--text);cursor:pointer;
+    transition:color .18s,border-color .18s,background-color .18s}
+  .theme-toggle:hover{color:var(--green);border-color:var(--green);background:rgba(55,224,122,.05)}
+  .theme-toggle svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;
+    stroke-linecap:round;stroke-linejoin:round}
+  .theme-toggle .sun{display:none}
+  :root[data-theme="light"] .theme-toggle .sun{display:block}
+  :root[data-theme="light"] .theme-toggle .moon{display:none}
+  @media(max-width:720px){.nav-links a:not(.nav-gh){display:none}}
+
+  /* ---------- shared section chrome ---------- */
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--green);
+    padding-left:16px;position:relative;margin-bottom:22px;display:inline-block}
+  .eyebrow::before{content:"";position:absolute;left:0;top:1px;bottom:1px;width:3px;
+    background:var(--green);box-shadow:0 0 12px rgba(55,224,122,.6);border-radius:2px}
+
+  section{padding:118px 0;position:relative}
+  h2{font-family:var(--display);font-weight:700;font-size:clamp(30px,4.4vw,46px);
+    line-height:1.06;letter-spacing:-.01em;max-width:15ch}
+  .lede{font-size:clamp(16px,1.9vw,19px);color:var(--muted);max-width:60ch;margin-top:20px}
+
+  /* ---------- hero ---------- */
+  .hero{padding:clamp(90px,17vh,160px) 0 clamp(80px,12vh,140px)}
+  .hero .eyebrow{margin-bottom:26px}
+  .hero h1{font-family:var(--display);font-weight:700;
+    font-size:clamp(40px,7.2vw,78px);line-height:.98;letter-spacing:-.025em;
+    max-width:16ch;text-wrap:balance}
+  .hero .sub{font-family:var(--mono);color:var(--muted);margin-top:26px;
+    font-size:clamp(14px,1.7vw,17px);letter-spacing:.01em}
+  .hero .sub b{color:var(--text);font-weight:500}
+  .cta-row{display:flex;gap:14px;flex-wrap:wrap;margin-top:40px;align-items:center}
+  .btn{font-family:var(--mono);font-size:14px;letter-spacing:.02em;
+    padding:13px 22px;border-radius:10px;border:1px solid transparent;
+    display:inline-flex;align-items:center;gap:9px;cursor:pointer;transition:.18s}
+  .btn-primary{background:var(--green);color:#04150b;font-weight:600;
+    box-shadow:0 0 0 1px rgba(55,224,122,.4),0 12px 40px -12px rgba(55,224,122,.7)}
+  .btn-primary:hover{background:var(--green-bright);transform:translateY(-1px)}
+  .btn-ghost{border-color:var(--line-strong);color:var(--text)}
+  .btn-ghost:hover{border-color:var(--green);color:var(--green)}
+  .hero-tag{font-family:var(--mono);font-size:12px;letter-spacing:.1em;
+    color:var(--faint);text-transform:uppercase}
+  .hero-tag b{color:var(--green)}
+
+  /* backing panel so text stays readable over the 3D */
+  .hero-mask{position:absolute;inset:0;z-index:-1;
+    background:radial-gradient(120% 90% at 14% 40%,rgba(8,11,17,.82),rgba(8,11,17,.2) 70%,transparent);}
+  :root[data-theme="light"] .hero-mask{
+    background:
+      radial-gradient(circle at 52% 49%,rgba(8,126,70,.18),transparent 35%),
+      radial-gradient(120% 90% at 14% 40%,rgba(220,228,223,.88),rgba(220,228,223,.34) 70%,transparent)}
+
+  /* ---------- content sections sit on solid bg so canvas recedes ---------- */
+  .solid{background:linear-gradient(180deg,transparent, var(--bg) 8%, var(--bg) 92%, transparent)}
+
+  /* problem */
+  .stakes h2 em{font-style:normal;color:var(--green)}
+  .stakes-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:48px;align-items:start;margin-top:40px}
+  @media(max-width:820px){.stakes-grid{grid-template-columns:1fr;gap:28px}}
+  .observers{border:1px solid var(--line);border-radius:14px;overflow:hidden;
+    background:var(--panel)}
+  .obs-row{display:grid;grid-template-columns:112px minmax(0,1fr);gap:12px;padding:15px 18px;
+    border-bottom:1px solid var(--line);font-size:14px}
+  .obs-row:last-child{border-bottom:0}
+  .obs-row .who{font-family:var(--mono);color:var(--text);font-size:13px}
+  .obs-row .what{color:var(--muted);text-align:left;max-width:none;font-size:12.5px;white-space:nowrap}
+  .obs-row .dot{color:var(--green)}
+  @media(max-width:600px){
+    .obs-row{grid-template-columns:1fr;gap:4px;padding:14px 18px}
+    .obs-row .what{font-size:12.5px}
+  }
+
+  /* path / pipeline */
+  .pipe{margin-top:52px;display:grid;gap:14px}
+  .step{display:grid;grid-template-columns:auto 200px 1fr;gap:22px;align-items:center;
+    border:1px solid var(--line);border-radius:14px;padding:20px 22px;background:var(--panel);
+    transition:border-color .2s, transform .2s}
+  .step:hover{border-color:var(--line-strong);transform:translateX(4px)}
+  .step .n{font-family:var(--mono);font-size:12px;color:var(--green);
+    border:1px solid var(--green-dim);border-radius:7px;padding:5px 9px}
+  .step .name{font-family:var(--mono);font-weight:600;color:var(--text);font-size:15px}
+  .step .desc{color:var(--muted);font-size:14.5px}
+  @media(max-width:720px){.step{grid-template-columns:auto 1fr;gap:10px 16px}
+    .step .desc{grid-column:1/-1}}
+  .pipe-note{margin-top:22px;font-size:14px;color:var(--faint);font-family:var(--mono)}
+
+  /* not a vpn */
+  .notvpn{background:var(--bg-2)}
+  .notvpn-card{border:1px solid var(--line);border-left:3px solid var(--green);
+    border-radius:14px;padding:34px 34px;background:var(--panel);margin-top:34px}
+  .notvpn-card h3{font-family:var(--display);font-weight:600;font-size:22px;margin-bottom:6px}
+  .notvpn-card p{color:var(--muted);max-width:64ch}
+  .nots{list-style:none;margin-top:22px;display:grid;gap:12px}
+  .nots li{display:flex;gap:12px;color:var(--muted);font-size:14.5px;align-items:baseline}
+  .nots li::before{content:"•";color:var(--green);font-family:var(--mono);flex:0 0 auto}
+
+  /* editions */
+  .ed-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:44px}
+  @media(max-width:820px){.ed-grid{grid-template-columns:1fr}}
+  .ed{border:1px solid var(--line);border-radius:16px;padding:30px;background:var(--panel);
+    position:relative;overflow:hidden}
+  .ed.adv{border-color:var(--line-strong)}
+  .ed .tier{font-family:var(--mono);font-size:12px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--green)}
+  .ed h3{font-family:var(--display);font-weight:700;font-size:26px;margin:10px 0 14px}
+  .ed .for{color:var(--muted);font-size:14.5px;min-height:44px}
+  .ed ul{list-style:none;margin-top:20px;display:grid;gap:11px}
+  .ed li{display:flex;gap:11px;font-size:14px;color:var(--text);align-items:baseline}
+  .ed li::before{content:"✓";color:var(--green);font-family:var(--mono);flex:0 0 auto}
+  .ed li.dim{color:var(--muted)}
+  .ed li.dim::before{content:"+";color:var(--cyan)}
+
+  /* real product proof */
+  .proof{background:var(--bg-2)}
+  .capture-stage{position:relative;margin-top:52px;padding-bottom:clamp(84px,13vw,142px)}
+  .capture-stage::before{content:"";position:absolute;inset:8% 8% 12%;z-index:0;
+    background:radial-gradient(ellipse,rgba(55,224,122,.18),transparent 68%);
+    filter:blur(50px);pointer-events:none}
+  .capture{position:relative;z-index:1;border:1px solid var(--line-strong);border-radius:16px;
+    background:#0a111b;overflow:hidden;box-shadow:0 44px 120px -46px rgba(0,0,0,.95),
+    0 0 0 1px rgba(255,255,255,.02);transition:transform .45s cubic-bezier(.2,.8,.2,1),border-color .3s}
+  .capture:hover{border-color:rgba(55,224,122,.38)}
+  .capture-main{width:min(88%,900px)}
+  .capture-main:hover{transform:translateY(-5px)}
+  .capture-secondary{position:absolute;width:min(54%,560px);right:0;bottom:0;z-index:2;
+    transform:translateY(8px) rotate(.6deg)}
+  .capture-secondary:hover{transform:translateY(1px) rotate(0)}
+  .capture-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    min-height:42px;padding:11px 16px;border-bottom:1px solid var(--line);
+    font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--faint)}
+  .capture-label{display:flex;align-items:center;gap:9px;color:var(--muted)}
+  .capture-label::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--green);
+    box-shadow:0 0 9px var(--green)}
+  .capture img{display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:cover}
+  .capture-note{position:absolute;left:calc(min(88%,900px) + 22px);top:20px;z-index:3;
+    font-family:var(--mono);font-size:11px;line-height:1.65;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--faint);max-width:15ch}
+  .capture-note b{display:block;color:var(--green);font-weight:500}
+  @media(max-width:760px){
+    .capture-stage{display:grid;gap:18px;padding-bottom:0}
+    .capture-main,.capture-secondary{position:relative;width:100%;right:auto;bottom:auto;transform:none}
+    .capture-secondary:hover,.capture-main:hover{transform:none}
+    .capture-note{position:static;max-width:none;order:-1}
+  }
+  .proof-facts{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:30px;
+    background:var(--line);border:1px solid var(--line);border-radius:13px;overflow:hidden}
+  .proof-fact{background:var(--panel);padding:20px 22px}
+  .proof-fact .k{font-family:var(--mono);font-size:11px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--faint)}
+  .proof-fact .v{color:var(--text);margin-top:7px;font-size:14px}
+  @media(max-width:680px){.proof-facts{grid-template-columns:1fr}.proof-fact{padding:17px 19px}}
+  .proof-card{margin-top:44px;border:1px solid var(--line-strong);border-radius:16px;
+    background:linear-gradient(180deg,#0c1521,#0a111b);overflow:hidden;
+    box-shadow:0 40px 120px -50px rgba(0,0,0,.9)}
+  .pc-top{display:flex;align-items:center;justify-content:space-between;
+    padding:16px 22px;border-bottom:1px solid var(--line);
+    font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:var(--faint)}
+  .pc-top .live{color:var(--green)}
+  .pc-body{padding:34px 28px;display:flex;gap:26px;align-items:center;flex-wrap:wrap}
+  .pc-lock{width:78px;height:78px;border-radius:16px;flex:0 0 auto;
+    border:1px solid var(--green-dim);display:grid;place-items:center;
+    background:rgba(55,224,122,.06);box-shadow:inset 0 0 30px rgba(55,224,122,.12)}
+  .pc-lock svg{width:34px;height:34px;stroke:var(--green);fill:none;stroke-width:2}
+  .pc-headline{flex:1 1 260px}
+  .pc-headline h3{font-family:var(--display);font-weight:700;font-size:clamp(22px,3vw,30px)}
+  .pc-headline p{color:var(--muted);font-size:14px;margin-top:6px;font-family:var(--mono)}
+  .pc-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
+    background:var(--line);border-top:1px solid var(--line)}
+  .pc-stat{background:#0a111b;padding:18px 22px}
+  .pc-stat .k{font-family:var(--mono);font-size:11px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--faint)}
+  .pc-stat .v{font-family:var(--mono);color:var(--green);margin-top:7px;font-size:15px;
+    display:flex;align-items:center;gap:8px}
+  .pc-stat .v .d{width:7px;height:7px;border-radius:50%;background:var(--green);
+    box-shadow:0 0 8px var(--green)}
+  .proof-swap{margin-top:16px;font-size:13px;color:var(--faint);font-family:var(--mono)}
+
+  /* install */
+  .term{margin-top:44px;border:1px solid var(--line-strong);border-radius:14px;
+    background:#070b11;overflow:hidden}
+  .term-bar{display:flex;align-items:center;gap:8px;padding:12px 16px;
+    border-bottom:1px solid var(--line);background:var(--panel)}
+  .term-bar .tdot{width:11px;height:11px;border-radius:50%;background:#2a3543}
+  .term-bar .tlabel{margin-left:8px;font-family:var(--mono);font-size:12px;color:var(--faint)}
+  .term-body{padding:22px;font-family:var(--mono);font-size:14px;line-height:1.9;
+    overflow-x:auto}
+  .term-body .cmt{color:var(--faint)}
+  .term-body .cmd{color:var(--text);display:flex;align-items:flex-start;gap:10px;white-space:pre}
+  .term-body .cmd .p{color:var(--green);flex:0 0 auto}
+  .copy{margin-left:auto;font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;
+    color:var(--muted);border:1px solid var(--line-strong);background:transparent;
+    padding:6px 11px;border-radius:7px;cursor:pointer;transition:.18s;text-transform:uppercase}
+  .copy:hover{border-color:var(--green);color:var(--green)}
+  .copy.done{color:var(--green);border-color:var(--green)}
+  .install-alt{margin-top:20px;color:var(--muted);font-size:14px}
+  .install-alt code{font-family:var(--mono);color:var(--green);font-size:13px;
+    background:rgba(55,224,122,.08);padding:2px 7px;border-radius:5px}
+  :root[data-theme="light"] .term-body .cmd{color:#e9eff6}
+  :root[data-theme="light"] .term-body .cmt{color:#7f8d9e}
+
+  /* closer / footer */
+  .closer{padding:120px 0 90px;position:relative}
+  .closer h2{font-family:var(--display);font-weight:700;
+    font-size:clamp(38px,6vw,64px);line-height:.98;letter-spacing:-.02em;max-width:20ch}
+  .closer .vp{font-family:var(--mono);color:var(--muted);margin-top:22px;font-size:16px}
+  .closer .cta-row{margin-top:38px}
+  footer{border-top:1px solid var(--line);padding:34px 0}
+  .foot-in{max-width:var(--col);margin:0 auto;padding:0 28px;
+    display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;
+    font-family:var(--mono);font-size:12.5px;color:var(--faint)}
+  .foot-links{display:flex;gap:22px;flex-wrap:wrap}
+  .foot-in a:hover{color:var(--green)}
+
+  /* focus visibility (quality floor) */
+  a:focus-visible,button:focus-visible,.btn:focus-visible{
+    outline:2px solid var(--green);outline-offset:3px;border-radius:8px}
+
+  /* reveal on scroll */
+  .reveal{opacity:0;transform:translateY(22px);
+    transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1)}
+  .reveal.in{opacity:1;transform:none}
+  @media (prefers-reduced-motion:reduce){
+    .reveal{opacity:1;transform:none;transition:none}
+    .step:hover{transform:none}
+  }
+</style>
+</head>
+<body>
+  <canvas id="scene" aria-hidden="true"></canvas>
+  <div class="fallback-core" aria-hidden="true">
+    <div class="ring" style="width:220px;height:220px"></div>
+    <div class="ring" style="width:360px;height:360px"></div>
+    <div class="ring" style="width:520px;height:520px"></div>
+  </div>
+  <div class="veil" aria-hidden="true"></div>
+
+  <div class="wrap">
+    <nav>
+      <div class="nav-in">
+        <a class="brand" href="#top" aria-label="Torhole home">
+          <span class="glyph" aria-hidden="true"><img src="assets/apple-touch-icon.png" alt="" /></span><span class="wordmark"><b>tor</b><i>hole</i></span>
+        </a>
+        <div class="nav-links">
+          <a href="#problem">Problem</a>
+          <a href="#path">Path</a>
+          <a href="#editions">Editions</a>
+          <a href="#install">Install</a>
+          <a href="mailto:torhole.jxf27@slmail.me">Contact</a>
+          <a class="nav-gh" href="https://github.com/torhole/torhole" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.11.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.52-1.34-1.28-1.7-1.28-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.57-.29-5.27-1.28-5.27-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.47.11-3.05 0 0 .97-.31 3.16 1.18a10.9 10.9 0 0 1 5.76 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.58.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.71 5.39-5.29 5.68.42.36.79 1.06.79 2.14v3.17c0 .31.21.68.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg><span>GitHub ↗</span></a>
+          <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch color theme" title="Switch color theme">
+            <svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 15.2A8.8 8.8 0 0 1 8.8 3.5 9 9 0 1 0 20.5 15.2Z"/></svg>
+            <svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/></svg>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <!-- HERO -->
+    <header class="hero" id="top">
+      <div class="hero-mask" aria-hidden="true"></div>
+      <div class="col">
+        <span class="eyebrow">Torhole · DNS privacy gateway</span>
+        <h1>Verifiable DNS privacy for real networks.</h1>
+        <p class="sub"><b>Pi-hole blocking</b> · <b>encrypted DNS</b> · <b>enforced Tor egress</b></p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#install">Install ↓</a>
+          <a class="btn btn-ghost" href="https://github.com/torhole/torhole" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.11.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.52-1.34-1.28-1.7-1.28-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.57-.29-5.27-1.28-5.27-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.47.11-3.05 0 0 .97-.31 3.16 1.18a10.9 10.9 0 0 1 5.76 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.58.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.71 5.39-5.29 5.68.42.36.79 1.06.79 2.14v3.17c0 .31.21.68.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>View on GitHub</a>
+          <span class="hero-tag">Live proof, <b>not a badge</b></span>
+        </div>
+      </div>
+    </header>
+
+    <div class="solid">
+      <!-- PROBLEM / STAKES -->
+      <section id="problem" class="stakes">
+        <div class="col">
+          <span class="eyebrow reveal">The problem</span>
+          <h2 class="reveal">Every domain you look up is a record <em>someone keeps.</em></h2>
+          <div class="stakes-grid">
+            <p class="lede reveal">
+              Your router asks an upstream resolver to translate every hostname your
+              devices reach. That resolver, along with your ISP, can tie each
+              question back to your household address and build a profile over time.
+              Encrypting the query hides its contents, not its origin.<br><br>
+              Torhole breaks the link between the question and you. The resolver still
+              answers, but it sees a Tor exit, not your public IP. Filtering and
+              encryption come along for the ride.
+            </p>
+            <div class="observers reveal" role="table" aria-label="Who can see what">
+              <div class="obs-row"><span class="who">Your ISP</span><span class="what">A connection to Tor, not the DNS inside it</span></div>
+              <div class="obs-row"><span class="who">Tor exit relay</span><span class="what">An encrypted connection to the resolver</span></div>
+              <div class="obs-row"><span class="who">The resolver</span><span class="what">The question and a Tor exit, <span class="dot">not your IP</span></span></div>
+              <div class="obs-row"><span class="who">Websites</span><span class="what">Your normal traffic. Torhole isn't a tunnel.</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PATH -->
+      <section id="path" class="path">
+        <div class="col">
+          <span class="eyebrow reveal">What happens to a lookup</span>
+          <h2 class="reveal">Four hops. One narrow, testable promise.</h2>
+          <div class="pipe">
+            <div class="step reveal"><span class="n">01</span><span class="name">Pi-hole</span><span class="desc">Filters unwanted domains and answers local DNS under your control.</span></div>
+            <div class="step reveal"><span class="n">02</span><span class="name">dnscrypt-proxy</span><span class="desc">Encrypts the upstream resolver connection using DNSCrypt or DNS-over-HTTPS.</span></div>
+            <div class="step reveal"><span class="n">03</span><span class="name">Tor circuit</span><span class="desc">Separates the request from your public IP before it reaches the resolver.</span></div>
+            <div class="step reveal"><span class="n">04</span><span class="name">Resolver</span><span class="desc">Receives the query from a Tor exit address, then returns the answer.</span></div>
+          </div>
+          <p class="pipe-note reveal">// Ordinary web, video, and app traffic keeps its normal route. Only DNS takes this path.</p>
+        </div>
+      </section>
+
+      <!-- NOT A VPN -->
+      <section class="notvpn">
+        <div class="col">
+          <span class="eyebrow reveal">Honest scope</span>
+          <div class="notvpn-card reveal">
+            <h3>Torhole is not a VPN.</h3>
+            <p>It deliberately protects the DNS path and nothing wider. Naming what it
+              doesn't do is how you can trust what it does.</p>
+            <ul class="nots">
+              <li>Does not route web, video, or app traffic through Tor.</li>
+              <li>Does not replace your public IP when you visit a site.</li>
+              <li>Does not make browsing anonymous or secure an unsafe device.</li>
+              <li>Cannot protect apps that ignore your DNS and use their own resolver.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- EDITIONS -->
+      <section id="editions">
+        <div class="col">
+          <span class="eyebrow reveal">One core, two editions</span>
+          <h2 class="reveal">Start simple. Grow into the operations stack.</h2>
+          <div class="ed-grid">
+            <div class="ed reveal">
+              <div class="tier">Torhole Home</div>
+              <h3>The privacy path, kept simple.</h3>
+              <p class="for">For households and first-time self-hosters who want one clear proof and safe controls.</p>
+              <ul>
+                <li>Guided web installer</li>
+                <li>One Pi-hole → dnscrypt → Tor plane</li>
+                <li>Live privacy dashboard</li>
+                <li>Start, stop, verify, renew Tor identity</li>
+              </ul>
+            </div>
+            <div class="ed adv reveal">
+              <div class="tier">Torhole Advanced</div>
+              <h3>Full visibility, control, and recovery.</h3>
+              <p class="for">For homelabs and operators on flat LAN or isolated Trusted/IoT VLAN planes.</p>
+              <ul>
+                <li>The same privacy core, per plane</li>
+                <li class="dim">SSO, Caddy, backups</li>
+                <li class="dim">Prometheus, Grafana, Loki, alerting</li>
+                <li class="dim">Per-plane circuits, leak tests, validation</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PROOF -->
+      <section class="proof">
+        <div class="col">
+          <span class="eyebrow reveal">Proof, not a promise</span>
+          <h2 class="reveal">The dashboard shows evidence, not a checkmark.</h2>
+          <p class="lede reveal">Torhole records the observed Tor exit, asks the Tor Project whether that
+            address is a relay, and keeps the result. Unlabelled circuits stay unlabelled. The interface
+            doesn't invent certainty.</p>
+
+          <div class="capture-stage reveal" aria-label="Torhole product screenshots">
+            <figure class="capture capture-main">
+              <figcaption class="capture-bar"><span class="capture-label">Torhole · Glance</span><span>LIVE SYSTEM VIEW</span></figcaption>
+              <img src="shots/glance.png" alt="Torhole Glance dashboard showing the live DNS privacy path and service health" width="1280" height="720" loading="lazy" decoding="async" />
+            </figure>
+            <p class="capture-note"><b>Real interface</b>No mock data. No invented state.</p>
+            <figure class="capture capture-secondary">
+              <figcaption class="capture-bar"><span class="capture-label">Privacy evidence</span><span>EXIT + CIRCUIT</span></figcaption>
+              <img src="shots/privacy.png" alt="Torhole Privacy screen showing Tor circuit and exit evidence" width="1280" height="720" loading="lazy" decoding="async" />
+            </figure>
+          </div>
+          <div class="proof-facts reveal" aria-label="What the interface verifies">
+            <div class="proof-fact"><div class="k">Observe</div><div class="v">Actual exit address and Tor status</div></div>
+            <div class="proof-fact"><div class="k">Separate</div><div class="v">Per-plane circuits and resolver paths</div></div>
+            <div class="proof-fact"><div class="k">Enforce</div><div class="v">Fail-closed DNS leak protection</div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- INSTALL -->
+      <section id="install">
+        <div class="col">
+          <span class="eyebrow reveal">Install</span>
+          <h2 class="reveal">One command on a clean Debian or Ubuntu host.</h2>
+          <p class="lede reveal">The bootstrap downloads Torhole, asks once for host authorization, and opens a
+            private setup URL where you choose Home or Advanced and watch it deploy. Raspberry Pi 5 is the reference small-device platform.</p>
+
+          <div class="term reveal">
+            <div class="term-bar">
+              <span class="tdot"></span><span class="tdot"></span><span class="tdot"></span>
+              <span class="tlabel">torhole-host / bash</span>
+              <button class="copy" id="copyBtn" aria-label="Copy install command">Copy</button>
+            </div>
+            <div class="term-body">
+              <div class="cmt"># download, verify, and launch the guided installer</div>
+              <div class="cmd"><span class="p">$</span><span id="cmdText">curl -fsSL https://raw.githubusercontent.com/torhole/torhole/main/get-torhole.sh | bash</span></div>
+            </div>
+          </div>
+          <p class="install-alt reveal">Prefer to read it first? <code>curl -fsSLO …/get-torhole.sh</code> then <code>less get-torhole.sh</code>.
+            The traditional <code>git clone</code> → <code>./install.sh</code> flow starts the same installer.</p>
+        </div>
+      </section>
+    </div>
+
+    <!-- CLOSER -->
+    <section class="closer">
+      <div class="col">
+        <span class="eyebrow reveal">Verify the path</span>
+        <h2 class="reveal">Do not trust a green badge.</h2>
+        <p class="vp reveal">Run the check. Read the exit. Confirm it's Tor.</p>
+        <div class="cta-row reveal">
+          <a class="btn btn-primary" href="#install">Install Torhole</a>
+          <a class="btn btn-ghost" href="https://github.com/torhole/torhole" target="_blank" rel="noopener">Read the source</a>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="foot-in">
+        <span>© 2026 Torhole · self-hosted DNS privacy gateway</span>
+        <span class="foot-links"><a href="https://github.com/torhole/torhole" target="_blank" rel="noopener">GitHub</a><a href="mailto:torhole.jxf27@slmail.me">Contact</a></span>
+      </div>
+    </footer>
+  </div>
+
+<!-- Three.js (r128, UMD global) from a free CDN. On Cloudflare this loads client-side; no server runtime. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  "use strict";
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- scroll reveals (independent of WebGL) ---------- */
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target); } });
+  },{threshold:.14});
+  document.querySelectorAll(".reveal").forEach(function(el){ io.observe(el); });
+
+  /* ---------- copy button ---------- */
+  var copyBtn = document.getElementById("copyBtn");
+  var cmdText = document.getElementById("cmdText");
+  if(copyBtn){
+    copyBtn.addEventListener("click", function(){
+      var t = cmdText.textContent.trim();
+      var done = function(){ copyBtn.textContent="Copied"; copyBtn.classList.add("done");
+        setTimeout(function(){ copyBtn.textContent="Copy"; copyBtn.classList.remove("done"); },1600); };
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done).catch(done); }
+      else { var ta=document.createElement("textarea"); ta.value=t; document.body.appendChild(ta); ta.select();
+        try{document.execCommand("copy");}catch(e){} document.body.removeChild(ta); done(); }
+    });
+  }
+
+  /* ---------- color theme ---------- */
+  var themeToggle = document.getElementById("themeToggle");
+  function setTheme(theme, remember){
+    document.documentElement.dataset.theme=theme;
+    document.documentElement.style.colorScheme=theme;
+    if(themeToggle){
+      var next=theme==="dark"?"light":"dark";
+      themeToggle.setAttribute("aria-label","Switch to "+next+" theme");
+      themeToggle.setAttribute("title","Switch to "+next+" theme");
+    }
+    if(remember){ try{localStorage.setItem("torhole.theme",theme);}catch(e){} }
+  }
+  setTheme(document.documentElement.dataset.theme||"dark",false);
+  if(themeToggle){
+    themeToggle.addEventListener("click",function(){
+      setTheme(document.documentElement.dataset.theme==="light"?"dark":"light",true);
+    });
+  }
+
+  /* ---------- WebGL capability check ---------- */
+  var canvas = document.getElementById("scene");
+  var gl = null;
+  try { gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl"); } catch(e){}
+  if(!gl || typeof THREE === "undefined"){ document.body.classList.add("no-webgl"); return; }
+
+  /* ---------- shared soft-glow sprite texture (canvas radial gradient) ---------- */
+  function glowTexture(r,g,b){
+    var s=128, c=document.createElement("canvas"); c.width=c.height=s;
+    var x=c.getContext("2d"), grd=x.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);
+    grd.addColorStop(0,"rgba("+r+","+g+","+b+",1)");
+    grd.addColorStop(.25,"rgba("+r+","+g+","+b+",.55)");
+    grd.addColorStop(1,"rgba("+r+","+g+","+b+",0)");
+    x.fillStyle=grd; x.fillRect(0,0,s,s);
+    var t=new THREE.Texture(c); t.needsUpdate=true; return t;
+  }
+  var texGreen = glowTexture(99,243,154);
+  var texCyan  = glowTexture(79,214,224);
+
+  /* ---------- renderer / scene / camera ---------- */
+  var renderer = new THREE.WebGLRenderer({canvas:canvas, antialias:true, alpha:true, powerPreference:"high-performance"});
+  renderer.setClearColor(0x000000,0);
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(52, window.innerWidth/window.innerHeight, .1, 100);
+  camera.position.set(0,0,18);
+
+  var world = new THREE.Group(); scene.add(world);
+  var core  = new THREE.Group(); world.add(core);
+
+  /* onion core: concentric wireframe shells */
+  var shellDefs=[{r:2.0,op:.9,seg:1},{r:3.0,op:.42,seg:1},{r:4.1,op:.24,seg:0},{r:5.3,op:.14,seg:0}];
+  var shells=[];
+  shellDefs.forEach(function(d,i){
+    var geo=new THREE.IcosahedronGeometry(d.r, d.seg?1:1);
+    var wire=new THREE.WireframeGeometry(geo);
+    var mat=new THREE.LineBasicMaterial({color:0x37e07a, transparent:true, opacity:d.op});
+    var line=new THREE.LineSegments(wire, mat);
+    line.userData.spin = (i%2===0?1:-1)*(0.045+i*0.012);
+    core.add(line); shells.push(line);
+  });
+  /* inner glow halo */
+  var haloMat=new THREE.SpriteMaterial({map:texGreen, color:0x63f39a, transparent:true, opacity:.85, blending:THREE.AdditiveBlending, depthWrite:false});
+  var halo=new THREE.Sprite(haloMat); halo.scale.set(9,9,1); core.add(halo);
+
+  /* particle shell (fine dust around core) */
+  (function(){
+    var N=420, pos=new Float32Array(N*3);
+    for(var i=0;i<N;i++){ var u=Math.random(),v=Math.random(),th=2*Math.PI*u,ph=Math.acos(2*v-1),
+      rr=2.2+Math.random()*3.4;
+      pos[i*3]=rr*Math.sin(ph)*Math.cos(th); pos[i*3+1]=rr*Math.sin(ph)*Math.sin(th); pos[i*3+2]=rr*Math.cos(ph); }
+    var g=new THREE.BufferGeometry(); g.setAttribute("position",new THREE.BufferAttribute(pos,3));
+    var m=new THREE.PointsMaterial({size:.09,map:texGreen,color:0x37e07a,transparent:true,opacity:.6,blending:THREE.AdditiveBlending,depthWrite:false});
+    core.add(new THREE.Points(g,m));
+  })();
+
+  /* orbiting relay topology */
+  var relayRing=new THREE.Group(); relayRing.rotation.x=0.9; relayRing.rotation.z=0.25; world.add(relayRing);
+  var relays=[], RELAY_N=16, RELAY_R=8.2;
+  var relayGeo=new THREE.BufferGeometry();
+  var relayPos=new Float32Array(RELAY_N*3);
+  for(var k=0;k<RELAY_N;k++){
+    var a=(k/RELAY_N)*Math.PI*2, wob=(Math.random()-.5)*.6;
+    var x=Math.cos(a)*(RELAY_R+wob), y=(Math.random()-.5)*1.2, z=Math.sin(a)*(RELAY_R+wob);
+    relayPos[k*3]=x; relayPos[k*3+1]=y; relayPos[k*3+2]=z;
+    relays.push(new THREE.Vector3(x,y,z));
+  }
+  relayGeo.setAttribute("position",new THREE.BufferAttribute(relayPos,3));
+  var relayMat=new THREE.PointsMaterial({size:.55,map:texGreen,color:0x9dffc4,transparent:true,opacity:.95,blending:THREE.AdditiveBlending,depthWrite:false});
+  relayRing.add(new THREE.Points(relayGeo,relayMat));
+
+  /* faint ring line connecting relays */
+  (function(){
+    var pts=[]; for(var k=0;k<=RELAY_N;k++){var r=relays[k%RELAY_N]; pts.push(r.clone());}
+    var g=new THREE.BufferGeometry().setFromPoints(pts);
+    relayRing.add(new THREE.Line(g,new THREE.LineBasicMaterial({color:0x1c8f4e,transparent:true,opacity:.35})));
+  })();
+
+  /* one emphasized circuit: core -> entry -> middle -> exit */
+  var entry=relays[2], mid=relays[7], exit=relays[12];
+  var circuitCurve=new THREE.CatmullRomCurve3([new THREE.Vector3(0,0,0), entry.clone(), mid.clone(), exit.clone()]);
+  (function(){
+    var g=new THREE.BufferGeometry().setFromPoints(circuitCurve.getPoints(60));
+    relayRing.add(new THREE.Line(g,new THREE.LineBasicMaterial({color:0x37e07a,transparent:true,opacity:.5})));
+  })();
+
+  /* encrypted packet trails (cyan) flowing along the circuit + random spokes */
+  var PACKET_N = reduceMotion ? 0 : 30;
+  var curves=[circuitCurve];
+  for(var c2=0;c2<6;c2++){ var tgt=relays[(Math.random()*RELAY_N)|0];
+    curves.push(new THREE.CatmullRomCurve3([new THREE.Vector3(0,0,0), tgt.clone().multiplyScalar(.5), tgt.clone()])); }
+  var packets=[];
+  if(PACKET_N>0){
+    var pg=new THREE.BufferGeometry(); var ppos=new Float32Array(PACKET_N*3);
+    pg.setAttribute("position",new THREE.BufferAttribute(ppos,3));
+    var pm=new THREE.PointsMaterial({size:.34,map:texCyan,color:0x8ff0f7,transparent:true,opacity:.95,blending:THREE.AdditiveBlending,depthWrite:false});
+    var pPoints=new THREE.Points(pg,pm); relayRing.add(pPoints);
+    for(var p=0;p<PACKET_N;p++){ packets.push({curve:curves[(Math.random()*curves.length)|0], t:Math.random(), spd:.0016+Math.random()*.0032}); }
+    packets._pos=ppos; packets._geo=pg;
+  }
+
+  /* distant starfield for parallax depth */
+  (function(){
+    var N=260, pos=new Float32Array(N*3);
+    for(var i=0;i<N;i++){ pos[i*3]=(Math.random()-.5)*70; pos[i*3+1]=(Math.random()-.5)*46; pos[i*3+2]=-14-Math.random()*24; }
+    var g=new THREE.BufferGeometry(); g.setAttribute("position",new THREE.BufferAttribute(pos,3));
+    var m=new THREE.PointsMaterial({size:.08,color:0x2a3f4a,transparent:true,opacity:.7});
+    scene.add(new THREE.Points(g,m));
+  })();
+
+  /* ---------- pointer parallax ---------- */
+  var px=0, py=0, tx=0, ty=0;
+  if(!reduceMotion){
+    window.addEventListener("pointermove", function(e){
+      tx=(e.clientX/window.innerWidth - .5); ty=(e.clientY/window.innerHeight - .5);
+    }, {passive:true});
+  }
+
+  /* ---------- scroll link ---------- */
+  var scrollY=0;
+  window.addEventListener("scroll", function(){ scrollY=window.pageYOffset||document.documentElement.scrollTop; }, {passive:true});
+
+  /* ---------- resize ---------- */
+  function resize(){
+    var w=window.innerWidth, h=window.innerHeight;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+    renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
+  }
+  window.addEventListener("resize", resize); resize();
+
+  /* ---------- render loop ---------- */
+  var running=true;
+  document.addEventListener("visibilitychange", function(){ running=!document.hidden; if(running) requestAnimationFrame(loop); });
+
+  var tmp=new THREE.Vector3();
+  function loop(){
+    if(!running) return;
+    requestAnimationFrame(loop);
+
+    if(!reduceMotion){
+      // ambient rotation
+      core.rotation.y += 0.0016;
+      shells.forEach(function(s){ s.rotation.y += s.userData.spin*0.02; s.rotation.x += s.userData.spin*0.011; });
+      relayRing.rotation.y -= 0.0011;
+      halo.material.opacity = 0.7 + Math.sin(Date.now()*0.0015)*0.12;
+
+      // pointer parallax (eased)
+      px += (tx-px)*0.05; py += (ty-py)*0.05;
+      world.rotation.y = px*0.5; world.rotation.x = py*0.35;
+
+      // packet motion
+      if(PACKET_N>0){
+        for(var i=0;i<PACKET_N;i++){ var pk=packets[i]; pk.t+=pk.spd; if(pk.t>1){pk.t=0; pk.curve=curves[(Math.random()*curves.length)|0];}
+          pk.curve.getPoint(pk.t, tmp);
+          packets._pos[i*3]=tmp.x; packets._pos[i*3+1]=tmp.y; packets._pos[i*3+2]=tmp.z; }
+        packets._geo.attributes.position.needsUpdate=true;
+      }
+    }
+
+    // scroll-linked recede: fade canvas + push core back as content rises
+    var vh=window.innerHeight;
+    var prog=Math.min(1, scrollY/(vh*1.15));
+    canvas.style.opacity = (1 - prog*0.84).toFixed(3);
+    world.position.z = -prog*6;
+    world.scale.setScalar(1 - prog*0.12);
+
+    renderer.render(scene,camera);
+  }
+
+  if(reduceMotion){
+    // draw a single composed frame, no animation
+    core.rotation.set(0.2,0.5,0); relayRing.rotation.y=0.3;
+    renderer.render(scene,camera);
+  } else {
+    requestAnimationFrame(loop);
+  }
+})();
+</script>
+</body>
+</html>

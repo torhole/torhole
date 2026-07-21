@@ -6,7 +6,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-21
+
 ### Added
+- Public product website with animated privacy topology, real administration UI
+  captures, responsive light and dark themes, and Cloudflare Worker deployment
+  configuration
 - GPL v3 license
 - `docs/privacy-model.md` — threat model and trust boundary documentation
 - `docs/architecture.md` — prose architecture reference
