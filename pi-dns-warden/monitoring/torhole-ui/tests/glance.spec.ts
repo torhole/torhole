@@ -69,7 +69,7 @@ test.describe("Glance screen", () => {
       route.fulfill({
         json: {
           product: "Torhole",
-          version: "0.2.1",
+          version: "0.2.2",
           revision: "abc123def456",
           edition: "advanced",
           topology: "vlan",
@@ -78,7 +78,7 @@ test.describe("Glance screen", () => {
       }),
     );
     await page.goto("/");
-    await expect(page.getByText("Torhole v0.2.1 · live", { exact: true })).toBeVisible();
+    await expect(page.getByText("Torhole v0.2.2 · live", { exact: true })).toBeVisible();
     await page.getByRole("link", { name: "About" }).click();
     await expect(page.getByRole("heading", { name: "Which Torhole is this?" })).toBeVisible();
     await expect(page.getByText("abc123def456", { exact: true })).toBeVisible();

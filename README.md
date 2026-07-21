@@ -238,8 +238,8 @@ cd torhole
 To install a specific stable release instead of the moving `main` branch:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/torhole/torhole/v0.2.1/get-torhole.sh \
-  | TORHOLE_REF=v0.2.1 bash
+curl -fsSL https://raw.githubusercontent.com/torhole/torhole/v0.2.2/get-torhole.sh \
+  | TORHOLE_REF=v0.2.2 bash
 ```
 
 Published release archives include SHA-256 checksums and signed build
