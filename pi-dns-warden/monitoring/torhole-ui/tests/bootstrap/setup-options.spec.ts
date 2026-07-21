@@ -275,6 +275,19 @@ test("installed Home keeps the root URL and shared visual privacy proof", async 
   await page.getByRole("button", { name: /About v0\.2\.2/i }).click();
   await expect(page.getByRole("dialog", { name: "Torhole Home" })).toBeVisible();
   await expect(page.getByText("abc123def456", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Independent project\. Not endorsed, sponsored by, or affiliated with The Tor Project/i)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Third-party notices" })).toHaveAttribute(
+    "href",
+    "https://github.com/torhole/torhole/blob/main/THIRD_PARTY_NOTICES.md",
+  );
+  await expect(page.getByRole("link", { name: "Trademarks" })).toHaveAttribute(
+    "href",
+    "https://github.com/torhole/torhole/blob/main/TRADEMARKS.md",
+  );
+  await expect(page.getByRole("link", { name: "Browser bundle licenses" })).toHaveAttribute(
+    "href",
+    "/third-party-licenses.txt",
+  );
   await page.getByRole("button", { name: "Close About" }).click();
 
   await page.getByRole("button", { name: "Light theme", exact: true }).click();
@@ -346,6 +359,39 @@ test("installed Advanced VLAN shows both DNS planes", async ({ page }) => {
   await expect(page.getByText("DNSCRYPT_SOCKS_USER_IOT", { exact: true })).toBeVisible();
 });
 
+test("installed Advanced About identifies the independent project and notices", async ({ page }) => {
+  await page.route("**/api/version", (route) =>
+    route.fulfill({
+      json: {
+        product: "Torhole",
+        version: "0.2.2",
+        revision: "abc123def456",
+        edition: "advanced",
+        topology: "single-lan",
+        snapshot_schema: 1,
+      },
+    }),
+  );
+  await mockInstalledAdvanced(page, "single-lan");
+
+  await page.getByRole("link", { name: "About" }).click();
+  await expect(page.getByRole("heading", { name: "Which Torhole is this?" })).toBeVisible();
+  await expect(page.getByText("Independent project", { exact: true })).toBeVisible();
+  await expect(page.getByText(/not endorsed, sponsored by, or affiliated with The Tor Project/i)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Third-party notices" })).toHaveAttribute(
+    "href",
+    "https://github.com/torhole/torhole/blob/main/THIRD_PARTY_NOTICES.md",
+  );
+  await expect(page.getByRole("link", { name: "Trademarks and independence" })).toHaveAttribute(
+    "href",
+    "https://github.com/torhole/torhole/blob/main/TRADEMARKS.md",
+  );
+  await expect(page.getByRole("link", { name: "Browser bundle licenses" })).toHaveAttribute(
+    "href",
+    "/third-party-licenses.txt",
+  );
+});
+
 test("installed Advanced keeps sidebar controls visible while the page scrolls", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 600 });
   await mockInstalledAdvanced(page, "single-lan");
@@ -363,7 +409,9 @@ test("installed Advanced keeps sidebar controls visible while the page scrolls",
 
   const after = await signOut.boundingBox();
   expect(after).not.toBeNull();
-  expect(Math.abs(after!.y - before!.y)).toBeLessThan(1);
+  // Fractional font/layout rounding can move the fixed footer by a little over
+  // one physical pixel between paints while it remains pinned to the viewport.
+  expect(Math.abs(after!.y - before!.y)).toBeLessThan(2);
   await expect(appearance).toBeVisible();
 });
 

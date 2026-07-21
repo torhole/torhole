@@ -94,10 +94,28 @@ export default function AboutScreen() {
           <div className="space-y-2">
             <ProjectLink href={REPOSITORY_URL} icon={Github} label="Source and issues" />
             <ProjectLink href={`${REPOSITORY_URL}/releases`} icon={ExternalLink} label="Published releases" />
-            <ProjectLink href={`${REPOSITORY_URL}/blob/main/pi-dns-warden/LICENSE`} icon={ExternalLink} label="GPL v3 license" />
+            <ProjectLink href={`${REPOSITORY_URL}/blob/main/LICENSE`} icon={ExternalLink} label="GPL v3 license" />
+            <ProjectLink href={`${REPOSITORY_URL}/blob/main/THIRD_PARTY_NOTICES.md`} icon={ExternalLink} label="Third-party notices" />
+            <ProjectLink href={`${REPOSITORY_URL}/blob/main/TRADEMARKS.md`} icon={ExternalLink} label="Trademarks and independence" />
+            <ProjectLink href="/third-party-licenses.txt" icon={ExternalLink} label="Browser bundle licenses" />
           </div>
         </section>
       </div>
+
+      <section className="rounded-xl border border-th-line bg-th-panel p-5 mt-4" aria-labelledby="independence-title">
+        <div id="independence-title" className="text-[10px] font-mono uppercase tracking-[0.18em] text-th-text-muted mb-2">
+          Independent project
+        </div>
+        <p className="text-sm text-th-text-muted leading-relaxed">
+          Torhole is not endorsed, sponsored by, or affiliated with The Tor Project, the Pi-hole project,
+          or the maintainers of its other third-party components. Tor and Pi-hole are referenced solely to
+          describe interoperability and the configured privacy path.
+        </p>
+        <p className="text-[11px] text-th-text-muted/80 leading-relaxed mt-3">
+          Tor is a trademark of The Tor Project; all rights reserved. Pi-hole® and other product names and
+          marks belong to their respective owners.
+        </p>
+      </section>
     </div>
   );
 }

@@ -7,10 +7,13 @@ light and dark themes, and real captures of the Torhole administration UI.
 ## Structure
 
 - `index.html`: complete page, styles, interactions, and scene setup
+- `legal.html`: public independence, trademark, and license notice
+- `third-party-licenses.txt`: license text shipped for the public Three.js dependency
 - `assets/`: Torhole icons
 - `shots/`: optimized product captures used by the proof section
 - `_headers`: Cloudflare security and cache policy
 - `robots.txt` and `sitemap.xml`: search-engine metadata
+- `.assetsignore`: prevents local prototype and dependency files from being published
 
 ## Preview
 

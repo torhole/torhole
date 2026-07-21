@@ -58,6 +58,8 @@ const CONTROL_ACTIONS = [
   { id: "start-protection", label: "Start protection", icon: Power, danger: false },
 ] as const;
 
+const REPOSITORY_URL = "https://github.com/torhole/torhole";
+
 export default function HomeScreen() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [verifying, setVerifying] = useState(false);
@@ -295,10 +297,31 @@ function HomeAboutDialog({ build, onClose }: { build: BuildInfo | null; onClose:
           <HomeBuildField label="Edition" value={build?.edition || "home"} />
           <HomeBuildField label="Topology" value={build?.topology || "single-lan"} />
         </div>
-        <div className="px-5 pb-5">
-          <a href="https://github.com/torhole/torhole" target="_blank" rel="noreferrer" className="min-h-[42px] rounded-md border border-th-line flex items-center gap-2 px-3 text-xs text-th-text-muted hover:text-th-text hover:border-th-primary/40">
+        <div className="px-5 pb-5 space-y-3">
+          <div className="rounded-md border border-th-line bg-th-bg/40 p-3 text-[10.5px] leading-relaxed text-th-text-muted">
+            <p>
+              Independent project. Not endorsed, sponsored by, or affiliated with The Tor Project,
+              the Pi-hole project, or other third-party maintainers.
+            </p>
+            <p className="mt-2 text-th-text-muted/75">
+              Tor is a trademark of The Tor Project; all rights reserved. Pi-hole® and other marks belong
+              to their respective owners.
+            </p>
+          </div>
+          <a href={REPOSITORY_URL} target="_blank" rel="noreferrer" className="min-h-[42px] rounded-md border border-th-line flex items-center gap-2 px-3 text-xs text-th-text-muted hover:text-th-text hover:border-th-primary/40">
             <Github size={14} /> Source, releases, and support <ExternalLink size={11} className="ml-auto" />
           </a>
+          <div className="grid sm:grid-cols-2 gap-2">
+            <a href={`${REPOSITORY_URL}/blob/main/THIRD_PARTY_NOTICES.md`} target="_blank" rel="noreferrer" className="min-h-[38px] rounded-md border border-th-line flex items-center gap-2 px-3 text-[10.5px] text-th-text-muted hover:text-th-text hover:border-th-primary/40">
+              Third-party notices <ExternalLink size={10} className="ml-auto" />
+            </a>
+            <a href={`${REPOSITORY_URL}/blob/main/TRADEMARKS.md`} target="_blank" rel="noreferrer" className="min-h-[38px] rounded-md border border-th-line flex items-center gap-2 px-3 text-[10.5px] text-th-text-muted hover:text-th-text hover:border-th-primary/40">
+              Trademarks <ExternalLink size={10} className="ml-auto" />
+            </a>
+            <a href="/third-party-licenses.txt" target="_blank" rel="noreferrer" className="min-h-[38px] rounded-md border border-th-line flex items-center gap-2 px-3 text-[10.5px] text-th-text-muted hover:text-th-text hover:border-th-primary/40 sm:col-span-2">
+              Browser bundle licenses <ExternalLink size={10} className="ml-auto" />
+            </a>
+          </div>
         </div>
       </section>
     </div>

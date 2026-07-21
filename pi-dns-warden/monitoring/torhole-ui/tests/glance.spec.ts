@@ -83,6 +83,20 @@ test.describe("Glance screen", () => {
     await expect(page.getByRole("heading", { name: "Which Torhole is this?" })).toBeVisible();
     await expect(page.getByText("abc123def456", { exact: true })).toBeVisible();
     await expect(page.getByText("advanced", { exact: true })).toBeVisible();
+    await expect(page.getByText("Independent project", { exact: true })).toBeVisible();
+    await expect(page.getByText(/not endorsed, sponsored by, or affiliated with The Tor Project/i)).toBeVisible();
+    await expect(page.getByRole("link", { name: "Third-party notices" })).toHaveAttribute(
+      "href",
+      "https://github.com/torhole/torhole/blob/main/THIRD_PARTY_NOTICES.md",
+    );
+    await expect(page.getByRole("link", { name: "Trademarks and independence" })).toHaveAttribute(
+      "href",
+      "https://github.com/torhole/torhole/blob/main/TRADEMARKS.md",
+    );
+    await expect(page.getByRole("link", { name: "Browser bundle licenses" })).toHaveAttribute(
+      "href",
+      "/third-party-licenses.txt",
+    );
     await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 
