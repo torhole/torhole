@@ -235,6 +235,17 @@ cd torhole
 ./install.sh
 ```
 
+To install a specific stable release instead of the moving `main` branch:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/torhole/torhole/v0.2.1/get-torhole.sh \
+  | TORHOLE_REF=v0.2.1 bash
+```
+
+Published release archives include SHA-256 checksums and signed build
+provenance. See [release integrity](pi-dns-warden/docs/release-integrity.md)
+for verification commands.
+
 ### Home setup
 
 Choose **Home** in the web installer. Home creates a secure local configuration,

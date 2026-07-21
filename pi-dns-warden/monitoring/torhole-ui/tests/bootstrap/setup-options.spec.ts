@@ -203,7 +203,7 @@ async function mockHome(page: Page) {
         checked_at: now,
         build: {
           product: "Torhole",
-          version: "0.2.1-dev",
+          version: "0.2.1",
           revision: "abc123def456",
           edition: "home",
           topology: "single-lan",
@@ -272,7 +272,7 @@ test("installed Home keeps the root URL and shared visual privacy proof", async 
   await expect(page.getByText("Glance", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Configure", { exact: true })).toHaveCount(0);
 
-  await page.getByRole("button", { name: /About v0\.2\.1-dev/i }).click();
+  await page.getByRole("button", { name: /About v0\.2\.1/i }).click();
   await expect(page.getByRole("dialog", { name: "Torhole Home" })).toBeVisible();
   await expect(page.getByText("abc123def456", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Close About" }).click();
