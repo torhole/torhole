@@ -6,7 +6,7 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
-      - "--storage.tsdb.retention.time=7d"
+      - "--storage.tsdb.retention.time=${TORHOLE_PROMETHEUS_RETENTION:-90d}"
     volumes:
       - ./monitoring/prometheus/prometheus.runtime.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
@@ -22,6 +22,9 @@ services:
     restart: unless-stopped
     command:
       - "-config.file=/etc/loki/config.yml"
+      - "-config.expand-env=true"
+    environment:
+      TORHOLE_LOKI_RETENTION: ${TORHOLE_LOKI_RETENTION:-2160h}
     volumes:
       - ./monitoring/loki/loki-config.yml:/etc/loki/config.yml:ro
       - loki_data:/loki

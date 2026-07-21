@@ -37,6 +37,11 @@ run/
 # Runtime backup archives (large tarballs)
 backups/
 
+# Local hardware-validation and soak evidence. Review and redact before
+# publishing individual reports intentionally.
+validation/
+torhole-soak-*.csv
+
 # OS
 .DS_Store
 .idea/
