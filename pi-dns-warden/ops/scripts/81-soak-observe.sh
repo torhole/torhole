@@ -74,7 +74,11 @@ while python3 -c 'import sys,time; raise SystemExit(0 if time.time() < float(sys
   disk_used_pct="$(df -P / | awk 'NR == 2 { gsub(/%/, "", $5); print $5 }')"
   running_containers="$(docker ps -q | wc -l | tr -d ' ')"
   unhealthy_containers="$(docker ps --filter health=unhealthy -q | wc -l | tr -d ' ')"
-  restart_total="$(docker inspect $(docker ps -q) --format '{{.RestartCount}}' 2>/dev/null | awk '{ total += $1 } END { print total + 0 }')"
+  mapfile -t container_ids < <(docker ps -q)
+  restart_total=0
+  if [[ "${#container_ids[@]}" -gt 0 ]]; then
+    restart_total="$(docker inspect "${container_ids[@]}" --format '{{.RestartCount}}' 2>/dev/null | awk '{ total += $1 } END { print total + 0 }')"
+  fi
   metrics="$(docker exec prometheus wget -qO- http://backup-manager:8080/api/metrics/tor 2>/dev/null || true)"
 
   printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \

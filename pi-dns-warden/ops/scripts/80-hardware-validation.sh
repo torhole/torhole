@@ -80,7 +80,11 @@ compose_version="$(docker compose version --short 2>/dev/null || printf 'unavail
 container_total="$(docker ps --format '{{.Names}}' | wc -l | tr -d ' ')"
 unhealthy_containers="$(docker ps --filter health=unhealthy --format '{{.Names}}' | sort | paste -sd ', ' -)"
 [[ -n "$unhealthy_containers" ]] || unhealthy_containers="none"
-restart_total="$(docker inspect $(docker ps -q) --format '{{.RestartCount}}' 2>/dev/null | awk '{ total += $1 } END { print total + 0 }')"
+mapfile -t container_ids < <(docker ps -q)
+restart_total=0
+if [[ "${#container_ids[@]}" -gt 0 ]]; then
+  restart_total="$(docker inspect "${container_ids[@]}" --format '{{.RestartCount}}' 2>/dev/null | awk '{ total += $1 } END { print total + 0 }')"
+fi
 failed_units="not available"
 if command -v systemctl >/dev/null 2>&1; then
   failed_units="$(systemctl --failed --no-legend 2>/dev/null | awk 'NF { count++ } END { print count + 0 }')"
