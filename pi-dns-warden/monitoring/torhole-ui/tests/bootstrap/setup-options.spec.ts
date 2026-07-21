@@ -346,6 +346,27 @@ test("installed Advanced VLAN shows both DNS planes", async ({ page }) => {
   await expect(page.getByText("DNSCRYPT_SOCKS_USER_IOT", { exact: true })).toBeVisible();
 });
 
+test("installed Advanced keeps sidebar controls visible while the page scrolls", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await mockInstalledAdvanced(page, "single-lan");
+
+  const signOut = page.getByRole("button", { name: /sign out/i });
+  const appearance = page.getByText("Appearance", { exact: true });
+  await expect(signOut).toBeVisible();
+  await expect(appearance).toBeVisible();
+  const before = await signOut.boundingBox();
+  expect(before).not.toBeNull();
+  expect(before!.y + before!.height).toBeLessThanOrEqual(600);
+
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+
+  const after = await signOut.boundingBox();
+  expect(after).not.toBeNull();
+  expect(Math.abs(after!.y - before!.y)).toBeLessThan(1);
+  await expect(appearance).toBeVisible();
+});
+
 test("installed HTTP mode identifies Basic Auth instead of claiming SSO", async ({ page }) => {
   await mockInstalledAdvanced(page, "single-lan", "http");
 

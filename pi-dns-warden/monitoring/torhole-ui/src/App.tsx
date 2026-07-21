@@ -325,7 +325,7 @@ function Sidebar({
 
   return (
     <aside
-      className={`shrink-0 border-r border-th-line bg-th-panel/40 backdrop-blur-sm flex flex-col transition-[width] duration-200 ${
+      className={`sticky top-0 h-screen self-start shrink-0 overflow-hidden border-r border-th-line bg-th-panel/40 backdrop-blur-sm flex flex-col transition-[width] duration-200 ${
         collapsed ? "w-14" : "w-56"
       }`}
     >
@@ -371,7 +371,7 @@ function Sidebar({
         </button>
       </div>
 
-      <nav className={`flex-1 space-y-1 overflow-y-auto ${collapsed ? "px-2" : "px-3"}`}>
+      <nav className={`min-h-0 flex-1 space-y-1 overflow-y-auto ${collapsed ? "px-2" : "px-3"}`}>
         {groups.map(({ to, label, icon: Icon, children }) => {
           const active = location.pathname === to;
           const open = !collapsed && Boolean(children && expanded[to]);
@@ -434,7 +434,7 @@ function Sidebar({
         })}
       </nav>
 
-      <div className={`mt-2 border-t border-th-line/50 pt-3 ${collapsed ? "px-2" : "px-3"}`}>
+      <div className={`mt-2 shrink-0 border-t border-th-line/50 pt-3 ${collapsed ? "px-2" : "px-3"}`}>
         <ThemeControl collapsed={collapsed} theme={theme} onChange={onThemeChange} />
         <button
           type="button"
@@ -452,7 +452,7 @@ function Sidebar({
       </div>
 
       {!collapsed && (
-        <div className="border-t border-th-line/40 px-5 py-4 text-[10px] text-th-text-muted/50 font-mono uppercase tracking-[0.14em]">
+        <div className="shrink-0 border-t border-th-line/40 px-5 py-4 text-[10px] text-th-text-muted/50 font-mono uppercase tracking-[0.14em]">
           Torhole {version} · live
         </div>
       )}
