@@ -13,6 +13,7 @@ light and dark themes, and real captures of the Torhole administration UI.
 - `shots/`: optimized product captures used by the proof section
 - `_headers`: Cloudflare security and cache policy
 - `robots.txt` and `sitemap.xml`: search-engine metadata
+- `.assetsignore`: prevents local prototype and dependency files from being published
 
 ## Preview
 

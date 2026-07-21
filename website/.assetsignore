@@ -1,0 +1,8 @@
+.prototype
+.prototype/**
+.vite
+.vite/**
+.gitignore
+README.md
+**/node_modules
+**/node_modules/**
