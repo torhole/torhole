@@ -6,6 +6,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-07-21
+
+### Changed
+- Advanced keeps Appearance, Sign out, and the build identity visible while
+  page content scrolls; only the sidebar navigation scrolls independently.
+- Raspberry Pi validation reports identify release-archive deployments from
+  their embedded source revision.
+
 ## [0.2.1] - 2026-07-21
 
 ### Added
