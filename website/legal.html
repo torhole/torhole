@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="description" content="Torhole legal, trademark, license, and third-party software notices." />
+  <title>Legal &amp; notices | Torhole</title>
+  <link rel="icon" href="favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png" />
+  <style>
+    :root{color-scheme:dark;--bg:#07100e;--panel:#0c1714;--text:#e8f2ed;--muted:#94a59d;--line:#21332c;--green:#37e07a;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--body:Inter,system-ui,sans-serif}
+    *{box-sizing:border-box}
+    body{margin:0;background:radial-gradient(circle at 80% 5%,rgba(55,224,122,.10),transparent 28%),var(--bg);color:var(--text);font-family:var(--body);line-height:1.7}
+    a{color:var(--green);text-decoration:none}a:hover{text-decoration:underline}
+    header{border-bottom:1px solid var(--line);background:rgba(7,16,14,.86);backdrop-filter:blur(16px);position:sticky;top:0}
+    .bar,main{width:min(900px,calc(100% - 40px));margin:auto}.bar{min-height:68px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+    .brand{font-family:var(--mono);font-weight:700;letter-spacing:.04em;color:var(--text)}
+    .back{font:12px var(--mono);text-transform:uppercase;letter-spacing:.08em}
+    main{padding:72px 0 96px}h1,h2{line-height:1.1;letter-spacing:-.025em}h1{font-size:clamp(38px,7vw,64px);margin:0 0 18px}h2{font-size:24px;margin:42px 0 14px}
+    .lede{font-size:18px;color:var(--muted);max-width:65ch}.card{margin-top:30px;border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:26px}
+    p,li{color:var(--muted)}strong{color:var(--text)}ul{padding-left:22px}.small{font:12px/1.7 var(--mono)}
+    footer{border-top:1px solid var(--line);padding:28px 0;color:var(--muted);font:12px var(--mono)}
+    @media(max-width:600px){main{padding-top:48px}.card{padding:20px}}
+  </style>
+</head>
+<body>
+  <header><div class="bar"><a class="brand" href="index.html">torhole</a><a class="back" href="index.html">Back to site</a></div></header>
+  <main>
+    <p class="small">LEGAL &amp; ATTRIBUTION</p>
+    <h1>Independent by design.</h1>
+    <p class="lede">Torhole is an independent, community-developed open-source project. It combines and interoperates with third-party software, but it is not an official product of those projects.</p>
+
+    <section class="card">
+      <h2>Non-affiliation and trademarks</h2>
+      <p>Torhole is not endorsed, sponsored by, or affiliated with The Tor Project, the Pi-hole project, or the maintainers of its other third-party components.</p>
+      <p><strong>Tor is a trademark of The Tor Project; all rights reserved.</strong> Pi-hole® and its associated marks are owned by Pi-hole, LLC. Other product names, project names, and logos are the property of their respective owners. References identify compatible software and describe how the system works. They do not claim sponsorship, endorsement, or ownership.</p>
+      <p>This notice does not itself authorize use of a third-party mark in a project name, domain, account name, or logo. Written permission must be obtained wherever an owner's policy requires it.</p>
+      <ul>
+        <li><a href="https://www.torproject.org/about/trademark/" target="_blank" rel="noopener">The Tor Project trademark policy</a></li>
+        <li><a href="https://pi-hole.net/trademark-rules-and-brand-guidelines/" target="_blank" rel="noopener">Pi-hole trademark rules and brand guidelines</a></li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>License and third-party software</h2>
+      <p>Torhole is licensed under GPL-3.0-or-later. Third-party components retain their own licenses. The installed container images and packages are authoritative for a particular deployment.</p>
+      <p>Most operational components are open-source software. Dockhand is source-available under Business Source License 1.1 and is not described as OSI-approved open source. Review its current license before commercial or hosted use.</p>
+      <ul>
+        <li><a href="https://github.com/torhole/torhole/blob/main/LICENSE" target="_blank" rel="noopener">Torhole GPL-3.0 license</a></li>
+        <li><a href="https://github.com/torhole/torhole/blob/main/THIRD_PARTY_NOTICES.md" target="_blank" rel="noopener">Third-party software notices</a></li>
+        <li><a href="https://github.com/torhole/torhole/blob/main/TRADEMARKS.md" target="_blank" rel="noopener">Trademark and independence notice</a></li>
+        <li><a href="third-party-licenses.txt">Public website library licenses</a></li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>No warranty</h2>
+      <p>Torhole is provided without warranty under the terms of its license. Privacy and security depend on correct installation, network configuration, current dependencies, and successful verification of the active DNS path.</p>
+    </section>
+  </main>
+  <footer><div class="bar">© 2026 Torhole contributors</div></footer>
+</body>
+</html>

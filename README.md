@@ -578,3 +578,14 @@ generated environment files, certificates, keys, backups, query databases, or
 deployment inventories.
 
 Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+
+## License, third-party software, and independence
+
+Torhole is free software licensed under
+[GPL-3.0-or-later](LICENSE). It configures and interoperates with independent
+projects that retain their own licenses and trademarks. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the component attribution
+index and [TRADEMARKS.md](TRADEMARKS.md) for the non-affiliation notice.
+
+Torhole is not endorsed, sponsored by, or affiliated with The Tor Project, the
+Pi-hole project, or the maintainers of its other third-party components.
