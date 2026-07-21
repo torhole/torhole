@@ -201,6 +201,13 @@ async function mockHome(page: Page) {
       json: {
         protected: true,
         checked_at: now,
+        build: {
+          product: "Torhole",
+          version: "0.2.1-dev",
+          revision: "abc123def456",
+          edition: "home",
+          topology: "single-lan",
+        },
         tor: { ok: true, progress: 100 },
         dns: { ok: true, answers: 2, ips: ["93.184.216.34"] },
         blocking: { ok: true, answers: 1, ips: ["0.0.0.0"] },
@@ -264,6 +271,11 @@ test("installed Home keeps the root URL and shared visual privacy proof", async 
   await expect(page.getByTestId("privacy-flow-canvas")).toBeVisible();
   await expect(page.getByText("Glance", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Configure", { exact: true })).toHaveCount(0);
+
+  await page.getByRole("button", { name: /About v0\.2\.1-dev/i }).click();
+  await expect(page.getByRole("dialog", { name: "Torhole Home" })).toBeVisible();
+  await expect(page.getByText("abc123def456", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Close About" }).click();
 
   await page.getByRole("button", { name: "Light theme", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");

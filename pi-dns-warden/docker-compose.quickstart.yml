@@ -129,6 +129,7 @@ services:
       CONTROL_HELPER_URL: http://control-helper:8090
       CONTROL_HELPER_TOKEN: ${CONTROL_HELPER_TOKEN}
       CONTROL_PIN: ${CONTROL_PIN}
+      TORHOLE_REVISION: ${TORHOLE_REVISION:-unknown}
     networks:
       dns_int:
         ipv4_address: 172.28.0.20

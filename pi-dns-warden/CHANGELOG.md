@@ -9,6 +9,10 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - Redacted, non-destructive Raspberry Pi hardware validation report
 - Read-only soak observer for host, container, and Tor privacy-path health
+- Visible About/version surfaces for Home and Advanced, backed by runtime build
+  identity rather than a hard-coded frontend label
+- `/api/version` build identity with release version, source revision, edition,
+  topology, and Advanced snapshot schema
 
 ### Changed
 - Prometheus and Loki retention is configurable and defaults to 90 days

@@ -11,6 +11,17 @@ BOOTSTRAP_RUN_DIR="$APP_DIR/run/bootstrap"
 DOCKER=(docker)
 HOST_RUNNER_USE_SUDO=0
 
+if [[ -z "${TORHOLE_REVISION:-}" ]]; then
+  if [[ -r "$APP_DIR/.torhole-revision" ]]; then
+    TORHOLE_REVISION="$(tr -d '[:space:]' <"$APP_DIR/.torhole-revision")"
+  elif command -v git >/dev/null 2>&1 && git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    TORHOLE_REVISION="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD)"
+  else
+    TORHOLE_REVISION="unknown"
+  fi
+fi
+export TORHOLE_REVISION
+
 usage() {
   cat <<'EOF'
 Torhole installer

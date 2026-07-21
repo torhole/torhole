@@ -26,6 +26,7 @@ assert dockhand_networks == {"admin_net"}, dockhand_networks
 assert "admin_net" in proxy_networks
 assert "dns_int" not in dockhand_networks
 assert "BACKUP_MANAGER_API_TOKEN" in services["backup-manager"]["environment"]
+assert "TORHOLE_REVISION" in services["backup-manager"]["environment"]
 assert "BACKUP_MANAGER_API_TOKEN" in services["reverse-proxy"]["environment"]
 assert services["grafana"]["environment"]["GF_PLUGINS_PREINSTALL_DISABLED"] == "true"
 assert "--storage.tsdb.retention.time=90d" in services["prometheus"]["command"]
@@ -33,6 +34,8 @@ assert "-config.expand-env=true" in services["loki"]["command"]
 assert services["loki"]["environment"]["TORHOLE_LOKI_RETENTION"] == "2160h"
 assert config["networks"]["admin_net"]["internal"] is True
 PY
+
+grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9._-]+)?$' "$ROOT_DIR/VERSION"
 
 grep -F 'header_up Authorization "Bearer {$BACKUP_MANAGER_API_TOKEN}"' \
   "$ROOT_DIR/monitoring/caddy/Caddyfile" >/dev/null

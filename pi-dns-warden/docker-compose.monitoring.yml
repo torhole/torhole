@@ -106,6 +106,7 @@ services:
       TORHOLE_ROOT_DIR: /workspace
       TORHOLE_HOST_ROOT_DIR: ${BACKUP_MANAGER_ROOT_DIR:-/opt/pi-dns-warden}
       TORHOLE_PROJECT_NAME: ${BACKUP_MANAGER_PROJECT_NAME:-pi-dns-warden}
+      TORHOLE_REVISION: ${TORHOLE_REVISION:-unknown}
       BACKUP_MANAGER_IMAGE: ${BACKUP_MANAGER_IMAGE:-pi-dns-warden-backup-manager}
       BACKUP_MANAGER_API_TOKEN: ${BACKUP_MANAGER_API_TOKEN:-}
     volumes:

@@ -25,6 +25,20 @@ case "$TORHOLE_TOPOLOGY" in
 esac
 export TORHOLE_TOPOLOGY
 
+# Build identity is passed into runtime services without making operators
+# duplicate release metadata in .env. A deployed archive may include a
+# .torhole-revision marker; Git checkouts derive it directly from HEAD.
+if [[ -z "${TORHOLE_REVISION:-}" ]]; then
+  if [[ -r "${ROOT_DIR}/.torhole-revision" ]]; then
+    TORHOLE_REVISION="$(tr -d '[:space:]' <"${ROOT_DIR}/.torhole-revision")"
+  elif command -v git >/dev/null 2>&1 && git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    TORHOLE_REVISION="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD)"
+  else
+    TORHOLE_REVISION="unknown"
+  fi
+fi
+export TORHOLE_REVISION
+
 if command -v docker >/dev/null 2>&1; then
   if docker compose version >/dev/null 2>&1; then
     COMPOSE=(docker compose)
