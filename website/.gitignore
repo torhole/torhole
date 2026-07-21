@@ -1,0 +1,11 @@
+# Local prototypes, build products, and browser artifacts.
+/.prototype/
+/.vite/
+/node_modules/
+/dist/
+/output/
+/.playwright-cli/
+/.playwright-mcp/
+
+# OS metadata
+.DS_Store
