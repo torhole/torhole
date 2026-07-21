@@ -703,6 +703,28 @@ class InsightsNormalizationTests(unittest.TestCase):
         )
 
 
+class BuildInfoTests(unittest.TestCase):
+    def test_reports_advanced_build_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "VERSION").write_text("0.2.1-dev\n", encoding="utf-8")
+            info = server.build_info(root, {"TORHOLE_REVISION": "abc123def456"})
+            self.assertEqual(info["product"], "Torhole")
+            self.assertEqual(info["version"], "0.2.1-dev")
+            self.assertEqual(info["revision"], "abc123def456")
+            self.assertEqual(info["edition"], "advanced")
+            self.assertEqual(info["topology"], server.TORHOLE_TOPOLOGY)
+            self.assertEqual(info["snapshot_schema"], server.SNAPSHOT_SCHEMA_VERSION)
+
+    def test_rejects_untrusted_build_tokens(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "VERSION").write_text("<script>\n", encoding="utf-8")
+            info = server.build_info(root, {"TORHOLE_REVISION": "bad revision"})
+            self.assertEqual(info["version"], "unknown")
+            self.assertEqual(info["revision"], "unknown")
+
+
 class BackupScheduleConfigTests(unittest.TestCase):
     def _with_env(self, values):
         with mock.patch.object(server, "read_env_values_safe", return_value=values):

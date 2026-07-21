@@ -154,19 +154,25 @@ ensure_helper_image() {
 
 copy_project_tree() {
   local destination="$1"
+  local -a project_paths=(
+    VERSION
+    .env
+    docker-compose.yml
+    docker-compose.monitoring.yml
+    deploy.sh
+    dnscrypt
+    monitoring
+    ops
+    pihole
+    tor
+    tor-image
+  )
 
   mkdir -p "$destination"
-  tar -C "$ROOT_DIR" -cf - \
-    .env \
-    docker-compose.yml \
-    docker-compose.monitoring.yml \
-    deploy.sh \
-    dnscrypt \
-    monitoring \
-    ops \
-    pihole \
-    tor \
-    tor-image | tar -C "$destination" -xf -
+  if [[ -f "$ROOT_DIR/.torhole-revision" ]]; then
+    project_paths+=(.torhole-revision)
+  fi
+  tar -C "$ROOT_DIR" -cf - "${project_paths[@]}" | tar -C "$destination" -xf -
 }
 
 backup_volumes() {

@@ -92,6 +92,7 @@ BACKUP_MANAGER_API_TOKEN = os.environ.get("BACKUP_MANAGER_API_TOKEN", "")
 TORHOLE_TOPOLOGY = os.environ.get("TORHOLE_TOPOLOGY", "vlan")
 if TORHOLE_TOPOLOGY not in {"single-lan", "vlan"}:
     TORHOLE_TOPOLOGY = "vlan"
+BUILD_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$")
 ARCHIVE_PATTERN = re.compile(r"torhole-backup-[0-9]{8}-[0-9]{6}\.tar\.gz")
 CHANNEL_FIELDS = {
     "telegram": {
@@ -110,6 +111,29 @@ CHANNEL_FIELDS = {
         "required_keys": ("ALERT_DISCORD_WEBHOOK_URL",),
     },
 }
+
+
+def build_info(root_dir=None, environ=None):
+    """Return non-sensitive product identity for operators and support."""
+    root_dir = ROOT_DIR if root_dir is None else Path(root_dir)
+    environ = os.environ if environ is None else environ
+    try:
+        version = (root_dir / "VERSION").read_text(encoding="utf-8").strip()
+    except OSError:
+        version = "unknown"
+    if not BUILD_TOKEN_PATTERN.fullmatch(version):
+        version = "unknown"
+    revision = environ.get("TORHOLE_REVISION", "unknown").strip()
+    if not BUILD_TOKEN_PATTERN.fullmatch(revision):
+        revision = "unknown"
+    return {
+        "product": "Torhole",
+        "version": version,
+        "revision": revision,
+        "edition": "advanced",
+        "topology": TORHOLE_TOPOLOGY,
+        "snapshot_schema": SNAPSHOT_SCHEMA_VERSION,
+    }
 _SERVICE_CATALOG = (
     {"id": "reverse-proxy", "label": "Reverse Proxy", "container": "reverse-proxy", "link_key": "torhole"},
     {"id": "authelia", "label": "Auth Portal", "container": "authelia", "link_key": "auth"},
@@ -2820,6 +2844,7 @@ def _compute_snapshot():
     return {
         "schema_version": SNAPSHOT_SCHEMA_VERSION,
         "generated_at": utc_now(),
+        "build": build_info(),
         # Optional operator banner (env-driven, live-reloaded) — see _compose_banner.
         "banner": _compose_banner(values),
         "torhole": {
@@ -3013,6 +3038,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == "/api/system/status":
             return json_response(self, system_status_payload())
+
+        if self.path == "/api/version":
+            return json_response(self, build_info())
 
         if self.path == "/api/system/snapshot":
             return json_response(self, build_snapshot())

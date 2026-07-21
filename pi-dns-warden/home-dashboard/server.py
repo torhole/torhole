@@ -2,6 +2,7 @@
 import json
 import mimetypes
 import os
+import re
 import secrets
 import socket
 import ssl
@@ -21,6 +22,28 @@ UI_ROOT = Path(__file__).with_name("ui").resolve()
 CONTROL_HELPER_URL = os.getenv("CONTROL_HELPER_URL", "http://control-helper:8090")
 CONTROL_HELPER_TOKEN = os.getenv("CONTROL_HELPER_TOKEN", "")
 CONTROL_PIN = os.getenv("CONTROL_PIN", "")
+BUILD_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$")
+
+
+def build_info(version_file=None, environ=None):
+    version_file = Path(__file__).with_name("VERSION") if version_file is None else Path(version_file)
+    environ = os.environ if environ is None else environ
+    try:
+        version = version_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        version = "unknown"
+    if not BUILD_TOKEN_PATTERN.fullmatch(version):
+        version = "unknown"
+    revision = environ.get("TORHOLE_REVISION", "unknown").strip()
+    if not BUILD_TOKEN_PATTERN.fullmatch(revision):
+        revision = "unknown"
+    return {
+        "product": "Torhole",
+        "version": version,
+        "revision": revision,
+        "edition": "home",
+        "topology": "single-lan",
+    }
 
 
 def load_index():
@@ -151,6 +174,7 @@ def proof():
     return {
         "protected": protected,
         "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "build": build_info(),
         "tor": bootstrap,
         "dns": dns,
         "blocking": blocked,
@@ -185,6 +209,11 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_bytes(candidate.read_bytes(), content_type, cache="public, max-age=31536000, immutable")
 
     def do_GET(self):
+        if self.path == "/api/version":
+            return self.send_bytes(
+                json.dumps(build_info()).encode(),
+                "application/json",
+            )
         if self.path == "/api/proof":
             payload = json.dumps(proof()).encode()
             self.send_response(200)

@@ -184,9 +184,19 @@ export interface EnvBanner {
   level: "critical" | "warning" | "info" | string;
 }
 
+export interface BuildInfo {
+  product: string;
+  version: string;
+  revision: string;
+  edition: "home" | "advanced" | string;
+  topology: "single-lan" | "vlan" | string;
+  snapshot_schema?: number;
+}
+
 export interface Snapshot {
   schema_version: number;
   generated_at: string;
+  build?: BuildInfo;
   /** Operator-configured environment banner (TORHOLE_BANNER_TEXT/LEVEL in
    *  .env, read live). Optional: older backends don't return it. */
   banner?: EnvBanner | null;
@@ -249,6 +259,33 @@ export type SnapshotState =
   | { kind: "loading" }
   | { kind: "ready"; data: Snapshot; fetchedAt: number }
   | { kind: "error"; error: string; fetchedAt: number };
+
+export type BuildInfoState =
+  | { kind: "loading" }
+  | { kind: "ready"; data: BuildInfo }
+  | { kind: "error"; error: string };
+
+export function useBuildInfo(): BuildInfoState {
+  const [state, setState] = useState<BuildInfoState>({ kind: "loading" });
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/version", {
+      credentials: "include",
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+        return (await response.json()) as BuildInfo;
+      })
+      .then((data) => setState({ kind: "ready", data }))
+      .catch((error: Error) => {
+        if (error.name !== "AbortError") setState({ kind: "error", error: error.message });
+      });
+    return () => controller.abort();
+  }, []);
+  return state;
+}
 
 async function fetchSnapshot(signal: AbortSignal): Promise<Snapshot> {
   const res = await fetch("/api/system/snapshot", {

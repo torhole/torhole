@@ -11,6 +11,7 @@ FROM python:3.13-alpine
 RUN addgroup -S torhole && adduser -S -G torhole torhole
 WORKDIR /app
 COPY home-dashboard/server.py ./
+COPY VERSION ./VERSION
 COPY --from=ui /ui ./ui
 USER torhole
 EXPOSE 8080

@@ -36,6 +36,7 @@ run/
 
 # Runtime backup archives (large tarballs)
 backups/
+.torhole-revision
 
 # Local hardware-validation and soak evidence. Review and redact before
 # publishing individual reports intentionally.

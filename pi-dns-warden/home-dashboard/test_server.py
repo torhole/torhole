@@ -37,5 +37,30 @@ class ResolveUiPathTests(unittest.TestCase):
             self.assertIsNone(server.resolve_ui_path("/%2e%2e/secret", root))
 
 
+class BuildInfoTests(unittest.TestCase):
+    def test_reports_home_build_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            version_file = Path(tmp) / "VERSION"
+            version_file.write_text("0.2.1-dev\n", encoding="utf-8")
+            self.assertEqual(
+                server.build_info(version_file, {"TORHOLE_REVISION": "abc123def456"}),
+                {
+                    "product": "Torhole",
+                    "version": "0.2.1-dev",
+                    "revision": "abc123def456",
+                    "edition": "home",
+                    "topology": "single-lan",
+                },
+            )
+
+    def test_rejects_untrusted_build_tokens(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            version_file = Path(tmp) / "VERSION"
+            version_file.write_text("<script>\n", encoding="utf-8")
+            info = server.build_info(version_file, {"TORHOLE_REVISION": "bad revision"})
+            self.assertEqual(info["version"], "unknown")
+            self.assertEqual(info["revision"], "unknown")
+
+
 if __name__ == "__main__":
     unittest.main()

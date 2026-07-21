@@ -64,6 +64,28 @@ test.describe("Glance screen", () => {
     await expect(page.getByRole("button", { name: /sign out/i })).toBeVisible();
   });
 
+  test("shows the installed version and About details", async ({ page }) => {
+    await page.route("**/api/version", (route) =>
+      route.fulfill({
+        json: {
+          product: "Torhole",
+          version: "0.2.1-dev",
+          revision: "abc123def456",
+          edition: "advanced",
+          topology: "vlan",
+          snapshot_schema: 1,
+        },
+      }),
+    );
+    await page.goto("/");
+    await expect(page.getByText("Torhole v0.2.1-dev · live", { exact: true })).toBeVisible();
+    await page.getByRole("link", { name: "About" }).click();
+    await expect(page.getByRole("heading", { name: "Which Torhole is this?" })).toBeVisible();
+    await expect(page.getByText("abc123def456", { exact: true })).toBeVisible();
+    await expect(page.getByText("advanced", { exact: true })).toBeVisible();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  });
+
   test("plane cards degrade when tor egress is down", async ({ page }) => {
     const snapshotResponse = await page.request.get("/api/system/snapshot");
     expect(snapshotResponse.ok()).toBeTruthy();

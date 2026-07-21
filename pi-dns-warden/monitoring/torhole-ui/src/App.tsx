@@ -30,6 +30,7 @@ import {
   Clock,
   Database,
   HardDrive,
+  Info,
   Lock,
   LogOut,
   Moon,
@@ -47,6 +48,7 @@ import OperateScreen from "./screens/Operate";
 import ConfigureScreen from "./screens/Configure";
 import SetupScreen from "./screens/Setup";
 import HomeScreen from "./screens/Home";
+import AboutScreen from "./screens/About";
 import DeferredPrivacyFlow from "./components/DeferredPrivacyFlow";
 import {
   createBackup,
@@ -56,6 +58,7 @@ import {
   rotateTorIdentity,
   runLeakTest,
   runValidation,
+  useBuildInfo,
   useSnapshot,
   type ContainerInfo,
   type PlaneStat,
@@ -177,6 +180,7 @@ function AdvancedApp({
             <Route path="/privacy" element={<PrivacyScreen />} />
             <Route path="/operate" element={<OperateScreen />} />
             <Route path="/configure" element={<ConfigureScreen />} />
+            <Route path="/about" element={<AboutScreen />} />
             {/* Setup is a first-run surface. Installed systems are maintained
                 from Configure; a stale bookmark must not reopen commissioning. */}
             <Route path="/setup" element={<Navigate to="/configure" replace />} />
@@ -269,6 +273,8 @@ function Sidebar({
   onThemeChange: (theme: ThemePreference) => void;
 }) {
   const location = useLocation();
+  const buildState = useBuildInfo();
+  const version = buildState.kind === "ready" ? `v${buildState.data.version}` : "version unknown";
   const groups: SidebarGroup[] = [
     { to: "/", label: "Glance", icon: Activity },
     {
@@ -304,6 +310,7 @@ function Sidebar({
         { label: "App parameters", section: "advanced" },
       ],
     },
+    { to: "/about", label: "About", icon: Info },
   ];
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => ({
     [location.pathname]: true,
@@ -446,7 +453,7 @@ function Sidebar({
 
       {!collapsed && (
         <div className="border-t border-th-line/40 px-5 py-4 text-[10px] text-th-text-muted/50 font-mono uppercase tracking-[0.14em]">
-          privacy infrastructure · live
+          Torhole {version} · live
         </div>
       )}
     </aside>

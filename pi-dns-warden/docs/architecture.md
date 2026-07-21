@@ -92,9 +92,10 @@ The admin UI is a Vite + React 19 + Tailwind 4 single-page app built from `monit
 | **Privacy** (`/#/privacy`) | "What does Torhole prove?" Live Tor runtime strip, per-plane circuit panel with rotate buttons, DNS leak test, live query feed (SSE), internal circuits tab. |
 | **Operate** (`/#/operate`) | "What do I need to change?" Containers, backups, stack validation, and an Insights tab linking out to every Grafana dashboard + raw Prometheus / Alertmanager / Pi-hole admin / Dockhand. |
 | **Configure** (`/#/configure`) | "What can I tune?" Identity + admin password change, topology, alert channels, full `.env` reference. |
+| **About** (`/#/about`) | "Which Torhole is this?" Version, source revision, edition, topology, API schema, and safe support identity. |
 | **Setup** (temporary bootstrap URL) | "How do I get from clone to a live stack?" Guided Home/Advanced installer that writes the selected configuration atomically and streams progress. |
 
-All five screens read from a single `/api/system/snapshot` endpoint served by `backup-manager`. Writes go through dedicated endpoints (`/api/tor/rotate*`, `/api/leak-test/run`, `/api/recovery/*`, `/api/identity/password`, `/api/setup/apply`, etc.).
+Operational screens read from a single `/api/system/snapshot` endpoint served by `backup-manager`; About reads the smaller `/api/version` identity endpoint. Writes go through dedicated endpoints (`/api/tor/rotate*`, `/api/leak-test/run`, `/api/recovery/*`, `/api/identity/password`, `/api/setup/apply`, etc.).
 
 ### backup-manager
 

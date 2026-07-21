@@ -4,13 +4,17 @@ import {
   Check,
   CircleAlert,
   ExternalLink,
+  Github,
+  Info,
   KeyRound,
   Power,
   RefreshCw,
   RotateCw,
   ShieldCheck,
+  X,
 } from "lucide-react";
 import DeferredPrivacyFlow from "../components/DeferredPrivacyFlow";
+import type { BuildInfo } from "../lib/snapshot";
 
 type CheckResult = {
   ok: boolean;
@@ -30,6 +34,7 @@ type Relay = {
 type Proof = {
   protected: boolean;
   checked_at: string;
+  build: BuildInfo;
   tor: CheckResult & { progress?: number };
   dns: CheckResult;
   blocking: CheckResult;
@@ -60,6 +65,7 @@ export default function HomeScreen() {
   const [pin, setPin] = useState("");
   const [action, setAction] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
+  const [aboutOpen, setAboutOpen] = useState(false);
 
   const verify = useCallback(async () => {
     if (verifyingRef.current) return;
@@ -136,9 +142,16 @@ export default function HomeScreen() {
           <span className="px-2 py-1 rounded border border-th-primary/25 bg-th-primary/[0.06] text-[9.5px] uppercase tracking-[0.16em] text-th-primary font-mono">
             Home
           </span>
+          <button
+            type="button"
+            onClick={() => setAboutOpen(true)}
+            className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-th-text-muted hover:text-th-text min-h-[44px]"
+          >
+            <Info size={12} /> About{proof?.build?.version ? ` v${proof.build.version}` : ""}
+          </button>
           <a
             href={piholeUrl}
-            className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-th-text-muted hover:text-th-text min-h-[44px]"
+            className="inline-flex items-center gap-1.5 text-[11px] text-th-text-muted hover:text-th-text min-h-[44px]"
           >
             Pi-hole settings <ExternalLink size={12} />
           </a>
@@ -248,9 +261,55 @@ export default function HomeScreen() {
         </section>
 
         <footer className="text-center text-[10.5px] text-th-text-muted/60 mt-7">
-          Torhole reports protected only when every independent proof passes.
+          Torhole{proof?.build?.version ? ` v${proof.build.version}` : ""} reports protected only when every independent proof passes.
         </footer>
       </main>
+      {aboutOpen && <HomeAboutDialog build={proof?.build ?? null} onClose={() => setAboutOpen(false)} />}
+    </div>
+  );
+}
+
+function HomeAboutDialog({ build, onClose }: { build: BuildInfo | null; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/65 backdrop-blur-sm flex items-center justify-center p-5" role="presentation" onMouseDown={onClose}>
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="home-about-title"
+        onMouseDown={(event) => event.stopPropagation()}
+        className="w-full max-w-lg rounded-xl border border-th-primary/30 bg-th-panel shadow-[0_25px_100px_rgba(0,0,0,0.45)] overflow-hidden"
+      >
+        <div className="p-5 border-b border-th-line flex items-center gap-3 bg-th-primary/[0.06]">
+          <ShieldCheck size={20} className="text-th-primary" />
+          <div>
+            <h2 id="home-about-title" className="font-bold">Torhole Home</h2>
+            <div className="font-mono text-xs text-th-primary mt-0.5">{build ? `v${build.version}` : "version loading"}</div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close About" className="ml-auto w-9 h-9 rounded-md flex items-center justify-center text-th-text-muted hover:text-th-text hover:bg-th-line/50">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="p-5 grid grid-cols-2 gap-3 text-xs">
+          <HomeBuildField label="Version" value={build ? `v${build.version}` : "unavailable"} />
+          <HomeBuildField label="Revision" value={build?.revision || "unknown"} />
+          <HomeBuildField label="Edition" value={build?.edition || "home"} />
+          <HomeBuildField label="Topology" value={build?.topology || "single-lan"} />
+        </div>
+        <div className="px-5 pb-5">
+          <a href="https://github.com/torhole/torhole" target="_blank" rel="noreferrer" className="min-h-[42px] rounded-md border border-th-line flex items-center gap-2 px-3 text-xs text-th-text-muted hover:text-th-text hover:border-th-primary/40">
+            <Github size={14} /> Source, releases, and support <ExternalLink size={11} className="ml-auto" />
+          </a>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function HomeBuildField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-th-line bg-th-bg/40 p-3">
+      <div className="font-mono text-[9px] uppercase tracking-[0.15em] text-th-text-muted">{label}</div>
+      <div className="font-mono mt-1.5 break-all">{value}</div>
     </div>
   );
 }
