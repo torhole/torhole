@@ -128,6 +128,11 @@ fi
 git_revision="not a Git checkout"
 if git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   git_revision="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+elif [[ -r "$ROOT_DIR/.torhole-revision" ]]; then
+  release_revision="$(tr -d '[:space:]' <"$ROOT_DIR/.torhole-revision")"
+  if [[ "$release_revision" =~ ^[0-9a-fA-F]{7,64}$ ]]; then
+    git_revision="$release_revision (release archive)"
+  fi
 fi
 
 cat >"$tmp_report" <<EOF
