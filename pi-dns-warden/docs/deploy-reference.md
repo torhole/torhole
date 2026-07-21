@@ -235,7 +235,25 @@ This checks:
 - Alloy config
 - Grafana dashboard JSON
 
+### Monitoring history retention
+
+Advanced keeps Prometheus metrics and Loki logs for 90 days by default. The
+history remains in the named `prometheus_data` and `loki_data` Docker volumes
+when containers are recreated or the stack is updated. Configure the windows
+in `.env` before deployment:
+
+```dotenv
+TORHOLE_PROMETHEUS_RETENTION=90d
+TORHOLE_LOKI_RETENTION=2160h
+```
+
+Longer retention requires more disk. Backups include both monitoring volumes,
+but backup retention is configured separately with
+`TORHOLE_BACKUP_RETENTION`. Never use `docker compose down --volumes` when the
+history must be preserved.
+
 ### Backup and restore
+
 Create a point-in-time backup before risky changes:
 
 ```bash

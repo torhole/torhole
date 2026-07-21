@@ -236,6 +236,7 @@ Issues and PRs welcome. Before submitting a PR:
 | [`docs/resolvers.md`](docs/resolvers.md) | dnscrypt-proxy resolver selection |
 | [`docs/admin-redesign.md`](docs/admin-redesign.md) | Design rationale and migration history for the admin UI |
 | [`docs/deploy-reference.md`](docs/deploy-reference.md) | Full operator manual (VLAN setup, hardening, systemd units) |
+| [`docs/raspberry-pi-validation.md`](docs/raspberry-pi-validation.md) | Non-destructive Pi 5 validation and soak-testing workflow |
 | [`docs/demo-gif-recording.md`](docs/demo-gif-recording.md) | How to record the README walkthrough GIF |
 | [`docs/self-hosted-runner.md`](docs/self-hosted-runner.md) | Wire a self-hosted GitHub runner for Playwright E2E (optional) |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Dev setup, UI build + tests, CI overview, commit style |
