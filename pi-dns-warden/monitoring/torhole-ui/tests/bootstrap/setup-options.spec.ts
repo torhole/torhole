@@ -64,6 +64,7 @@ async function mockInstalledAdvanced(
   page: Page,
   topology: "single-lan" | "vlan",
   webMode: "http" | "https-local" | "https-custom" = "https-local",
+  savedTopology: "single-lan" | "vlan" | null = topology,
 ) {
   const fullInstalledConfig = {
     ...config,
@@ -102,6 +103,9 @@ async function mockInstalledAdvanced(
         ]
       : [{ id: "trusted", label: "Flat LAN", status: "healthy" }];
 
+  if (savedTopology === null) delete installedConfig.TORHOLE_TOPOLOGY;
+  else installedConfig.TORHOLE_TOPOLOGY = savedTopology;
+
   await page.route("**/api/config", (route) =>
     route.fulfill({ json: { config: installedConfig } }),
   );
@@ -111,6 +115,7 @@ async function mockInstalledAdvanced(
         schema_version: 1,
         generated_at: new Date().toISOString(),
         banner: null,
+        build: { product: "Torhole", version: "0.2.2", revision: "test", edition: "advanced", topology },
         dns: { planes },
       },
     }),
@@ -121,6 +126,40 @@ async function mockInstalledAdvanced(
   await page.goto("/?mode=advanced#/configure");
   await expect(page.getByRole("heading", { name: "What can you tune?" })).toBeVisible();
 }
+
+test("legacy VLAN topology uses the running profile when .env omits it", async ({ page }) => {
+  await mockInstalledAdvanced(page, "vlan", "https-local", null);
+  await page.getByRole("tab", { name: /Topology/i }).click();
+  const panel = page.getByRole("tabpanel", { name: /Topology/i });
+  await expect(panel.getByText("Segmented VLANs", { exact: true })).toBeVisible();
+  await expect(panel.getByText("Trusted", { exact: true })).toBeVisible();
+  await expect(panel.getByText("IoT", { exact: true })).toBeVisible();
+  await expect(panel.getByText("eth0", { exact: true }).first()).toBeVisible();
+  await expect(panel.getByText("eth0.50", { exact: true })).toBeVisible();
+  await expect(panel.getByText("1", { exact: true })).toBeVisible();
+  await expect(panel.getByText("50", { exact: true })).toBeVisible();
+});
+
+test("saved topology does not masquerade as the running topology", async ({ page }) => {
+  await mockInstalledAdvanced(page, "vlan", "https-local", "single-lan");
+  await page.getByRole("tab", { name: /Topology/i }).click();
+  const panel = page.getByRole("tabpanel", { name: /Topology/i });
+  await expect(panel.getByText("Segmented VLANs", { exact: true })).toBeVisible();
+  await expect(panel.getByText("IoT", { exact: true })).toBeVisible();
+  await expect(panel.getByText(/Saved topology differs from the running profile/)).toBeVisible();
+});
+
+test("missing runtime topology is unknown rather than assumed Single LAN", async ({ page }) => {
+  await mockInstalledAdvanced(page, "vlan", "https-local", null);
+  await page.route("**/api/system/snapshot", (route) => route.fulfill({
+    json: { schema_version: 1, generated_at: new Date().toISOString(), banner: null, dns: { planes: [] } },
+  }));
+  await page.reload();
+  await page.getByRole("tab", { name: /Topology/i }).click();
+  const panel = page.getByRole("tabpanel", { name: /Topology/i });
+  await expect(panel.getByText("Unknown", { exact: true })).toBeVisible();
+  await expect(panel.getByText("Flat LAN", { exact: true })).toHaveCount(0);
+});
 
 async function mockAdvancedGlance(page: Page) {
   const now = new Date().toISOString();

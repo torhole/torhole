@@ -91,7 +91,7 @@ export default function ConfigureScreen() {
       title: "Topology",
       meta: "read-only · edit in .env",
       icon: <NetworkIcon size={11} />,
-      content: <TopologySection config={config} />,
+      content: <TopologySection config={config} state={state} />,
     },
     {
       id: "alerts",
@@ -827,11 +827,19 @@ function AdminPasswordForm() {
  * Topology — read-only summary
  * ----------------------------------------------------------------------- */
 
-function TopologySection({ config }: { config: Record<string, string> | null }) {
+function TopologySection({ config, state }: {
+  config: Record<string, string> | null;
+  state: SnapshotState;
+}) {
   const parent = config?.PARENT_IF;
   const tz = config?.TZ;
   const hostIp = config?.HOST_MGMT_IP;
-  const topology = config?.TORHOLE_TOPOLOGY === "vlan" ? "vlan" : "single-lan";
+  // .env is desired configuration, not necessarily the running profile.
+  const activeTopology = state.kind === "ready" ? state.data.build?.topology : undefined;
+  const topology = activeTopology === "vlan" || activeTopology === "single-lan"
+    ? activeTopology : null;
+  const savedTopology = config?.TORHOLE_TOPOLOGY;
+  const pendingTopology = topology && savedTopology && savedTopology !== topology;
 
   const allPlanes: Array<{
     id: "trusted" | "iot";
@@ -861,21 +869,28 @@ function TopologySection({ config }: { config: Record<string, string> | null }) 
       piholeIpKey: "PIHOLE_IOT_IP",
     },
   ];
-  const planes = topology === "vlan" ? allPlanes : allPlanes.slice(0, 1);
+  const planes = topology === "vlan" ? allPlanes : topology === "single-lan" ? allPlanes.slice(0, 1) : [];
 
   return (
     <TabPanel>
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
-        <KVRow label="Installed topology" value={topology === "vlan" ? "Segmented VLANs" : "Single LAN"} mono />
+        <KVRow label="Installed topology" value={topology === "vlan" ? "Segmented VLANs" : topology === "single-lan" ? "Single LAN" : state.kind === "loading" ? "Loading…" : "Unknown"} mono />
         <KVRow label="Parent interface" value={parent} mono />
         <KVRow label="Host management IP" value={hostIp} mono />
         <KVRow label="Timezone" value={tz} mono />
       </div>
 
+      {pendingTopology && <p role="status" className="text-xs text-th-warning mb-3">
+        Saved topology differs from the running profile. A deployment is required to apply it.
+      </p>}
+      {!topology && <p className="text-xs text-th-text-muted mb-3">
+        Waiting for the backend to report its active topology; no network profile is assumed.
+      </p>}
       <div className="text-[9.5px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono mb-2 mt-1">
-        {topology === "vlan" ? "DNS planes · VLANs" : "DNS plane · flat LAN"}
+        {topology === "vlan" ? "DNS planes · VLANs" : topology === "single-lan" ? "DNS plane · flat LAN" : "DNS planes"}
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      {topology && <p className="text-xs text-th-text-muted mb-3">Network addresses below are saved configuration values, not live network discovery.</p>}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {planes.map((plane) => (
           <div
             key={plane.id}
