@@ -171,15 +171,17 @@ function IdentitySection({
   const authHost = config?.TORHOLE_HOST_AUTH || "auth";
   const hostIp = config?.HOST_MGMT_IP || "";
   const installRoot = config?.BACKUP_MANAGER_ROOT_DIR || "<torhole>/pi-dns-warden";
-  const webMode = config?.TORHOLE_WEB_MODE;
-  const httpsEnabled = Boolean(webMode && webMode !== "http");
+  // Match 18-render-auth.sh for legacy installs without an explicit mode.
+  // Missing configuration is not evidence that authentication is disabled.
+  const webMode = config ? config.TORHOLE_WEB_MODE || "https-local" : null;
+  const httpsEnabled = webMode === "https-local" || webMode === "https-custom";
   return (
     <TabPanel>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <KVRow label="Admin user" value={user} mono />
         <KVRow
           label="Named-host access"
-          value={httpsEnabled ? `Authelia SSO · ${authHost}.${reverseDomain}` : "HTTP Basic Auth"}
+          value={httpsEnabled ? `Authelia SSO · ${authHost}.${reverseDomain}` : webMode === "http" ? "HTTP Basic Auth" : "Unknown — configuration unavailable"}
           mono
         />
       </div>
@@ -187,7 +189,7 @@ function IdentitySection({
         Direct-IP recovery always uses a browser password prompt. Authelia SSO is available on
         the named host when HTTPS is enabled.
       </div>
-      {!httpsEnabled && (
+      {webMode === "http" && (
         <WebAccessUpgrade
           hostIp={hostIp}
           installRoot={installRoot}
@@ -233,7 +235,7 @@ function WebAccessStatus({
           </div>
           <div className="mt-1 text-[11px] leading-relaxed text-th-text-muted">
             {generatedCertificate
-              ? "This installation uses Torhole's generated local certificate authority. Install its certificate once on each device that administers Torhole."
+              ? "Torhole's proxy uses its generated local certificate authority. Install its CA only for direct access to that proxy; a trusted certificate on an external reverse proxy does not require it."
               : "This installation uses the custom certificate supplied during setup."}
           </div>
           <div className="mt-3 flex flex-wrap gap-2">

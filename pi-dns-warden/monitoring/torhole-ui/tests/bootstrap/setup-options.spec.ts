@@ -63,7 +63,7 @@ async function mockBootstrap(
 async function mockInstalledAdvanced(
   page: Page,
   topology: "single-lan" | "vlan",
-  webMode: "http" | "https-local" | "https-custom" = "https-local",
+  webMode: "http" | "https-local" | "https-custom" | null = "https-local",
   savedTopology: "single-lan" | "vlan" | null = topology,
 ) {
   const fullInstalledConfig = {
@@ -105,6 +105,7 @@ async function mockInstalledAdvanced(
 
   if (savedTopology === null) delete installedConfig.TORHOLE_TOPOLOGY;
   else installedConfig.TORHOLE_TOPOLOGY = savedTopology;
+  if (webMode === null) delete installedConfig.TORHOLE_WEB_MODE;
 
   await page.route("**/api/config", (route) =>
     route.fulfill({ json: { config: installedConfig } }),
@@ -439,6 +440,12 @@ test("installed Advanced keeps sidebar controls visible while the page scrolls",
   const appearance = page.getByText("Appearance", { exact: true });
   await expect(signOut).toBeVisible();
   await expect(appearance).toBeVisible();
+  // Measure scrolling, not the layout shift when bundled web fonts arrive.
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  // The page-entry transform also changes the document's scroll extent.
+  await page.evaluate(() => Promise.allSettled(document.getAnimations()
+    .filter(animation => animation instanceof CSSAnimation && animation.animationName === "th-page-enter")
+    .map(animation => animation.finished)));
   const before = await signOut.boundingBox();
   expect(before).not.toBeNull();
   expect(before!.y + before!.height).toBeLessThanOrEqual(600);
@@ -463,6 +470,22 @@ test("installed HTTP mode identifies Basic Auth instead of claiming SSO", async 
   await expect(page.getByText("HTTP Basic Auth", { exact: true })).toBeVisible();
   await expect(page.getByText(/Authelia SSO is available.*HTTPS/i)).toBeVisible();
   await expect(page.getByRole("button", { name: /enable HTTPS \+ Authelia SSO/i })).toBeVisible();
+});
+
+test("legacy HTTPS installation does not report Authelia off when web mode is absent", async ({ page }) => {
+  await mockInstalledAdvanced(page, "vlan", null);
+  await expect(page.getByText("HTTPS + Authelia SSO is active", { exact: true })).toBeVisible();
+  await expect(page.getByText("Authelia SSO is currently off", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /enable HTTPS \+ Authelia SSO/i })).toHaveCount(0);
+});
+
+test("unavailable configuration does not claim HTTP or offer an SSO upgrade", async ({ page }) => {
+  await mockInstalledAdvanced(page, "vlan");
+  await page.route("**/api/config", route => route.fulfill({ status: 503, json: { error: "unavailable" } }));
+  await page.reload();
+  await expect(page.getByText("HTTP 503", { exact: false })).toBeVisible();
+  await expect(page.getByText("HTTP Basic Auth", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /enable HTTPS \+ Authelia SSO/i })).toHaveCount(0);
 });
 
 test("installed custom HTTPS does not offer the generated Torhole CA", async ({ page }) => {
