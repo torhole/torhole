@@ -6,6 +6,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-09-05
+
+### Fixed
+- Advanced topology reads the running backend profile rather than assuming
+  Single LAN when legacy configuration omits the topology key. Trusted and IoT
+  remain visible for VLAN installations, with explicit unknown and pending states.
+- Identity & access follows the deployment script's HTTPS default for legacy
+  installations, preventing a false "Authelia SSO is currently off" warning.
+  Unavailable configuration no longer offers an inappropriate SSO upgrade.
+
+### Changed
+- DNS plane cards use a two-column layout.
+- Local CA guidance distinguishes direct access from an external reverse proxy
+  serving a trusted certificate.
+
 ## [0.2.2] - 2026-07-21
 
 ### Changed
