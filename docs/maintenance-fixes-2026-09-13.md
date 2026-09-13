@@ -112,7 +112,8 @@ future unattended builds and updates.
   before shutdown. A later disk, runtime, or validation failure still needs
   operator recovery from the safety archive; automatic rollback was not added.
 - Older backups cannot supply an omitted Authelia database. Make a fresh backup
-  after upgrading. Idle SSE cleanup remains a separate follow-up.
+  after upgrading. Idle SSE cleanup was subsequently addressed in the
+  [release-readiness corrections](release-readiness-fixes-2026-09-14.md).
 
 See [testing](../README-TESTING.md), [Ansible](../README-ANSIBLE.md), and
 [release integrity](../pi-dns-warden/docs/release-integrity.md) for maintained
