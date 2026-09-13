@@ -42,7 +42,7 @@ test.describe("Privacy actions", () => {
     // heading and the exit_ip mono row. "exit ip" now appears twice on the
     // page (the hero tile added in Phase D, and the leak test result block),
     // so we use .last() to match the one inside the just-rendered result.
-    await expect(page.getByText(/PASS\s*·\s*DNS exits via Tor/i)).toBeVisible({
+    await expect(page.getByText(/PASS\s*·\s*Tor exit verified/i)).toBeVisible({
       timeout: 20_000,
     });
     await expect(page.getByText("exit ip", { exact: true }).last()).toBeVisible();

@@ -18,7 +18,7 @@ test.describe("Privacy screen", () => {
       page.getByRole("heading", { name: "What does Torhole prove?" }),
     ).toBeVisible();
     await expect(
-      page.getByText("Every DNS query exits via Tor", { exact: true }),
+      page.getByText(/^DNS path (checks passed|not verified)$/),
     ).toBeVisible();
 
     // Three inline proof tiles in the hero: tor uptime, exit ip, isolation.

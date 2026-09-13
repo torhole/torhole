@@ -295,12 +295,12 @@ function PrivacyHero({ state }: { state: SnapshotState }) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-[24px] font-semibold leading-[1.3] tracking-tight text-th-text">
-            Every DNS query exits via Tor
+            {intact ? "DNS path checks passed" : "DNS path not verified"}
           </div>
           <div className="text-[13.5px] text-th-text-muted mt-2">
             {tor.bootstrap.status === "healthy"
-              ? `Tor bootstrapped. ${circuits.count} circuit entr${circuits.count === 1 ? "y" : "ies"} reported; ${configuredPlaneCount} isolated DNS plane${configuredPlaneCount === 1 ? "" : "s"} configured.`
-              : "Tor is not bootstrapped — privacy guarantee in flux."}
+              ? `Tor bootstrapped. ${circuits.count} circuit entr${circuits.count === 1 ? "y" : "ies"} reported; ${configuredPlaneCount} DNS plane${configuredPlaneCount === 1 ? "" : "s"} configured. Routing and isolation status come from configuration and runtime checks.`
+              : "Tor is not bootstrapped — the DNS path is not verified."}
           </div>
 
           {/* Inline proof tiles. These complement the Tor runtime strip
@@ -371,7 +371,7 @@ function exitIpValue(data: Snapshot): string {
   if (!last) return "never tested";
   const status = leakVerificationStatus(last);
   if (status === "unavailable") return "verifier unavailable";
-  if (status === "confirmed_not_tor") return "leak detected";
+  if (status === "confirmed_not_tor") return "probe exit is not Tor";
   return last.ip || "unknown";
 }
 
@@ -772,10 +772,10 @@ function LeakTestResultBlock({
           }`}
         >
           {passed
-            ? "PASS · DNS exits via Tor"
+            ? "PASS · Tor exit verified"
             : unavailable
               ? "CHECK INCONCLUSIVE · verifier unavailable"
-              : "FAIL · privacy not intact"}
+              : "FAIL · probe exit is not Tor"}
         </div>
         <div className="th-ui-label ml-auto text-th-text-muted">
           {ranAgo}
