@@ -14,6 +14,7 @@
     timezone: UTC
     project_dest: /opt/pi-dns-warden
     project_src: "{{ playbook_dir }}/../pi-dns-warden"
+    torhole_env_file: "{{ staging_env_file }}"
   pre_tasks:
     - name: Assert Debian-family
       ansible.builtin.assert:
@@ -35,51 +36,4 @@
       when: ansible_facts.architecture == 'x86_64'
   roles:
     - base
-  tasks:
-    - name: Create project dir (owned by connection user so the sync can write)
-      ansible.builtin.file:
-        path: "{{ project_dest }}"
-        state: directory
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
-        mode: "0755"
-
-    - name: Sync project tree from control node
-      ansible.posix.synchronize:
-        src: "{{ project_src }}/"
-        dest: "{{ project_dest }}/"
-        archive: true
-        delete: false
-        rsync_opts:
-          - "--exclude=.git"
-          - "--exclude=node_modules"
-          - "--exclude=backups"
-          - "--exclude=__pycache__"
-          - "--exclude=.env"
-          - "--exclude=.env.bak-*"
-      become: false
-
-    - name: Install staging .env (0600)
-      ansible.builtin.copy:
-        src: "{{ staging_env_file }}"
-        dest: "{{ project_dest }}/.env"
-        owner: root
-        group: root
-        mode: "0600"
-
-    - name: Ensure scripts are executable
-      ansible.builtin.shell: "chmod +x deploy.sh ops/scripts/*.sh ops/lib/*.sh"
-      args:
-        chdir: "{{ project_dest }}"
-      changed_when: false
-
-    - name: Run torhole deploy.sh (Docker + VLANs + renders + bring-up)
-      ansible.builtin.command: ./deploy.sh
-      args:
-        chdir: "{{ project_dest }}"
-      register: deploy_result
-      changed_when: true
-
-    - name: Deploy tail
-      ansible.builtin.debug:
-        msg: "{{ deploy_result.stdout_lines[-18:] }}"
+    - pihole_dns

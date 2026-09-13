@@ -1,4 +1,27 @@
 ---
+- name: Validate Advanced deployment inputs before changing the host
+  ansible.builtin.assert:
+    that:
+      - torhole_topology | default('vlan') in ['single-lan', 'vlan']
+      - torhole_admin_password | default('') | length > 0
+      - tor_control_password | default('') | length > 0
+    fail_msg: "Set torhole_admin_password and tor_control_password in Vault; select single-lan or vlan."
+  no_log: true
+  when: torhole_env_file is not defined
+
+- name: Check for an existing installed environment
+  ansible.builtin.stat:
+    path: "{{ project_dest }}/.env"
+  register: installed_environment
+
+# Run the installed backup code before replacing any source or configuration.
+- name: Back up existing installation before synchronization
+  ansible.builtin.command: bash ./ops/scripts/50-backup.sh
+  args:
+    chdir: "{{ project_dest }}"
+  when: installed_environment.stat.exists
+  changed_when: true
+
 - name: Create destination directory
   ansible.builtin.file:
     path: "{{ project_dest }}"
@@ -7,41 +30,75 @@
     group: root
     mode: '0755'
 
-- name: Sync project files
+- name: Sync project files without controller runtime state or secrets
   ansible.posix.synchronize:
     src: "{{ project_src }}/"
     dest: "{{ project_dest }}/"
-    delete: no
+    delete: false
     rsync_opts:
       - "--exclude=.git"
+      - "--exclude=.env*"
+      - "--exclude=node_modules"
+      - "--exclude=__pycache__"
       - "--exclude=backups"
+      - "--exclude=restore-safety"
+      - "--exclude=run"
       - "--exclude=pihole/*/etc-pihole"
       - "--exclude=pihole/*/etc-dnsmasq.d"
+      - "--exclude=dnscrypt/*/dnscrypt-proxy.toml"
+      - "--exclude=tor/torrc"
+      - "--exclude=monitoring/authelia/configuration.yml"
+      - "--exclude=monitoring/authelia/users_database.yml"
+      - "--exclude=monitoring/caddy/auth-snippets.caddy"
+      - "--exclude=monitoring/caddy/root.crt"
+      - "--exclude=monitoring/caddy/tls"
+      - "--exclude=monitoring/alertmanager/alertmanager.yml"
 
-- name: Render .env
-  ansible.builtin.template:
-    src: env.j2
-    dest: "{{ project_dest }}/.env"
-    mode: '0640'
-    owner: root
-    group: root
+- name: Apply operator-managed environment while preserving generated secrets
+  block:
+    - name: Create private environment staging file
+      ansible.builtin.tempfile:
+        state: file
+        path: "{{ project_dest }}"
+        prefix: .env-ansible-
+      register: managed_environment
 
-- name: Render dnscrypt configs
-  ansible.builtin.template:
-    src: dnscrypt-proxy.toml.j2
-    dest: "{{ project_dest }}/dnscrypt/{{ item }}/dnscrypt-proxy.toml"
-    mode: '0644'
-  loop:
-    - trusted
-    - iot
+    - name: Render managed environment
+      ansible.builtin.template:
+        src: env.j2
+        dest: "{{ managed_environment.path }}"
+        mode: '0600'
+        owner: root
+        group: root
+      no_log: true
+      when: torhole_env_file is not defined
 
-- name: Ensure scripts executable
-  ansible.builtin.file:
-    path: "{{ project_dest }}/ops/scripts"
-    mode: '0755'
-    recurse: yes
+    - name: Stage explicitly supplied environment
+      ansible.builtin.copy:
+        src: "{{ torhole_env_file }}"
+        dest: "{{ managed_environment.path }}"
+        mode: '0600'
+        owner: root
+        group: root
+      no_log: true
+      when: torhole_env_file is defined
 
-- name: Pull and start stack
-  ansible.builtin.command: docker compose --env-file .env -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+    - name: Merge managed fields into installed environment
+      ansible.builtin.script:
+        cmd: "{{ playbook_dir }}/files/merge-env.py {{ managed_environment.path | quote }} {{ (project_dest ~ '/.env') | quote }}"
+        executable: python3
+      no_log: true
+  always:
+    - name: Remove staged environment
+      ansible.builtin.file:
+        path: "{{ managed_environment.path }}"
+        state: absent
+      when: managed_environment.path is defined
+      no_log: true
+
+# deploy.sh owns networking, config generation, systemd, and privacy checks.
+- name: Deploy and verify the selected Advanced topology
+  ansible.builtin.command: bash ./deploy.sh
   args:
     chdir: "{{ project_dest }}"
+  changed_when: true
