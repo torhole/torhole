@@ -12,7 +12,7 @@ import os
 import ssl
 import threading
 from pathlib import Path
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
