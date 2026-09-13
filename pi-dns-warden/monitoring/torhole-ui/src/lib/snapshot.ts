@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export const SNAPSHOT_SCHEMA_VERSION = 1;
 export const SNAPSHOT_POLL_MS = 5000;
+const SNAPSHOT_TIMEOUT_MS = 10000;
 
 export type StatusKind = "healthy" | "degraded" | "offline";
 
@@ -333,7 +334,7 @@ export interface UseSnapshotResult {
 }
 
 /**
- * useSnapshot — single shared poller for the admin UI.
+ * useSnapshot — bounded polling for an admin UI consumer.
  *
  * Polls /api/system/snapshot every SNAPSHOT_POLL_MS, updates on success,
  * marks measurements unavailable on errors so historical health is never
@@ -350,33 +351,55 @@ export function useSnapshot(): UseSnapshotResult {
 
   useEffect(() => {
     let cancelled = false;
-    const controller = new AbortController();
+    let active: AbortController | null = null;
+    let timeout: number | undefined;
+
+    const unavailable = (error: string) => setState({
+      kind: "error",
+      error,
+      fetchedAt: Date.now(),
+      lastSuccessfulAt: lastSuccessfulAt.current,
+    });
 
     const tick = async () => {
+      if (active || cancelled) return;
+      const controller = new AbortController();
+      active = controller;
+      const deadline = window.setTimeout(() => {
+        if (cancelled || active !== controller) return;
+        active = null;
+        controller.abort();
+        unavailable("Snapshot request timed out");
+      }, SNAPSHOT_TIMEOUT_MS);
+      timeout = deadline;
       try {
         const data = await fetchSnapshot(controller.signal);
-        if (cancelled) return;
+        if (cancelled || active !== controller) return;
         lastSuccessfulAt.current = Date.now();
         setState({ kind: "ready", data, fetchedAt: lastSuccessfulAt.current });
       } catch (err) {
-        if (cancelled) return;
-        if ((err as Error).name === "AbortError") return;
-        setState({
-          kind: "error",
-          error: (err as Error).message,
-          fetchedAt: Date.now(),
-          lastSuccessfulAt: lastSuccessfulAt.current,
-        });
+        if (cancelled || active !== controller) return;
+        unavailable((err as Error).message);
+      } finally {
+        window.clearTimeout(deadline);
+        if (active === controller) active = null;
       }
     };
     tickRef.current = tick;
 
     void tick();
     const interval = window.setInterval(tick, SNAPSHOT_POLL_MS);
+    // Age the visible timestamp even while the network is silent. Preserve
+    // the result/error and its original timestamps; polling owns transitions.
+    const freshness = window.setInterval(() => {
+      setState(current => current.kind === "loading" ? current : { ...current });
+    }, 1000);
     return () => {
       cancelled = true;
-      controller.abort();
+      active?.abort();
+      window.clearTimeout(timeout);
       window.clearInterval(interval);
+      window.clearInterval(freshness);
       tickRef.current = null;
     };
   }, []);
