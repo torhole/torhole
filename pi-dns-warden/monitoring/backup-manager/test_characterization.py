@@ -643,14 +643,14 @@ class SnapshotHeadlineTests(unittest.TestCase):
         headline = server._compose_snapshot_headline(
             False, "healthy", {"healthy": 2, "total": 2}, {"offline": 0, "degraded": 0}
         )
-        self.assertIn("compromised", headline)
+        self.assertIn("unverified", headline)
 
     def test_all_healthy(self):
         headline = server._compose_snapshot_headline(
             True, "healthy", {"healthy": 2, "total": 2}, {"offline": 0, "degraded": 0}
         )
         self.assertEqual(
-            headline, "Privacy guarantee intact. 2/2 DNS planes serving via Tor."
+            headline, "Tor configuration and runtime checks healthy. 2/2 DNS plane APIs available."
         )
 
     def test_intact_but_container_issues(self):
@@ -659,7 +659,7 @@ class SnapshotHeadlineTests(unittest.TestCase):
         )
         self.assertEqual(
             headline,
-            "Privacy guarantee intact, but 1 container offline and 2 containers degraded.",
+            "Tor configuration and runtime checks healthy; 1 container offline and 2 containers degraded.",
         )
 
 

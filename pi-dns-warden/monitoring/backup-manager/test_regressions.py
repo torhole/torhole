@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import threading
 import unittest
+from contextlib import ExitStack
 from pathlib import Path
 from unittest import mock
 
@@ -167,6 +168,56 @@ class EnvTransactionTests(unittest.TestCase):
             server.restore_env_from_backup(backup)
         self.assertEqual(modes, [0o600, 0o600, 0o600])
         self.assertEqual(server.read_env_values()["TZ"], "UTC")
+
+
+class PrivacySnapshotTests(unittest.TestCase):
+    def snapshot(self, failed_signal=None, states=("healthy",), topology="single-lan"):
+        assurance = {
+            "overall_status": "degraded" if failed_signal else "healthy",
+            "summary": "fixture",
+            "bootstrap": {"status": "healthy"}, "isolation": {"status": "healthy"},
+            "network_path": {"status": "healthy"},
+            "plane_identities": {"overall_status": "healthy"},
+        }
+        if failed_signal:
+            field, state = failed_signal
+            key = "overall_status" if field == "plane_identities" else "status"
+            assurance[field][key] = state
+        # External probes and disk reads are fixtures; snapshot aggregation is real.
+        fixtures = {
+            "read_env_values_safe": {}, "get_dns_stats": {"planes": [{"status": x} for x in states]},
+            "get_services_detail": [], "build_tor_assurance": assurance,
+            "get_tor_circuits": {}, "get_tor_runtime_info": {}, "build_notification_summary": {},
+            "read_validation_result": {}, "list_backups": [], "build_recovery_summary": {},
+            "build_public_links": {}, "build_info": {}, "get_leak_test_state": {},
+        }
+        with ExitStack() as stack:
+            for name, value in fixtures.items():
+                stack.enter_context(mock.patch.object(server, name, return_value=value))
+            stack.enter_context(mock.patch.object(server, "TORHOLE_TOPOLOGY", topology))
+            return server._compute_snapshot()["torhole"]
+
+    def test_failed_or_missing_assurance_cannot_report_privacy_intact(self):
+        for field in ("bootstrap", "isolation", "network_path", "plane_identities"):
+            for state in ("degraded", "offline", None):
+                with self.subTest(field=field, state=state):
+                    result = self.snapshot((field, state))
+                    self.assertFalse(result["privacy_intact"])
+                    self.assertNotIn("guarantee", result["headline"].lower())
+                    self.assertNotIn("compromised", result["headline"].lower())
+
+    def test_every_active_plane_must_be_available(self):
+        for states in ((), ("offline",), ("healthy", "offline"), ("healthy", "degraded")):
+            with self.subTest(states=states):
+                self.assertFalse(self.snapshot(states=states, topology="vlan")["privacy_intact"])
+
+    def test_healthy_single_lan_and_vlan_report_only_observed_posture(self):
+        for states, topology in ((("healthy",), "single-lan"), (("healthy", "healthy"), "vlan")):
+            with self.subTest(topology=topology):
+                result = self.snapshot(states=states, topology=topology)
+                self.assertTrue(result["privacy_intact"])
+                self.assertNotIn("guarantee", result["headline"].lower())
+                self.assertNotIn("serving via Tor", result["headline"])
 
 
 if __name__ == "__main__":

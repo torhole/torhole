@@ -2764,10 +2764,10 @@ def _compose_snapshot_headline(privacy_intact, overall_status, plane_counts, con
     degraded_containers = container_counts.get("degraded", 0)
 
     if not privacy_intact:
-        return "Privacy guarantee compromised — needs immediate attention."
+        return "Privacy posture is unverified — review the unavailable or degraded checks."
 
     if overall_status == "healthy":
-        return f"Privacy guarantee intact. {healthy_planes}/{total_planes} DNS planes serving via Tor."
+        return f"Tor configuration and runtime checks healthy. {healthy_planes}/{total_planes} DNS plane APIs available."
 
     issues = []
     if offline_containers:
@@ -2776,7 +2776,7 @@ def _compose_snapshot_headline(privacy_intact, overall_status, plane_counts, con
         issues.append(f"{degraded_containers} container{'s' if degraded_containers != 1 else ''} degraded")
     issue_text = " and ".join(issues) if issues else "some services need attention"
 
-    return f"Privacy guarantee intact, but {issue_text}."
+    return f"Tor configuration and runtime checks healthy; {issue_text}."
 
 
 _BANNER_LEVELS = frozenset({"critical", "warning", "info"})
@@ -2856,13 +2856,16 @@ def _compute_snapshot():
     elif tor_assurance["overall_status"] == "degraded" and overall_status == "healthy":
         overall_status = "degraded"
 
-    # Privacy intact is stricter than overall_status: it specifically asks
-    # whether the privacy guarantee is currently being delivered. We require
-    # Tor bootstrapped + isolation healthy + at least one DNS plane serving.
+    # Compatibility field: all observed privacy-posture checks must pass.
+    # API availability and runtime/configuration checks do not prove live DNS
+    # routing, so the headline states their scope instead of a guarantee.
     privacy_intact = (
         tor_assurance["bootstrap"]["status"] == "healthy"
         and tor_assurance["isolation"]["status"] == "healthy"
-        and plane_counts["healthy"] > 0
+        and tor_assurance["network_path"].get("status") == "healthy"
+        and tor_assurance["plane_identities"].get("overall_status") == "healthy"
+        and plane_counts["total"] > 0
+        and plane_counts["healthy"] == plane_counts["total"]
     )
 
     # Public links for SSO targets, used by the admin UI to link out to grafana etc.
