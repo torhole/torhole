@@ -98,3 +98,20 @@ for (const reducedMotion of ["reduce", "no-preference"] as const) {
     await expect(page).toHaveURL(/section=query-feed$/);
   });
 }
+
+
+test("Privacy navigation is directly below the page header", async ({ page }) => {
+  const { snapshot } = await import("./fixtures/snapshot");
+  await page.setViewportSize({ width: 1024, height: 600 });
+  await page.route("**/api/**", route => route.fulfill({ json: { config: {} } }));
+  await page.route("**/api/system/snapshot", route => route.fulfill({ json: snapshot }));
+  await page.goto("/?mode=advanced#/privacy");
+  const tabs = page.getByRole("tablist");
+  await expect(tabs).toBeInViewport();
+  const nav = (await tabs.boundingBox())!;
+  const header = (await page.getByRole("heading", { level: 1 }).boundingBox())!;
+  const hero = (await page.getByText("Every DNS query exits via Tor", { exact: true }).boundingBox())!;
+  expect(nav.y).toBeGreaterThan(header.y + header.height);
+  expect(nav.y + nav.height).toBeLessThan(hero.y);
+  expect(nav.y + nav.height).toBeLessThan(240);
+});

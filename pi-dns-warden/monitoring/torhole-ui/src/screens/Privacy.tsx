@@ -2,22 +2,11 @@ import PageHeader from "../components/PageHeader";
 /*
  * Privacy screen — answers "What does Torhole prove?"
  *
- * Layout (tabbed as of iteration 8):
- *   Sticky top (always visible):
- *     - Header + Privacy hero
- *     - Per-plane Tor circuit isolation cards
- *
- *   Tabbed below (SectionTabs preserves state via hidden CSS):
- *     - DNS leak test (run button + result block + history strip)
- *     - Live query feed (terminal-styled SSE stream)
- *     - Internal Tor circuits (HS_VANGUARDS, CONFLUX — advanced)
- *
- * Why tabs: the stacked-sections layout made the page 3-4 viewport-heights
- * long, which hurt the "glance and act" feel. Tabs keep the privacy proof
- * (hero + circuits) pinned at the top and let the operator focus on one
- * secondary view at a time. Content stays mounted — non-active tabs are
- * hidden via CSS so SSE connections, leak test results, and scroll
- * positions persist across switches.
+ * Section navigation sits below the page header, matching Operate and
+ * Configure. Shared privacy and circuit context follows it. Selecting a
+ * section scrolls its tool into view; Back to top returns to the navigation.
+ * Inactive panels stay mounted to preserve results and local state, while
+ * the live query feed receives an active flag to release idle resources.
  *
  * Reuses the same brand tokens and primitives as Glance.
  */
@@ -93,10 +82,13 @@ export default function PrivacyScreen() {
   return (
     <div className="th-dashboard-page">
       <PageHeader title="What does Torhole prove?" description="Review DNS routing, exit tests, and Tor circuits." state={state} headingRef={headingRef} />
-      <PrivacyHero state={state} />
-      <TorRuntimeStrip state={state} />
-      <CircuitPlanePanels state={state} refetch={refetch} />
-      <SectionTabs tabs={tabs} scrollOnSelect contentReady={state.kind !== "loading"} />
+      <SectionTabs tabs={tabs} scrollOnSelect contentReady={state.kind !== "loading"}
+        beforePanels={<>
+          <PrivacyHero state={state} />
+          <TorRuntimeStrip state={state} />
+          <CircuitPlanePanels state={state} refetch={refetch} />
+        </>}
+      />
       <BackToTop onClick={() => {
         headingRef.current?.focus({ preventScroll: true });
         window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });

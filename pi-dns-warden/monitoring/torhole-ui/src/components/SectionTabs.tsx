@@ -27,6 +27,7 @@ export default function SectionTabs({
   className = "",
   scrollOnSelect = false,
   contentReady = true,
+  beforePanels,
 }: {
   tabs: SectionTabDef[];
   defaultTabId?: string;
@@ -34,6 +35,8 @@ export default function SectionTabs({
   /** Reveal selected lower-page content, including sidebar links and bookmarks. */
   scrollOnSelect?: boolean;
   contentReady?: boolean;
+  /** Shared context between navigation and the selected tool. */
+  beforePanels?: React.ReactNode;
 }) {
   const { key: navigationKey } = useLocation();
   const sectionRef = useRef<HTMLDivElement>(null);
@@ -71,7 +74,7 @@ export default function SectionTabs({
   if (tabs.length === 0) return null;
 
   return (
-    <div ref={sectionRef} className={`scroll-mt-4 ${className}`}>
+    <div className={className}>
       {/* One compact row, horizontally scrollable when space is limited. */}
       <div
         role="tablist"
@@ -92,28 +95,31 @@ export default function SectionTabs({
         ))}
       </div>
 
-      {/* Tab content — ALL tabs rendered, non-active hidden via CSS.
-          This preserves scroll positions and in-flight state across
-          switches. Tabs whose content is a render function receive an
-          `active` flag so live resources (SSE, sockets, timers) can
-          release while hidden — see LiveQueryFeedPanel. */}
-      {tabs.map((tab) => {
-        const active = tab.id === activeId;
-        const body =
-          typeof tab.content === "function" ? tab.content(active) : tab.content;
-        return (
-          <div
-            key={tab.id}
-            role="tabpanel"
-            id={`panel-${tab.id}`}
-            aria-labelledby={`tab-${tab.id}`}
-            hidden={!active}
-            className={scrollOnSelect ? "min-h-[calc(100dvh-5rem)]" : undefined}
-          >
-            {body}
-          </div>
-        );
-      })}
+      {beforePanels}
+      <div ref={sectionRef} className="scroll-mt-4">
+        {/* Tab content — ALL tabs rendered, non-active hidden via CSS.
+            This preserves scroll positions and in-flight state across
+            switches. Tabs whose content is a render function receive an
+            `active` flag so live resources (SSE, sockets, timers) can
+            release while hidden — see LiveQueryFeedPanel. */}
+        {tabs.map((tab) => {
+          const active = tab.id === activeId;
+          const body =
+            typeof tab.content === "function" ? tab.content(active) : tab.content;
+          return (
+            <div
+              key={tab.id}
+              role="tabpanel"
+              id={`panel-${tab.id}`}
+              aria-labelledby={`tab-${tab.id}`}
+              hidden={!active}
+              className={scrollOnSelect ? "min-h-[calc(100dvh-5rem)]" : undefined}
+            >
+              {body}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
