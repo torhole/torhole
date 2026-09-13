@@ -210,3 +210,62 @@ a {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Shared with Glance: quiet page framing, readable prose, precise data. */
+.th-dashboard-page {
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 36px 40px;
+  min-height: 100%;
+  background: var(--color-th-bg);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.th-dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+.th-dashboard-header h1 {
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -.035em;
+  line-height: 1.2;
+}
+.th-dashboard-header p {
+  margin-top: 8px;
+  max-width: 70ch;
+  font-size: 15px;
+  color: var(--color-th-text-muted);
+}
+.th-dashboard-updated {
+  font-size: 12px;
+  color: var(--color-th-text-muted);
+  white-space: nowrap;
+}
+.glance-panel,
+.th-dashboard-panel,
+.th-dashboard-surface {
+  border: 1px solid var(--color-th-line);
+  border-radius: 10px;
+  background: var(--color-th-panel);
+}
+.th-dashboard-panel { padding: 22px; }
+.th-ui-label {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.th-privacy-summary { padding: 30px; }
+.th-dashboard-page :is(a, button, summary):focus-visible {
+  outline: 2px solid var(--color-th-primary);
+  outline-offset: 3px;
+}
+@media (max-width: 1199px) {
+  .th-dashboard-page { padding: 28px 24px; }
+  .th-dashboard-header { flex-wrap: wrap; gap: 12px; }
+  .th-dashboard-panel { padding: 20px; }
+  .th-privacy-summary { padding: 24px; }
+}

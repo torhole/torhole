@@ -1,11 +1,5 @@
-/* Direction A: quiet surfaces, readable labels, evidence on demand.
-   Scoped to Glance while the rest of the site awaits design review. */
-.glance-page { max-width: 1500px; margin: 0 auto; padding: 36px 40px; background: var(--color-th-bg); min-height: 100%; }
-.glance-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:28px; gap:24px; }
-.glance-header h1 { font-size:28px; font-weight:650; letter-spacing:-.035em; line-height:1.2; }
-.glance-header p { margin-top:8px; font-size:15px; color:var(--color-th-text-muted); }
-.glance-updated { font-size:12px; color:var(--color-th-text-muted); white-space:nowrap; }
-.glance-panel { border:1px solid var(--color-th-line); border-radius:10px; background:var(--color-th-panel); overflow:hidden; }
+/* Glance-specific layouts; page framing and surfaces are shared in styles.css. */
+.glance-panel { overflow:hidden; }
 .glance-summary { display:flex; align-items:center; gap:22px; padding:30px; }
 .glance-shield { flex-shrink:0; color:var(--color-th-primary); }
 .glance-verdict { flex:1; min-width:0; }
@@ -65,12 +59,11 @@
 .glance-operations a { display:flex; flex-direction:column; gap:8px; padding:18px 22px; font-size:12px; }
 .glance-operations span { color:var(--color-th-text-muted); }
 .glance-operations strong { font-weight:500; }
-.glance-issues { margin-top:12px; padding:0 22px; border-color:var(--color-th-warning); }
+.glance-panel.glance-issues { margin-top:12px; padding:0 22px; border-color:var(--color-th-warning); }
 .glance-issues > div { display:flex; justify-content:space-between; gap:16px; padding:12px 0; font-size:13px; }
 .glance-actions { margin-top:24px; }
 .glance-page a:focus-visible, .glance-page button:focus-visible, .glance-page summary:focus-visible { outline:2px solid var(--color-th-primary); outline-offset:3px; }
 @media(max-width:1199px) {
-  .glance-page { padding:28px 24px; }
   .glance-summary { flex-wrap:wrap; padding:24px; gap:16px; }
   .glance-summary h2 { font-size:22px; }
   .glance-columns { grid-template-columns:1fr; }

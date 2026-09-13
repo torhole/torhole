@@ -1,3 +1,4 @@
+import PageHeader from "../components/PageHeader";
 /*
  * Configure screen — "Where do I set the things I'm allowed to set?"
  *
@@ -51,7 +52,6 @@ import {
   updateAdminPassword,
   updateConfigValue,
   useSnapshot,
-  snapshotFreshness,
   type NotificationChannel,
   type SnapshotState,
 } from "../lib/snapshot";
@@ -118,8 +118,8 @@ export default function ConfigureScreen() {
   ];
 
   return (
-    <div className="th-page-enter px-6 py-7 lg:px-10 lg:py-9 xl:px-14 max-w-[1500px] 2xl:max-w-[1700px] mx-auto">
-      <Header state={state} />
+    <div className="th-dashboard-page">
+      <PageHeader title="What can you tune?" description="Set access, network preferences, and notifications." state={state} />
 
       {configErr && (
         <div className="flex items-start gap-2 p-3 mb-4 bg-th-danger/10 border border-th-danger/30 rounded text-[12px] text-th-danger font-mono">
@@ -133,27 +133,6 @@ export default function ConfigureScreen() {
   );
 }
 
-function Header({ state }: { state: SnapshotState }) {
-  return (
-    <div className="flex items-end justify-between mb-7">
-      <div>
-        <div className="text-[10.5px] uppercase tracking-[0.22em] text-th-text-muted font-mono">
-          Configure
-        </div>
-        <h1 className="text-[28px] font-bold tracking-tight mt-1 leading-none">
-          What can you tune?
-        </h1>
-      </div>
-      <div className="flex items-center gap-2 text-[11px] text-th-text-muted">
-        {state.kind === "ready" && <span className="relative flex h-1.5 w-1.5">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-th-primary opacity-60"></span>
-          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-th-primary"></span>
-        </span>}
-        <span className="font-mono uppercase tracking-[0.14em]">{snapshotFreshness(state)}</span>
-      </div>
-    </div>
-  );
-}
 
 /* ----------------------------------------------------------------------- *
  * Identity & access
@@ -183,7 +162,7 @@ function IdentitySection({
           mono
         />
       </div>
-      <div className="mt-3 text-[10.5px] text-th-text-muted font-mono leading-relaxed">
+      <div className="mt-3 text-[12px] text-th-text-muted font-mono leading-relaxed">
         Direct-IP recovery always uses a browser password prompt. Authelia SSO is available on
         the named host when HTTPS is enabled.
       </div>
@@ -231,7 +210,7 @@ function WebAccessStatus({
           <div className="text-[12px] font-semibold text-th-primary">
             HTTPS + Authelia SSO is active
           </div>
-          <div className="mt-1 text-[11px] leading-relaxed text-th-text-muted">
+          <div className="mt-1 text-[12px] leading-relaxed text-th-text-muted">
             {generatedCertificate
               ? "Torhole's proxy uses its generated local certificate authority. Install its CA only for direct access to that proxy; a trusted certificate on an external reverse proxy does not require it."
               : "This installation uses the custom certificate supplied during setup."}
@@ -240,7 +219,7 @@ function WebAccessStatus({
             {generatedCertificate && certificateUrl && (
               <a
                 href={certificateUrl}
-                className="inline-flex min-h-[40px] items-center gap-2 rounded border border-th-primary/45 bg-th-primary/10 px-3 text-[10px] font-mono uppercase tracking-[0.12em] text-th-primary hover:bg-th-primary/20"
+                className="th-ui-label inline-flex min-h-[40px] items-center gap-2 rounded border border-th-primary/45 bg-th-primary/10 px-3 text-th-primary hover:bg-th-primary/20"
               >
                 <Download size={13} />
                 download Torhole CA
@@ -249,7 +228,7 @@ function WebAccessStatus({
             {authUrl && (
               <a
                 href={authUrl}
-                className="inline-flex min-h-[40px] items-center gap-2 rounded border border-th-line px-3 text-[10px] font-mono uppercase tracking-[0.12em] text-th-text hover:border-th-primary/40 hover:text-th-primary"
+                className="th-ui-label inline-flex min-h-[40px] items-center gap-2 rounded border border-th-line px-3 text-th-text hover:border-th-primary/40 hover:text-th-primary"
               >
                 <ExternalLink size={13} />
                 open Authelia login
@@ -257,7 +236,7 @@ function WebAccessStatus({
             )}
           </div>
           {generatedCertificate && certificateUrl && (
-            <div className="mt-3 break-all font-mono text-[10px] text-th-text-muted">
+            <div className="mt-3 break-all font-mono text-[12px] text-th-text-muted">
               Certificate: {certificateUrl}
             </div>
           )}
@@ -296,18 +275,18 @@ function GeneratedCertificateSwitch() {
         type="button"
         disabled={state.kind === "running"}
         onClick={() => setModalOpen(true)}
-        className="inline-flex min-h-[38px] items-center gap-2 rounded border border-th-line px-3 font-mono text-[10px] uppercase tracking-[0.12em] text-th-text hover:border-th-primary/40 hover:text-th-primary disabled:cursor-wait disabled:opacity-50"
+        className="th-ui-label inline-flex min-h-[38px] items-center gap-2 rounded border border-th-line px-3 text-th-text hover:border-th-primary/40 hover:text-th-primary disabled:cursor-wait disabled:opacity-50"
       >
         <Shield size={13} />
         {state.kind === "running" ? "validating generated HTTPS…" : "use generated Torhole certificate"}
       </button>
       {state.kind === "success" && (
-        <div className="mt-3 text-[10.5px] text-th-primary">
+        <div className="mt-3 text-[12px] text-th-primary">
           {state.message} Reload this page when the proxy restart completes.
         </div>
       )}
       {state.kind === "error" && (
-        <div className="mt-3 rounded border border-th-danger/35 bg-th-danger/10 px-3 py-2 font-mono text-[10.5px] text-th-danger">
+        <div className="mt-3 rounded border border-th-danger/35 bg-th-danger/10 px-3 py-2 font-mono text-[12px] text-th-danger">
           {state.message}
         </div>
       )}
@@ -370,7 +349,7 @@ function CustomCertificateUpload({ replacing }: { replacing: boolean }) {
   if (state.kind === "success") {
     return (
       <div className="mt-4 rounded border border-th-primary/35 bg-th-bg/40 p-3">
-        <div className="flex items-start gap-2 text-[11px] text-th-primary">
+        <div className="flex items-start gap-2 text-[12px] text-th-primary">
           <Check size={13} className="mt-0.5 shrink-0" />
           <div>
             <div className="font-semibold">Custom certificate accepted</div>
@@ -378,7 +357,7 @@ function CustomCertificateUpload({ replacing }: { replacing: boolean }) {
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="mt-3 min-h-[36px] rounded border border-th-primary/40 px-3 font-mono text-[10px] uppercase tracking-[0.12em] hover:bg-th-primary/10"
+              className="th-ui-label mt-3 min-h-[36px] rounded border border-th-primary/40 px-3 hover:bg-th-primary/10"
             >
               reload web access status
             </button>
@@ -393,7 +372,7 @@ function CustomCertificateUpload({ replacing }: { replacing: boolean }) {
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
-        className="inline-flex min-h-[38px] items-center gap-2 rounded border border-th-line px-3 font-mono text-[10px] uppercase tracking-[0.12em] text-th-text hover:border-th-primary/40 hover:text-th-primary"
+        className="th-ui-label inline-flex min-h-[38px] items-center gap-2 rounded border border-th-line px-3 text-th-text hover:border-th-primary/40 hover:text-th-primary"
       >
         <Upload size={13} />
         {replacing ? "replace custom certificate" : "use my own certificate"}
@@ -402,16 +381,16 @@ function CustomCertificateUpload({ replacing }: { replacing: boolean }) {
 
       {expanded && (
         <div className="mt-3 rounded border border-th-line bg-th-bg/35 p-3">
-          <div className="mb-3 text-[10.5px] leading-relaxed text-th-text-muted">
+          <div className="mb-3 text-[12px] leading-relaxed text-th-text-muted">
             Upload a PEM certificate or full chain and its matching unencrypted private key.
             Torhole validates the format, expiry, and public-key match before changing Caddy.
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <label className="min-h-[72px] cursor-pointer rounded border border-th-line p-3 hover:border-th-primary/40">
-              <span className="flex items-center gap-2 text-[11px] font-semibold text-th-text">
+              <span className="flex items-center gap-2 text-[12px] font-semibold text-th-text">
                 <Upload size={13} /> Certificate / full chain
               </span>
-              <span className="mt-2 block break-all font-mono text-[10px] text-th-text-muted">
+              <span className="mt-2 block break-all font-mono text-[12px] text-th-text-muted">
                 {certificateName || "Choose .crt or .pem"}
               </span>
               <input
@@ -424,10 +403,10 @@ function CustomCertificateUpload({ replacing }: { replacing: boolean }) {
               />
             </label>
             <label className="min-h-[72px] cursor-pointer rounded border border-th-line p-3 hover:border-th-primary/40">
-              <span className="flex items-center gap-2 text-[11px] font-semibold text-th-text">
+              <span className="flex items-center gap-2 text-[12px] font-semibold text-th-text">
                 <Upload size={13} /> Private key
               </span>
-              <span className="mt-2 block break-all font-mono text-[10px] text-th-text-muted">
+              <span className="mt-2 block break-all font-mono text-[12px] text-th-text-muted">
                 {privateKeyName || "Choose .key or .pem"}
               </span>
               <input
@@ -444,13 +423,13 @@ function CustomCertificateUpload({ replacing }: { replacing: boolean }) {
             type="button"
             disabled={!certificate || !privateKey || state.kind === "running"}
             onClick={() => setModalOpen(true)}
-            className="mt-3 inline-flex min-h-[42px] items-center gap-2 rounded border border-th-primary/50 bg-th-primary/10 px-3 font-mono text-[10.5px] uppercase tracking-[0.13em] text-th-primary hover:bg-th-primary/20 disabled:cursor-not-allowed disabled:opacity-40"
+            className="th-ui-label mt-3 inline-flex min-h-[42px] items-center gap-2 rounded border border-th-primary/50 bg-th-primary/10 px-3 text-th-primary hover:bg-th-primary/20 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Shield size={13} />
             {state.kind === "running" ? "validating certificate…" : "validate and use certificate"}
           </button>
           {state.kind === "error" && (
-            <div className="mt-3 rounded border border-th-danger/35 bg-th-danger/10 px-3 py-2 font-mono text-[10.5px] text-th-danger">
+            <div className="mt-3 rounded border border-th-danger/35 bg-th-danger/10 px-3 py-2 font-mono text-[12px] text-th-danger">
               {state.message}
             </div>
           )}
@@ -521,20 +500,20 @@ function WebAccessUpgrade({
           <Check size={14} className="mt-0.5 shrink-0 text-th-primary" strokeWidth={2.5} />
           <div>
             <div className="text-[12px] font-semibold text-th-primary">HTTPS + Authelia SSO is activating</div>
-            <div className="mt-1 text-[11px] leading-relaxed text-th-text-muted">{state.message}</div>
+            <div className="mt-1 text-[12px] leading-relaxed text-th-text-muted">{state.message}</div>
             <div className="mt-3 flex flex-wrap gap-2">
               {state.certificateUrl && (
-                <a href={state.certificateUrl} className="rounded border border-th-primary/40 px-3 py-2 text-[10px] font-mono uppercase tracking-[0.12em] text-th-primary hover:bg-th-primary/10">
+                <a href={state.certificateUrl} className="th-ui-label rounded border border-th-primary/40 px-3 py-2 text-th-primary hover:bg-th-primary/10">
                   download local CA
                 </a>
               )}
               {state.httpsUrl && (
-                <a href={state.httpsUrl} className="rounded border border-th-line px-3 py-2 text-[10px] font-mono uppercase tracking-[0.12em] text-th-text hover:border-th-primary/40">
+                <a href={state.httpsUrl} className="th-ui-label rounded border border-th-line px-3 py-2 text-th-text hover:border-th-primary/40">
                   open HTTPS login
                 </a>
               )}
             </div>
-            <div className="mt-3 text-[10px] font-mono text-th-text-muted">
+            <div className="mt-3 text-[12px] font-mono text-th-text-muted">
               If the proxy is still restarting, wait a few seconds. Recovery remains at {state.recoveryUrl || `http://${hostIp}/`}.
             </div>
           </div>
@@ -545,7 +524,7 @@ function WebAccessUpgrade({
 
   return (
     <>
-      <div className="mt-4 rounded-md border border-th-warning/35 bg-th-warning/[0.06] p-4 text-[11px] leading-relaxed">
+      <div className="mt-4 rounded-md border border-th-warning/35 bg-th-warning/[0.06] p-4 text-[12px] leading-relaxed">
         <div className="font-semibold text-th-warning">Authelia SSO is currently off</div>
         <div className="mt-1 text-th-text-muted">
           HTTP uses Basic Auth, so every named service may show a browser password prompt.
@@ -555,20 +534,20 @@ function WebAccessUpgrade({
           type="button"
           disabled={state.kind === "running"}
           onClick={() => setModalOpen(true)}
-          className="mt-3 inline-flex min-h-[42px] items-center gap-2 rounded-md border border-th-primary/50 bg-th-primary/12 px-3 text-[10.5px] font-mono uppercase tracking-[0.13em] text-th-primary transition-colors hover:bg-th-primary/20 disabled:cursor-wait disabled:opacity-50"
+          className="th-ui-label mt-3 inline-flex min-h-[42px] items-center gap-2 rounded-md border border-th-primary/50 bg-th-primary/12 px-3 text-th-primary transition-colors hover:bg-th-primary/20 disabled:cursor-wait disabled:opacity-50"
         >
           <Shield size={13} />
           {state.kind === "running" ? "validating and applying…" : "enable HTTPS + Authelia SSO"}
         </button>
         <details className="mt-3 text-th-text-muted">
-          <summary className="cursor-pointer font-mono text-[10px] text-th-text-muted hover:text-th-text">manual fallback</summary>
+          <summary className="cursor-pointer font-mono text-[12px] text-th-text-muted hover:text-th-text">manual fallback</summary>
           <div className="mt-2">Set <span className="font-mono text-th-text-mono">TORHOLE_WEB_MODE=https-local</span>, then run:</div>
-          <div className="mt-2 overflow-x-auto rounded border border-th-line/70 bg-th-bg/70 px-3 py-2 font-mono text-[10.5px] text-th-text-mono">
+          <div className="mt-2 overflow-x-auto rounded border border-th-line/70 bg-th-bg/70 px-3 py-2 font-mono text-[12px] text-th-text-mono">
             cd {installRoot} &amp;&amp; sudo ./deploy.sh --skip-prereqs
           </div>
         </details>
         {state.kind === "error" && (
-          <div className="mt-3 rounded border border-th-danger/35 bg-th-danger/10 px-3 py-2 font-mono text-[10.5px] text-th-danger">{state.message}</div>
+          <div className="mt-3 rounded border border-th-danger/35 bg-th-danger/10 px-3 py-2 font-mono text-[12px] text-th-danger">{state.message}</div>
         )}
       </div>
 
@@ -678,7 +657,7 @@ function AdminPasswordForm() {
             <div className="text-[12px] font-semibold text-th-primary">
               Admin password updated
             </div>
-            <div className="text-[11px] text-th-text-muted mt-1 leading-relaxed">
+            <div className="text-[12px] text-th-text-muted mt-1 leading-relaxed">
               {state.message} Authelia has been restarted; your current
               session will end as soon as the container finishes booting
               (typically a few seconds). Reload the page and sign in with
@@ -687,7 +666,7 @@ function AdminPasswordForm() {
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="mt-3 px-3 py-2 rounded text-[10.5px] font-mono uppercase tracking-[0.14em] bg-th-primary/15 border border-th-primary/40 text-th-primary hover:bg-th-primary/25 min-h-[36px]"
+              className="th-ui-label mt-3 px-3 py-2 rounded bg-th-primary/15 border border-th-primary/40 text-th-primary hover:bg-th-primary/25 min-h-[36px]"
             >
               reload to sign in again
             </button>
@@ -699,7 +678,7 @@ function AdminPasswordForm() {
 
   return (
     <>
-      <div className="text-[10px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono mb-2">
+      <div className="th-ui-label text-th-text-muted mb-2">
         Change admin password
       </div>
 
@@ -708,7 +687,7 @@ function AdminPasswordForm() {
           fields. The backend rejects the whole request (before any
           write) if this doesn't match the plaintext currently in .env. */}
       <div className="mb-3">
-        <label className="block text-[9.5px] uppercase tracking-[0.14em] text-th-text-muted/80 font-mono mb-1.5">
+        <label className="th-ui-label block text-th-text-muted mb-1.5">
           Current password
         </label>
         <input
@@ -724,7 +703,7 @@ function AdminPasswordForm() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
-          <label className="block text-[9.5px] uppercase tracking-[0.14em] text-th-text-muted/80 font-mono mb-1.5">
+          <label className="th-ui-label block text-th-text-muted mb-1.5">
             New password
           </label>
           <input
@@ -737,18 +716,18 @@ function AdminPasswordForm() {
             className="w-full px-3 py-2.5 bg-th-bg/60 border border-th-line rounded-md text-[13px] font-mono text-th-text-mono outline-none focus:border-th-primary/40 disabled:opacity-50"
           />
           {validationError && (
-            <div className="mt-1 text-[10px] text-th-warning font-mono">
+            <div className="mt-1 text-[12px] text-th-warning font-mono">
               {validationError}
             </div>
           )}
           {reuseError && (
-            <div className="mt-1 text-[10px] text-th-warning font-mono">
+            <div className="mt-1 text-[12px] text-th-warning font-mono">
               {reuseError}
             </div>
           )}
         </div>
         <div>
-          <label className="block text-[9.5px] uppercase tracking-[0.14em] text-th-text-muted/80 font-mono mb-1.5">
+          <label className="th-ui-label block text-th-text-muted mb-1.5">
             Confirm new password
           </label>
           <input
@@ -761,7 +740,7 @@ function AdminPasswordForm() {
             className="w-full px-3 py-2.5 bg-th-bg/60 border border-th-line rounded-md text-[13px] font-mono text-th-text-mono outline-none focus:border-th-primary/40 disabled:opacity-50"
           />
           {mismatchError && (
-            <div className="mt-1 text-[10px] text-th-warning font-mono">
+            <div className="mt-1 text-[12px] text-th-warning font-mono">
               {mismatchError}
             </div>
           )}
@@ -773,7 +752,7 @@ function AdminPasswordForm() {
           type="button"
           onClick={() => setModalOpen(true)}
           disabled={!canSubmit}
-          className={`px-3 rounded-md text-[10.5px] font-mono uppercase tracking-[0.14em] min-h-[44px] flex items-center gap-1.5 transition-colors ${
+          className={`px-3 rounded-md text-[12px] th-ui-label min-h-[44px] flex items-center gap-1.5 transition-colors ${
             canSubmit
               ? "bg-th-bg/60 border border-th-line text-th-text-muted hover:text-th-text hover:border-th-primary/40"
               : "bg-th-bg/60 border border-th-line/40 text-th-text-muted/40 cursor-not-allowed"
@@ -782,7 +761,7 @@ function AdminPasswordForm() {
           <KeyRound size={12} />
           update password
         </button>
-        <div className="text-[10px] text-th-text-muted/70 font-mono leading-relaxed flex-1">
+        <div className="text-[12px] text-th-text-muted/70 font-mono leading-relaxed flex-1">
           Writes <span className="text-th-text-mono">TORHOLE_ADMIN_PASSWORD</span>{" "}
           to <span className="text-th-text-mono">.env</span>, reruns{" "}
           <span className="text-th-text-mono">ops/scripts/18-render-auth.sh</span>
@@ -791,7 +770,7 @@ function AdminPasswordForm() {
       </div>
 
       {state.kind === "error" && (
-        <div className="mt-3 px-2 py-1.5 text-[11px] text-th-danger font-mono bg-th-danger/10 border border-th-danger/30 rounded">
+        <div className="mt-3 px-2 py-1.5 text-[12px] text-th-danger font-mono bg-th-danger/10 border border-th-danger/30 rounded">
           {state.message}
         </div>
       )}
@@ -886,7 +865,7 @@ function TopologySection({ config, state }: {
       {!topology && <p className="text-xs text-th-text-muted mb-3">
         Waiting for the backend to report its active topology; no network profile is assumed.
       </p>}
-      <div className="text-[9.5px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono mb-2 mt-1">
+      <div className="th-ui-label text-th-text-muted mb-2 mt-1">
         {topology === "vlan" ? "DNS planes · VLANs" : topology === "single-lan" ? "DNS plane · flat LAN" : "DNS planes"}
       </div>
       {topology && <p className="text-xs text-th-text-muted mb-3">Network addresses below are saved configuration values, not live network discovery.</p>}
@@ -898,7 +877,7 @@ function TopologySection({ config, state }: {
           >
             <div className="flex items-center gap-2 mb-2">
               <span className="w-1.5 h-1.5 rounded-full bg-th-primary" />
-              <div className="text-[10px] uppercase tracking-[0.14em] text-th-text-muted font-mono">
+              <div className="th-ui-label text-th-text-muted">
                 {plane.label}
               </div>
             </div>
@@ -1009,17 +988,17 @@ function BannerSection({ config }: { config: Record<string, string> | null }) {
 
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono mb-2">
+      <div className="th-ui-label text-th-text-muted mb-2">
         Environment banner
       </div>
-      <p className="text-[11.5px] text-th-text-muted leading-relaxed mb-4 max-w-[640px]">
+      <p className="text-[12px] text-th-text-muted leading-relaxed mb-4 max-w-[640px]">
         A strip shown across the top of every screen — mark this instance
         (e.g. staging) or post an operator message. Changes go live on all
         open sessions within a few seconds; clearing the text removes the
         banner.
       </p>
 
-      <label className="block text-[9.5px] uppercase tracking-[0.14em] text-th-text-muted/80 font-mono mb-1.5">
+      <label className="th-ui-label block text-th-text-muted mb-1.5">
         Message
       </label>
       <input
@@ -1033,7 +1012,7 @@ function BannerSection({ config }: { config: Record<string, string> | null }) {
       />
 
       <div className="mt-4">
-        <label className="block text-[9.5px] uppercase tracking-[0.14em] text-th-text-muted/80 font-mono mb-1.5">
+        <label className="th-ui-label block text-th-text-muted mb-1.5">
           Severity
         </label>
         <div className="flex gap-2">
@@ -1043,7 +1022,7 @@ function BannerSection({ config }: { config: Record<string, string> | null }) {
               type="button"
               onClick={() => setLevel(l.id)}
               disabled={save.kind === "running"}
-              className={`px-3 py-2 rounded-md border text-[10.5px] font-mono uppercase tracking-[0.14em] min-h-[36px] transition-colors ${
+              className={`px-3 py-2 rounded-md border text-[12px] th-ui-label min-h-[36px] transition-colors ${
                 level === l.id
                   ? l.chip
                   : "border-th-line text-th-text-muted hover:text-th-text"
@@ -1057,19 +1036,19 @@ function BannerSection({ config }: { config: Record<string, string> | null }) {
 
       {/* Live preview of exactly what the strip will look like. */}
       <div className="mt-5">
-        <div className="text-[9.5px] uppercase tracking-[0.14em] text-th-text-muted/80 font-mono mb-1.5">
+        <div className="th-ui-label text-th-text-muted mb-1.5">
           Preview
         </div>
         {trimmed ? (
           <div
-            className={`flex items-center justify-center gap-2.5 border rounded-md px-4 py-2 font-mono text-[11.5px] uppercase tracking-[0.14em] ${active.strip}`}
+            className={`flex items-center justify-center gap-2.5 border rounded-md px-4 py-2 font-mono text-[12px] th-ui-label ${active.strip}`}
           >
             <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${active.dot}`} />
             <span className="truncate">{trimmed}</span>
             <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${active.dot}`} />
           </div>
         ) : (
-          <div className="border border-dashed border-th-line rounded-md px-4 py-2 text-[11px] font-mono text-th-text-muted/50 text-center">
+          <div className="border border-dashed border-th-line rounded-md px-4 py-2 text-[12px] font-mono text-th-text-muted/50 text-center">
             no banner — message is empty
           </div>
         )}
@@ -1080,7 +1059,7 @@ function BannerSection({ config }: { config: Record<string, string> | null }) {
           type="button"
           onClick={() => apply(trimmed)}
           disabled={save.kind === "running" || !seeded || trimmed.length === 0}
-          className="px-4 py-2 rounded text-[10.5px] font-mono uppercase tracking-[0.14em] bg-th-primary/15 border border-th-primary/40 text-th-primary hover:bg-th-primary/25 disabled:opacity-40 min-h-[36px]"
+          className="th-ui-label px-4 py-2 rounded bg-th-primary/15 border border-th-primary/40 text-th-primary hover:bg-th-primary/25 disabled:opacity-40 min-h-[36px]"
         >
           {save.kind === "running" ? "saving…" : "save banner"}
         </button>
@@ -1091,19 +1070,19 @@ function BannerSection({ config }: { config: Record<string, string> | null }) {
             void apply("");
           }}
           disabled={save.kind === "running" || !seeded}
-          className="px-4 py-2 rounded text-[10.5px] font-mono uppercase tracking-[0.14em] border border-th-line text-th-text-muted hover:text-th-text hover:border-th-danger/40 disabled:opacity-40 min-h-[36px]"
+          className="th-ui-label px-4 py-2 rounded border border-th-line text-th-text-muted hover:text-th-text hover:border-th-danger/40 disabled:opacity-40 min-h-[36px]"
         >
           clear banner
         </button>
       </div>
 
       {save.kind === "success" && (
-        <div className="mt-3 flex items-center gap-2 text-[11.5px] text-th-primary font-mono">
+        <div className="mt-3 flex items-center gap-2 text-[12px] text-th-primary font-mono">
           <Check size={13} strokeWidth={2.5} /> {save.message}
         </div>
       )}
       {save.kind === "error" && (
-        <div className="mt-3 flex items-center gap-2 text-[11.5px] text-th-danger font-mono">
+        <div className="mt-3 flex items-center gap-2 text-[12px] text-th-danger font-mono">
           <AlertCircle size={13} /> {save.message}
         </div>
       )}
@@ -1164,7 +1143,7 @@ function AlertsSection() {
     <TabPanel
       action={
         <>
-          <div className="text-[10px] font-mono text-th-text-muted uppercase tracking-[0.14em] mr-auto">
+          <div className="th-ui-label text-th-text-muted mr-auto">
             {channels.length > 0
               ? `${activeCount}/${channels.length} active`
               : "loading…"}
@@ -1173,7 +1152,7 @@ function AlertsSection() {
             type="button"
             onClick={handleTest}
             disabled={testAlert.kind === "running" || activeCount === 0}
-            className={`flex items-center gap-1.5 px-3 rounded-md text-[10.5px] font-mono uppercase tracking-[0.14em] min-h-[36px] transition-colors ${
+            className={`flex items-center gap-1.5 px-3 rounded-md text-[12px] th-ui-label min-h-[36px] transition-colors ${
               testAlert.kind === "running"
                 ? "bg-th-bg/60 border border-th-line text-th-text-muted cursor-wait"
                 : testAlert.kind === "done" && testAlert.ok
@@ -1216,9 +1195,9 @@ function AlertsSection() {
       }
     >
       {loading && channels.length === 0 ? (
-        <div className="text-[11px] text-th-text-muted py-3 font-mono">loading…</div>
+        <div className="text-[12px] text-th-text-muted py-3 font-mono">loading…</div>
       ) : err ? (
-        <div className="flex items-start gap-2 text-[11px] text-th-danger font-mono py-2">
+        <div className="flex items-start gap-2 text-[12px] text-th-danger font-mono py-2">
           <AlertCircle size={13} />
           {err}
         </div>
@@ -1236,7 +1215,7 @@ function AlertsSection() {
       )}
 
       {testAlert.kind === "done" && !testAlert.ok && (
-        <div className="mt-3 px-2 py-1.5 text-[11px] text-th-danger font-mono bg-th-danger/10 border border-th-danger/30 rounded">
+        <div className="mt-3 px-2 py-1.5 text-[12px] text-th-danger font-mono bg-th-danger/10 border border-th-danger/30 rounded">
           {testAlert.message}
         </div>
       )}
@@ -1269,7 +1248,7 @@ function ChannelRow({
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-[12px] font-semibold text-th-text">{channel.label}</div>
-        <div className="text-[10px] font-mono text-th-text-muted/70 mt-0.5">
+        <div className="text-[12px] font-mono text-th-text-muted/70 mt-0.5">
           {channel.configured
             ? `configured via ${channel.enabled_key}`
             : "not configured in .env"}
@@ -1358,7 +1337,7 @@ function AdvancedSection({
   if (!config) {
     return (
       <TabPanel>
-        <div className="text-[11px] text-th-text-muted py-3 font-mono">loading…</div>
+        <div className="text-[12px] text-th-text-muted py-3 font-mono">loading…</div>
       </TabPanel>
     );
   }
@@ -1382,13 +1361,13 @@ function AdvancedSection({
     <TabPanel
       action={
         <>
-          <div className="text-[10px] font-mono text-th-text-muted uppercase tracking-[0.14em] mr-auto">
+          <div className="th-ui-label text-th-text-muted mr-auto">
             {Object.keys(config).length} keys in .env
           </div>
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="flex items-center gap-1 text-[10.5px] text-th-text-muted hover:text-th-text font-mono uppercase tracking-[0.14em] min-h-[36px] px-2"
+            className="th-ui-label flex items-center gap-1 text-th-text-muted hover:text-th-text min-h-[36px] px-2"
           >
             {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             {expanded ? "collapse" : "expand"}
@@ -1396,7 +1375,7 @@ function AdvancedSection({
         </>
       }
     >
-      <div className="flex items-start gap-2 mb-3 p-3 bg-th-bg/40 border border-th-line/60 rounded text-[11px] text-th-text-muted leading-relaxed">
+      <div className="flex items-start gap-2 mb-3 p-3 bg-th-bg/40 border border-th-line/60 rounded text-[12px] text-th-text-muted leading-relaxed">
         <Shield size={13} className="text-th-text-muted/70 shrink-0 mt-0.5" />
         <div>
           Edit non-secret application parameters one key at a time. Each save is
@@ -1445,7 +1424,7 @@ function AdvancedGroup({
 }) {
   return (
     <div>
-      <div className="text-[9.5px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono mb-1.5">
+      <div className="th-ui-label text-th-text-muted mb-1.5">
         {label}
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
@@ -1497,7 +1476,7 @@ function AdvancedConfigRow({
   };
 
   return (
-    <div className="py-1 text-[11px] font-mono border-b border-th-line/20 min-w-0">
+    <div className="py-1 text-[12px] font-mono border-b border-th-line/20 min-w-0">
       <div className="flex items-center gap-2 min-h-[30px]">
         <span
           className="text-th-text-muted/70 truncate w-[200px] shrink-0"
@@ -1556,7 +1535,7 @@ function AdvancedConfigRow({
         )}
       </div>
       {saveState.kind === "error" && (
-        <div className="mt-1 text-[10px] text-th-danger">{saveState.message}</div>
+        <div className="mt-1 text-[12px] text-th-danger">{saveState.message}</div>
       )}
     </div>
   );
@@ -1569,7 +1548,7 @@ function AdvancedConfigRow({
 function KVRow({ label, value, mono }: { label: string; value: string | undefined; mono?: boolean }) {
   return (
     <div className="flex flex-col gap-0.5 px-3 py-2.5 bg-th-bg/40 border border-th-line/60 rounded">
-      <div className="text-[9.5px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono">
+      <div className="th-ui-label text-th-text-muted">
         {label}
       </div>
       <div className={`text-[12.5px] ${mono ? "font-mono text-th-text-mono" : "text-th-text"}`}>
@@ -1581,8 +1560,8 @@ function KVRow({ label, value, mono }: { label: string; value: string | undefine
 
 function TinyKV({ label, value }: { label: string; value: string | undefined }) {
   return (
-    <div className="flex items-baseline gap-2 text-[10.5px]">
-      <span className="text-[9px] uppercase tracking-[0.14em] text-th-text-muted/60 font-mono w-[60px] shrink-0">
+    <div className="flex items-baseline gap-2 text-[12px]">
+      <span className="th-ui-label text-th-text-muted w-[60px] shrink-0">
         {label}
       </span>
       <span className="font-mono text-th-text-mono truncate" title={value}>
@@ -1602,7 +1581,7 @@ function TabPanel({
   children: React.ReactNode;
 }) {
   return (
-    <div className={`bg-th-panel border border-th-line rounded-lg p-4 ${className}`}>
+    <div className={`th-dashboard-panel ${className}`}>
       {action && (
         <div className="flex items-center justify-end gap-2 mb-3">{action}</div>
       )}
