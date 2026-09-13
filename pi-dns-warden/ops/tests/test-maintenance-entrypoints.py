@@ -1,5 +1,7 @@
 """Offline maintenance regressions; Docker and host changes are always stubbed."""
 import os
+import importlib.util
+import json
 from pathlib import Path
 import shutil
 import shlex
@@ -91,6 +93,19 @@ class AnsibleEntrypoints(unittest.TestCase):
 
 
 class ManagedEnvironment(unittest.TestCase):
+    def test_backend_serializer_rejects_line_injection_and_preserves_legacy_values(self):
+        spec = importlib.util.spec_from_file_location("fixture_env_store", APP / "monitoring/backup-manager/env_store.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        for value in ("line\nbreak", "line\rbreak", "nul\x00byte"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                module.serialize_env_value(value)
+        for value in ("fixture'password", "two$$dollars", '"quotes" \\ backslash # hash'):
+            with self.subTest(value=value):
+                encoded = module.serialize_env_value(value)
+                self.assertEqual(module.parse_env_text("VALUE=" + encoded)["VALUE"], value)
+                self.assertEqual(module.parse_env_text("VALUE=" + shlex.quote(value))["VALUE"], value)
+
     def test_merge_preserves_generated_secrets_and_unmanaged_settings(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -117,6 +132,50 @@ class ManagedEnvironment(unittest.TestCase):
 
 @unittest.skipUnless(jinja2 and yaml, "Jinja2 and PyYAML required for Ansible template checks")
 class AnsibleTemplates(unittest.TestCase):
+    def test_secret_punctuation_round_trips_through_loader_and_compose(self):
+        if not shutil.which("docker"):
+            self.skipTest("Docker Compose required")
+        environment = jinja2.Environment(undefined=jinja2.StrictUndefined)
+        environment.filters["quote"] = shlex.quote
+        filter_path = ROOT / "ansible/filter_plugins/dotenv.py"
+        if filter_path.exists():
+            spec = importlib.util.spec_from_file_location("ansible_dotenv", filter_path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            environment.filters.update(module.FilterModule().filters())
+        template = environment.from_string((ROOT / "ansible/templates/env.j2").read_text())
+        values = yaml.safe_load((ROOT / "ansible/group_vars/dns_warden.yml.example").read_text())
+        values.update(yaml.safe_load((ROOT / "ansible/group_vars/dns_warden_vault.yml.example").read_text()))
+        payloads = ["fixture'password", 'space # hash $HOME ${USER} `literal` "quote"',
+                    "back\\slash\\'quote", "trailing\\", "two$$dollars", ""]
+        keys = ["TORHOLE_ADMIN_PASSWORD", "TOR_CONTROL_PASSWORD", "PIHOLE_TRUSTED_PASSWORD",
+                "PIHOLE_IOT_PASSWORD", "DNSCRYPT_SOCKS_PASS_TRUSTED", "DNSCRYPT_SOCKS_PASS_IOT",
+                "ALERT_EMAIL_AUTH_PASSWORD", "ALERT_TELEGRAM_BOT_TOKEN"]
+        for payload in payloads:
+            with self.subTest(payload=payload), tempfile.TemporaryDirectory() as directory:
+                settings = dict(values, torhole_admin_password=payload, tor_control_password=payload,
+                                pihole_passwords={"trusted": payload, "iot": payload},
+                                dnscrypt_socks={"trusted_user": "trusted", "iot_user": "iot",
+                                                "trusted_pass": payload, "iot_pass": payload},
+                                alert_email_auth_password=payload, alert_telegram_bot_token=payload)
+                root = Path(directory)
+                path = root / ".env"
+                path.write_text(template.render(settings))
+                compose = root / "compose.yml"
+                compose.write_text("services:\n  fixture:\n    image: busybox\n")
+                env = {k: v for k, v in os.environ.items() if k not in keys}
+                result = subprocess.run(["docker", "compose", "--env-file", str(path), "-f", str(compose),
+                                         "config", "--environment"], env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                parsed = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+                for key in keys:
+                    self.assertEqual(parsed[key], payload, key)
+                result = subprocess.run(["bash", "-c",
+                    'source "$1"; load_env_file "$2"; python3 -c \'import json, os, sys; print(json.dumps({k: os.environ[k] for k in sys.argv[1:]}))\' "${@:3}"',
+                    "_", str(APP / "ops/lib/load-env.sh"), str(path), *keys], env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), dict.fromkeys(keys, payload))
+
     def test_yaml_syntax_and_render_both_topologies(self):
         for path in (ROOT / "ansible").rglob("*.yml"):
             # Local inventory/Vault data must never be read by a source test.
@@ -125,7 +184,10 @@ class AnsibleTemplates(unittest.TestCase):
         values = yaml.safe_load((ROOT / "ansible/group_vars/dns_warden.yml.example").read_text())
         values.update(yaml.safe_load((ROOT / "ansible/group_vars/dns_warden_vault.yml.example").read_text()))
         environment = jinja2.Environment(undefined=jinja2.StrictUndefined)
-        environment.filters["quote"] = shlex.quote
+        spec = importlib.util.spec_from_file_location("ansible_dotenv", ROOT / "ansible/filter_plugins/dotenv.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        environment.filters.update(module.FilterModule().filters())
         template = environment.from_string((ROOT / "ansible/templates/env.j2").read_text())
         for topology in ("vlan", "single-lan"):
             settings = dict(values, torhole_topology=topology)

@@ -59,6 +59,8 @@ def parse_env_text(text):
             if len(parts) > 1:
                 raise ValueError(f"Unexpected tokens after quoted value for {key.strip()}")
             value = parts[0] if parts else ""
+            if raw_value.startswith('"'):
+                value = value.replace("$$", "$")
         else:
             value = re.split(r"\s+#", raw_value, maxsplit=1)[0].rstrip()
         values[key.strip()] = value
@@ -76,8 +78,19 @@ def read_env_values_safe():
         return {}
 
 
+def serialize_env_value(value):
+    """Encode literal data for Compose dotenv and the non-executing loader."""
+    value = str(value)
+    if any(char in value for char in ("\n", "\r", "\x00")):
+        raise ValueError("Environment values may not contain newlines or NUL bytes")
+    if re.fullmatch(r"[A-Za-z0-9_./:@%+,-]*", value):
+        return value
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("$", "$$")
+    return '"' + escaped + '"'
+
+
 def update_env_value_text(text, key, value):
-    replacement = f"{key}={shlex.quote(value)}"
+    replacement = f"{key}={serialize_env_value(value)}"
     pattern = re.compile(rf"^{re.escape(key)}=.*$", re.MULTILINE)
     if pattern.search(text):
         return pattern.sub(lambda _: replacement, text, count=1)
