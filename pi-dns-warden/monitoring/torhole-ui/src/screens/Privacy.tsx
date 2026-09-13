@@ -2,16 +2,14 @@ import PageHeader from "../components/PageHeader";
 /*
  * Privacy screen — answers "What does Torhole prove?"
  *
- * Section navigation sits below the page header, matching Operate and
- * Configure. Shared privacy and circuit context follows it. Selecting a
- * section scrolls its tool into view; Back to top returns to the navigation.
- * Inactive panels stay mounted to preserve results and local state, while
- * the live query feed receives an active flag to release idle resources.
+ * Three routed pages share the header and top navigation. Only the active
+ * page is mounted, so leaving the live feed releases its connection.
+ * Old section-query bookmarks redirect to the corresponding page.
  *
  * Reuses the same brand tokens and primitives as Glance.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Activity,
   AlertCircle,
@@ -25,7 +23,7 @@ import {
   Trash2,
   Zap,
 } from "lucide-react";
-import SectionTabs, { type SectionTabDef } from "../components/SectionTabs";
+import { Navigate, NavLink, useLocation, useParams } from "react-router-dom";
 import {
   formatRelative,
   rotateTorIdentity,
@@ -45,50 +43,51 @@ export default function PrivacyScreen() {
   const { state, refetch } = useSnapshot();
   const headingRef = useRef<HTMLHeadingElement>(null);
 
-  // Compute live meta for each tab from the snapshot so the tab row
-  // reflects real state without extra polling.
-  const leakMeta = computeLeakMeta(state);
-  const internalMeta = computeInternalMeta(state);
-
-  const tabs: SectionTabDef[] = [
-    {
-      id: "leak-test",
-      eyebrow: "proof",
-      title: "DNS leak test",
-      meta: leakMeta,
-      icon: <Zap size={11} />,
-      content: <LeakTestPanel state={state} refetch={refetch} />,
-    },
-    {
-      id: "query-feed",
-      eyebrow: "proof",
-      title: "Live query feed",
-      // The live meta for the feed is computed inside the component via SSE;
-      // we pass a static placeholder here that's replaced by useQueryFeedMeta.
-      meta: undefined,
-      icon: <Activity size={11} />,
-      content: (active) => <LiveQueryFeedPanel active={active} />,
-    },
-    {
-      id: "internal",
-      eyebrow: "advanced",
-      title: "Tor circuits",
-      meta: internalMeta,
-      icon: <Lock size={11} />,
-      content: <InternalCircuitsPanel state={state} />,
-    },
+  const location = useLocation();
+  const path = useParams()["*"];
+  const pages = [
+    { id: "leak-test", title: "DNS leak test", icon: <Zap size={12} /> },
+    { id: "query-feed", title: "Live query feed", icon: <Activity size={12} /> },
+    { id: "internal", title: "Tor circuits", icon: <Lock size={12} /> },
   ];
+  const legacy = new URLSearchParams(location.search).get("section");
+  const page = pages.find(item => item.id === path)
+    ?? pages.find(item => item.id === legacy) ?? pages[0];
+  const canonical = `/privacy/${page.id}`;
+
+  // Page navigation resets position once; polling never moves the viewport.
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [location.key]);
+
+  if (location.pathname !== canonical || legacy !== null) {
+    const search = new URLSearchParams(location.search);
+    search.delete("section");
+    return <Navigate to={{ pathname: canonical, search: search.toString() }} replace />;
+  }
 
   return (
     <div className="th-dashboard-page">
       <PageHeader title="What does Torhole prove?" description="Review DNS routing, exit tests, and Tor circuits." state={state} headingRef={headingRef} />
-      <SectionTabs tabs={tabs} scrollOnSelect contentReady={state.kind !== "loading"}
-        beforePanels={<>
-          <PrivacyHero state={state} />
-          <TorRuntimeStrip state={state} />
+      <nav aria-label="Privacy pages" className="flex gap-1 overflow-x-auto border-b border-th-line mb-4">
+        {pages.map(item => <NavLink key={item.id} to={`/privacy/${item.id}`}
+          className={({ isActive }) => `flex shrink-0 items-center gap-2 whitespace-nowrap min-h-10 px-3 text-xs border-b-2 ${isActive ? "border-th-primary text-th-primary font-semibold" : "border-transparent text-th-text-muted hover:text-th-text"}`}>
+          {item.icon}{item.title}
+        </NavLink>)}
+      </nav>
+      <section aria-labelledby="privacy-view-title" key={page.id}>
+        <h2 id="privacy-view-title" className="text-lg font-semibold mb-4">{page.title}</h2>
+        {page.id === "leak-test" && <>
+          <LeakTestPanel state={state} refetch={refetch} />
+          <div className="mt-6"><PrivacyHero state={state} /></div>
+        </>}
+        {page.id === "query-feed" && <LiveQueryFeedPanel active />}
+        {page.id === "internal" && <>
+          <InternalCircuitsPanel state={state} />
+          <div className="mt-6"><TorRuntimeStrip state={state} /></div>
           <CircuitPlanePanels state={state} refetch={refetch} />
         </>}
-      />
+      </section>
       <BackToTop onClick={() => {
         headingRef.current?.focus({ preventScroll: true });
         window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
@@ -248,23 +247,6 @@ function RuntimeStatCell({
     </div>
   );
 }
-
-function computeLeakMeta(state: SnapshotState): string | undefined {
-  if (state.kind !== "ready") return undefined;
-  const lt = state.data.leak_test;
-  if (!lt.last_result) return "never run";
-  const verdict = lt.last_result.pass ? "pass" : "fail";
-  const count = lt.history_count || 0;
-  return `${verdict} · ${count} run${count === 1 ? "" : "s"}`;
-}
-
-function computeInternalMeta(state: SnapshotState): string | undefined {
-  if (state.kind !== "ready") return undefined;
-  const circuits = state.data.tor.circuits;
-  if (!circuits.available) return "unavailable";
-  return `${circuits.count} reported`;
-}
-
 
 /* ----------------------------------------------------------------------- *
  * Privacy hero — overall Tor health summary

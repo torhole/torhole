@@ -122,14 +122,21 @@ commands and deployment boundaries.
 ## Dashboard follow-up
 
 The Glance page framing, typography, and panel surfaces are now shared across
-Privacy, Operate, Configure, Setup, and About. The Privacy section buttons,
-sidebar links (including the current selection), and bookmarks reveal the
-selected content after initial loading. Reduced motion is respected; snapshot
-refreshes do not move the reading position. The exit-check description now
-states that it verifies the test request's Tor exit, rather than claiming that
-one successful request proves the route of every DNS query.
+Privacy, Operate, Configure, Setup, and About. Privacy now has three routed
+pages beneath a shared top menu: DNS leak test, Live query feed, and Tor
+circuits. Each page opens at the top with its own content. Sidebar links,
+reloads, and browser history preserve the selection; old `?section=` bookmarks
+redirect to the new routes. Snapshot refreshes preserve the reading position,
+and Back to top remains available on long pages. Leaving Live query feed
+closes its browser connection.
 
-Verification: typecheck and production build passed; the 47-test browser suite
-passed, followed by one additional focused warning-border regression. Visual
-checks covered both themes at 1024px and 1440px; scroll regressions used a
+The exit-check description states that it verifies the test request's Tor
+exit, rather than claiming that one successful request proves the route of
+every DNS query.
+
+Verification: typecheck and production build passed; the 49-test mocked browser
+suite passed, plus a focused connection-cleanup regression. Visual checks
+covered both themes at 1024px and 1440px; Privacy navigation regressions use a
 1024×600 viewport. The dashboard retains its existing 1024px minimum width.
+Live staging verification checks that the authenticated dashboard serves the
+exact built bundle.

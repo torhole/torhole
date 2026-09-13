@@ -11,7 +11,7 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Privacy actions", () => {
   test("renew global Tor identity reaches success state", async ({ page }) => {
-    await page.goto("/#/privacy");
+    await page.goto("/#/privacy/internal");
 
     await expect(page.getByText("DNS plane isolation")).toBeVisible();
 
@@ -27,7 +27,7 @@ test.describe("Privacy actions", () => {
   test("run leak test shows a PASS result", async ({ page }) => {
     await page.goto("/#/privacy");
 
-    await expect(page.getByRole("tab", { name: /DNS leak test/i })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Privacy pages" }).getByRole("link", { name: /DNS leak test/i })).toBeVisible();
 
     // Click the run button. The backend does a real SOCKS5 → TLS → GET
     // through Tor to check.torproject.org and can take 5-15 seconds.

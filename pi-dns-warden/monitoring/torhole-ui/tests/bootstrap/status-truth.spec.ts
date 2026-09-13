@@ -11,14 +11,14 @@ for (const screen of ["", "privacy", "operate", "configure"]) {
     await page.route("**/api/system/validation", route => route.fulfill({ json: { checks: [], progress: [], running: false, last_result: null } }));
     await page.goto(`/?mode=advanced#/${screen}`);
     await expect(page.getByText(/^(?:live ·|Updated) just now$/)).toBeVisible();
-    if (screen === "privacy") await page.getByRole("tab", { name: /Tor circuits/i }).click();
+    if (screen === "privacy") await page.getByRole("navigation", { name: "Privacy pages" }).getByRole("link", { name: "Tor circuits", exact: true }).click();
     offline = true;
     await page.clock.runFor(5000);
     await expect(page.getByText(/^Updates unavailable · last updated 5s ago$/)).toBeVisible();
     await expect(page.getByText(/^DNS routed through Tor$/)).not.toBeVisible();
     await expect(page.getByText(/^live ·/)).not.toBeVisible();
     if (screen === "privacy") {
-      const circuits = page.getByRole("tabpanel", { name: /Tor circuits/i });
+      const circuits = page.getByRole("region", { name: "Tor circuits", exact: true });
       await expect(circuits).toContainText("Circuit status unavailable");
       await expect(circuits.getByText("loading…", { exact: true })).not.toBeVisible();
     }
@@ -28,7 +28,7 @@ for (const screen of ["", "privacy", "operate", "configure"]) {
     await page.clock.runFor(5000);
     await expect(page.getByText(/^Updated just now$/)).toBeVisible();
     if (screen === "privacy") {
-      const circuits = page.getByRole("tabpanel", { name: /Tor circuits/i });
+      const circuits = page.getByRole("region", { name: "Tor circuits", exact: true });
       await expect(circuits).toContainText("Tor's current circuit table");
       await expect(circuits).not.toContainText("Circuit status unavailable");
     }
@@ -55,7 +55,7 @@ for (const scenario of [
 test("Privacy describes the scope of the Tor exit check accurately", async ({ page }) => {
   await page.route("**/api/system/snapshot", route => route.fulfill({ json: snapshot }));
   await page.goto("/?mode=advanced#/privacy?section=leak-test");
-  await expect(page.getByRole("tabpanel")).toContainText("A pass confirms that this request used Tor.");
-  await expect(page.getByRole("tabpanel")).toContainText("DNS routing and isolation are checked separately.");
-  await expect(page.getByRole("tabpanel")).not.toContainText("Pass = every query exits via Tor");
+  await expect(page.getByRole("region", { name: "DNS leak test", exact: true })).toContainText("A pass confirms that this request used Tor.");
+  await expect(page.getByRole("region", { name: "DNS leak test", exact: true })).toContainText("DNS routing and isolation are checked separately.");
+  await expect(page.getByRole("region", { name: "DNS leak test", exact: true })).not.toContainText("Pass = every query exits via Tor");
 });

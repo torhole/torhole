@@ -147,7 +147,7 @@ function AdvancedApp({
         <div className="flex-1 min-h-0">
           <Routes>
             <Route path="/" element={<GlanceScreen />} />
-            <Route path="/privacy" element={<PrivacyScreen />} />
+            <Route path="/privacy/*" element={<PrivacyScreen />} />
             <Route path="/operate" element={<OperateScreen />} />
             <Route path="/configure" element={<ConfigureScreen />} />
             <Route path="/about" element={<AboutScreen />} />
@@ -282,16 +282,17 @@ function Sidebar({
     },
     { to: "/about", label: "About", icon: Info },
   ];
+  const groupPath = location.pathname.startsWith("/privacy/") ? "/privacy" : location.pathname;
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => ({
-    [location.pathname]: true,
+    [groupPath]: true,
   }));
   const selectedSection = new URLSearchParams(location.search).get("section");
 
   useEffect(() => {
-    if (location.pathname !== "/") {
-      setExpanded((current) => ({ ...current, [location.pathname]: true }));
+    if (groupPath !== "/") {
+      setExpanded((current) => ({ ...current, [groupPath]: true }));
     }
-  }, [location.pathname]);
+  }, [groupPath]);
 
   return (
     <aside
@@ -343,7 +344,7 @@ function Sidebar({
 
       <nav className={`min-h-0 flex-1 space-y-1 overflow-y-auto ${collapsed ? "px-2" : "px-3"}`}>
         {groups.map(({ to, label, icon: Icon, children }) => {
-          const active = location.pathname === to;
+          const active = location.pathname === to || (to === "/privacy" && location.pathname.startsWith("/privacy/"));
           const open = !collapsed && Boolean(children && expanded[to]);
           return (
             <div key={to}>
@@ -381,11 +382,11 @@ function Sidebar({
                 <div className="relative ml-[18px] mt-1 space-y-0.5 border-l border-th-line/80 pl-3">
                   {children.map((child) => {
                     const childActive =
-                      active && (selectedSection || children[0].section) === child.section;
+                      active && (to === "/privacy" ? location.pathname.split("/")[2] || children[0].section : selectedSection || children[0].section) === child.section;
                     return (
                       <Link
                         key={child.section}
-                        to={`${to}?section=${child.section}`}
+                        to={to === "/privacy" ? `${to}/${child.section}` : `${to}?section=${child.section}`}
                         className={`group flex min-h-[34px] items-center gap-2 rounded px-2 text-[11px] transition-colors ${
                           childActive
                             ? "bg-th-primary/[0.08] text-th-primary"

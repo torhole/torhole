@@ -35,7 +35,7 @@ test.describe("Privacy screen", () => {
     const snapshotResponse = await page.request.get("/api/system/snapshot");
     expect(snapshotResponse.ok()).toBeTruthy();
     const snapshot = await snapshotResponse.json();
-    await page.goto("/#/privacy");
+    await page.goto("/#/privacy/internal");
 
     // Wait for the page to hydrate by asserting the section title exists.
     // Section titles are <div>s, not <h*> elements, and contain the meta
@@ -54,7 +54,7 @@ test.describe("Privacy screen", () => {
   test("shows the leak test panel with a run button", async ({ page }) => {
     await page.goto("/#/privacy");
 
-    await expect(page.getByRole("tab", { name: /DNS leak test/i })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Privacy pages" }).getByRole("link", { name: /DNS leak test/i })).toBeVisible();
     await expect(
       page.getByRole("button", { name: /run leak test now/i }),
     ).toBeVisible();
@@ -65,7 +65,7 @@ test.describe("Privacy screen", () => {
 
     // Live query feed is now behind a tab — click the tab button first.
     // The tab is a role=tab button with "Live query feed" in its label.
-    await page.getByRole("tab", { name: /live query feed/i }).click();
+    await page.getByRole("navigation", { name: "Privacy pages" }).getByRole("link", { name: /live query feed/i }).click();
 
     // Pause and clear buttons are inside the feed panel's status bar now.
     await expect(page.getByRole("button", { name: /pause|resume/i })).toBeVisible();
@@ -77,21 +77,21 @@ test.describe("Privacy screen", () => {
     });
   });
 
-  test("has three section tabs for the lower panels", async ({ page }) => {
+  test("has three links to separate Privacy pages", async ({ page }) => {
     await page.goto("/#/privacy");
 
     // Three tab buttons with role=tab
-    const tabs = page.getByRole("tab");
+    const tabs = page.getByRole("navigation", { name: "Privacy pages" }).getByRole("link");
     await expect(tabs).toHaveCount(3);
 
     // Their labels (substring match — the tab button also contains the meta)
-    await expect(page.getByRole("tab", { name: /DNS leak test/i })).toBeVisible();
-    await expect(page.getByRole("tab", { name: /live query feed/i })).toBeVisible();
-    await expect(page.getByRole("tab", { name: /Tor circuits/i })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Privacy pages" }).getByRole("link", { name: /DNS leak test/i })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Privacy pages" }).getByRole("link", { name: /live query feed/i })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Privacy pages" }).getByRole("link", { name: /Tor circuits/i })).toBeVisible();
   });
 
-  test("shows live Tor runtime strip above the fold", async ({ page }) => {
-    await page.goto("/#/privacy");
+  test("shows the Tor runtime strip on the circuits page", async ({ page }) => {
+    await page.goto("/#/privacy/internal");
 
     // The Tor runtime strip now lives directly under the Privacy hero — no
     // tab click, no scroll — because it's the privacy guarantee made live
@@ -108,7 +108,7 @@ test.describe("Privacy screen", () => {
     await expect(strip.getByText("entry guards", { exact: true })).toBeVisible();
   });
 
-  test("live query feed closes its SSE connection when the tab is hidden", async ({ page }) => {
+  test("live query feed closes its SSE connection when leaving the page", async ({ page }) => {
     // Patch EventSource before navigation so every instance gets tracked.
     await page.addInitScript(() => {
       // @ts-ignore test-only global
@@ -140,14 +140,14 @@ test.describe("Privacy screen", () => {
 
     await page.goto("/#/privacy");
     // Click the "Live query feed" tab so the panel activates.
-    await page.getByRole("tab", { name: /live query feed/i }).click();
+    await page.getByRole("navigation", { name: "Privacy pages" }).getByRole("link", { name: /live query feed/i }).click();
     await page.waitForFunction(
       // @ts-ignore
       () => window.__esLog && window.__esLog.active >= 1,
       { timeout: 5000 },
     );
     // Switch to another tab — the SSE connection should close.
-    await page.getByRole("tab", { name: /dns leak test/i }).click();
+    await page.getByRole("navigation", { name: "Privacy pages" }).getByRole("link", { name: /dns leak test/i }).click();
     await page.waitForFunction(
       // @ts-ignore
       () => window.__esLog && window.__esLog.active === 0,
@@ -162,7 +162,7 @@ test.describe("Privacy screen", () => {
     // connection. The preserved client-side ring buffer must dedup it,
     // otherwise we'd see visible duplicate rows and React would log a
     // duplicate-key warning on QueryRow.
-    await page.getByRole("tab", { name: /live query feed/i }).click();
+    await page.getByRole("navigation", { name: "Privacy pages" }).getByRole("link", { name: /live query feed/i }).click();
     await page.waitForFunction(
       // @ts-ignore
       () => window.__esLog && window.__esLog.active >= 1,
