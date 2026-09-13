@@ -1,5 +1,6 @@
 import fcntl
 import json
+import math
 import os
 import re
 import secrets
@@ -2656,15 +2657,27 @@ def get_dns_stats():
             login = pihole_api_call(base_url, "/auth", method="POST", data=login_payload, headers={"Content-Type": "application/json"})
             sid = login["session"]["sid"]
             summary = pihole_api_call(base_url, "/stats/summary", headers={"X-FTL-SID": sid})
-            q = summary.get("queries", {})
+            q = summary.get("queries") if isinstance(summary, dict) else None
+            gravity = summary.get("gravity") if isinstance(summary, dict) else None
+            measurements = (
+                q.get("total"), q.get("blocked"), q.get("percent_blocked"),
+                gravity.get("domains_being_blocked"),
+            ) if isinstance(q, dict) and isinstance(gravity, dict) else ()
+            if not measurements or any(
+                type(value) not in (int, float) or not math.isfinite(value) or value < 0
+                for value in measurements
+            ):
+                planes.append({"id": target["id"], "label": target["label"],
+                               "status": "degraded", "detail": "Pi-hole statistics are unavailable: invalid or missing measurements."})
+                continue
             planes.append({
                 "id": target["id"],
                 "label": target["label"],
                 "status": "healthy",
-                "queries_today": q.get("total", 0),
-                "blocked_today": q.get("blocked", 0),
-                "percent_blocked": round(q.get("percent_blocked", 0), 1),
-                "domains_on_blocklist": summary.get("gravity", {}).get("domains_being_blocked", 0),
+                "queries_today": q["total"],
+                "blocked_today": q["blocked"],
+                "percent_blocked": round(q["percent_blocked"], 1),
+                "domains_on_blocklist": gravity["domains_being_blocked"],
             })
         except HTTPError as exc:
             planes.append({"id": target["id"], "label": target["label"], "status": "degraded", "detail": f"HTTP {exc.code}"})
