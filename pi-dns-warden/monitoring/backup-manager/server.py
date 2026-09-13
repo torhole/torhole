@@ -3260,10 +3260,10 @@ class Handler(BaseHTTPRequestHandler):
 
         return json_response(self, {"error": "Not found"}, status=HTTPStatus.NOT_FOUND)
 
-    def _sse_send(self, payload):
-        """Write one SSE event. Returns False if the client disconnected."""
+    def _sse_send(self, payload=None):
+        """Write an event or a keepalive comment; False means disconnected."""
         try:
-            line = f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
+            line = ": keepalive\n\n" if payload is None else f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
             self.wfile.write(line.encode("utf-8"))
             self.wfile.flush()
             return True
@@ -3365,6 +3365,10 @@ class Handler(BaseHTTPRequestHandler):
         # Live tail: poll all planes, stream new queries, sleep, repeat.
         while True:
             time.sleep(QUERY_FEED_POLL_S)
+            # Detect closed browsers even when Pi-hole is idle or unavailable.
+            # SSE comments keep the connection alive without creating query events.
+            if not self._sse_send():
+                return
             for target in PIHOLE_API_TARGETS:
                 try:
                     queries = _fetch_pihole_queries(target, values, QUERY_FEED_BATCH_N)

@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import os
 import stat
 import subprocess
@@ -218,6 +219,65 @@ class PrivacySnapshotTests(unittest.TestCase):
                 self.assertTrue(result["privacy_intact"])
                 self.assertNotIn("guarantee", result["headline"].lower())
                 self.assertNotIn("serving via Tor", result["headline"])
+
+
+class QueryStreamTests(unittest.TestCase):
+    def handler(self, output):
+        handler = object.__new__(server.Handler)
+        handler.wfile = output
+        handler.send_response = lambda *args: None
+        handler.send_header = lambda *args: None
+        handler.end_headers = lambda: None
+        return handler
+
+    def test_idle_or_failed_source_releases_disconnected_handler(self):
+        class DisconnectedOutput:
+            def write(self, data):
+                raise BrokenPipeError("fixture disconnected browser")
+
+        class PollingLimit(Exception):
+            pass
+
+        for failure in (None, OSError("fixture Pi-hole unavailable")):
+            with self.subTest(source_failure=bool(failure)):
+                handler = self.handler(DisconnectedOutput())
+                with mock.patch.object(server, "read_env_values_safe", return_value={}), \
+                     mock.patch.object(server, "PIHOLE_API_TARGETS", [{"id": "trusted"}]), \
+                     mock.patch.object(server, "_fetch_pihole_queries", return_value=[], side_effect=failure), \
+                     mock.patch.object(server.time, "sleep", side_effect=[None, PollingLimit]):
+                    try:
+                        handler._stream_query_feed()
+                    except PollingLimit:
+                        self.fail("Disconnected stream kept polling without detecting the closed output")
+
+    def test_heartbeats_are_comments_and_query_events_still_flow(self):
+        class Output(io.BytesIO):
+            def __init__(self):
+                super().__init__()
+                self.flushes = 0
+
+            def flush(self):
+                self.flushes += 1
+                if self.flushes == 3:
+                    raise ConnectionResetError("fixture disconnect after query and heartbeat")
+
+        class PollingLimit(Exception):
+            pass
+
+        output = Output()
+        handler = self.handler(output)
+        with mock.patch.object(server, "read_env_values_safe", return_value={}), \
+             mock.patch.object(server, "PIHOLE_API_TARGETS", [{"id": "trusted"}]), \
+             mock.patch.object(server, "_fetch_pihole_queries", return_value=[{"id": 1, "time": 10}]), \
+             mock.patch.object(server.time, "sleep", side_effect=[None, None, None, PollingLimit]):
+            try:
+                handler._stream_query_feed()
+            except PollingLimit:
+                self.fail("Idle stream never flushed a heartbeat")
+        wire = output.getvalue().decode()
+        self.assertEqual(wire.count('data: {"id":1,"time":10}'), 1)
+        self.assertIn(": keepalive\n\n", wire)
+        self.assertNotIn("data: null", wire)
 
 
 if __name__ == "__main__":
