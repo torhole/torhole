@@ -633,10 +633,13 @@ function LeakTestPanel({ state, refetch }: { state: SnapshotState; refetch: () =
     state.kind === "ready" ? state.data.leak_test.recent_pass_rate : null;
   const historyCount =
     state.kind === "ready" ? state.data.leak_test.history_count : 0;
+  // The backend calculates the rate and conclusive count over its last
+  // 20 runs; history_count is the entire retained history.
+  const recentCount = Math.min(historyCount, 20);
   const conclusiveCount =
     state.kind === "ready"
-      ? state.data.leak_test.conclusive_count ?? state.data.leak_test.history_count
-      : 0;
+      ? state.data.leak_test.conclusive_count ?? null
+      : null;
   // history may be absent on an older backend that hasn't been rebuilt yet —
   // fall back to an empty array so the UI doesn't crash on a version skew.
   const history: LeakTestHistoryEntry[] =
@@ -673,10 +676,13 @@ function LeakTestPanel({ state, refetch }: { state: SnapshotState; refetch: () =
         running={runState.kind === "running"}
       />
 
-      {recentPassRate !== null && historyCount > 0 && (
-        <div className="flex items-center gap-3 mt-0.5">
+      {historyCount > 0 && (
+        <div className="flex flex-wrap items-center gap-3 mt-0.5">
           <div className="th-ui-label text-th-text-muted shrink-0">
-              recent · {Math.round(recentPassRate * 100)}% conclusive ({conclusiveCount}/{historyCount})
+            <div>{recentPassRate === null
+              ? "No conclusive checks"
+              : `${Math.round(recentPassRate * 100)}% passed among conclusive checks`}</div>
+            <div>{conclusiveCount !== null && `${conclusiveCount} conclusive · `}last {recentCount} runs</div>
           </div>
           <LeakTestHistoryStrip history={history} />
         </div>
