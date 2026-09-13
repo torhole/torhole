@@ -25,3 +25,52 @@ for (const view of [
     await expect(page.getByRole("tab", { name: view.next, exact: true })).toHaveAttribute("aria-selected", "true");
   });
 }
+
+for (const reducedMotion of ["reduce", "no-preference"] as const) {
+  test(`Privacy selection reveals its content on a short screen (${reducedMotion})`, async ({ page }) => {
+    const { snapshot } = await import("./fixtures/snapshot");
+    await page.setViewportSize({ width: 1024, height: 600 });
+    await page.emulateMedia({ reducedMotion });
+    await page.route("**/api/**", route => route.fulfill({ json: { config: {}, channels: [], backups: [], planes: [], status: {} } }));
+    await page.route("**/api/system/snapshot", route => route.fulfill({ json: snapshot }));
+    await page.goto("/?mode=advanced#/privacy");
+    await expect(page.getByRole("tab", { name: "DNS leak test", exact: true })).toBeVisible();
+    for (const title of ["Live query feed", "Tor circuits", "DNS leak test"]) {
+      const tab = page.getByRole("tab", { name: title, exact: true });
+      // Reproduce selecting navigation near the bottom edge of a short display.
+      await tab.evaluate(element => element.scrollIntoView({ block: "end" }));
+      await tab.click();
+      const panel = page.getByRole("tabpanel", { name: title, exact: true });
+      await expect(panel).toBeVisible();
+      await expect.poll(async () => (await panel.boundingBox())!.y).toBeLessThan(400);
+      await expect(tab).toHaveAttribute("aria-controls", await panel.getAttribute("id") ?? "missing");
+    }
+    await page.screenshot({ path: test.info().outputPath(`privacy-short-${reducedMotion}.png`), fullPage: false });
+  });
+}
+
+
+test("Privacy sidebar deep links reveal loaded content without jumping on refresh", async ({ page }) => {
+  const { snapshot } = await import("./fixtures/snapshot");
+  await page.setViewportSize({ width: 1024, height: 600 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.clock.install();
+  await page.route("**/api/**", route => route.fulfill({ json: { config: {} } }));
+  await page.route("**/api/system/snapshot", async route => {
+    await new Promise(resolve => setTimeout(resolve, 150));
+    await route.fulfill({ json: snapshot });
+  });
+  await page.goto("/?mode=advanced#/privacy?section=internal");
+  await expect(page.getByRole("tabpanel")).toContainText("Tor's current circuit table");
+  await expect.poll(async () => (await page.getByRole("tabpanel").boundingBox())!.y).toBeLessThan(400);
+  for (const label of ["DNS leak test", "Live queries", "Tor circuits", "Tor circuits"]) {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.getByRole("link", { name: label, exact: true }).click();
+    await expect.poll(async () => (await page.getByRole("tabpanel").boundingBox())!.y).toBeLessThan(400);
+  }
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const refresh = page.waitForResponse("**/api/system/snapshot");
+  await page.clock.runFor(5000);
+  await refresh;
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+});

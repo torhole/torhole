@@ -94,7 +94,7 @@ export default function PrivacyScreen() {
       <PrivacyHero state={state} />
       <TorRuntimeStrip state={state} />
       <CircuitPlanePanels state={state} refetch={refetch} />
-      <SectionTabs tabs={tabs} />
+      <SectionTabs tabs={tabs} scrollOnSelect contentReady={state.kind !== "loading"} />
     </div>
   );
 }
