@@ -7,6 +7,7 @@ import re
 import secrets
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from datetime import datetime, timezone
@@ -15,6 +16,12 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
+
+
+# Shared with the Advanced backend and Ansible. In the bootstrap image this
+# module is copied beside server.py; in a checkout it lives with the backend.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "monitoring" / "backup-manager"))
+from env_store import parse_env_text, serialize_env_value
 
 
 ROOT_DIR = Path(os.environ.get("TORHOLE_ROOT_DIR", "/workspace")).resolve()
@@ -123,16 +130,9 @@ def load_index():
 
 
 def parse_env(path):
-    values = {}
     if not path.exists():
-        return values
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip()
-    return values
+        return {}
+    return parse_env_text(path.read_text(encoding="utf-8"))
 
 
 def public_config():
@@ -539,11 +539,11 @@ def _replace_env_values(template, updates):
         match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)=", line)
         if match and match.group(1) in remaining:
             key = match.group(1)
-            lines.append(f"{key}={remaining.pop(key)}")
+            lines.append(f"{key}={serialize_env_value(remaining.pop(key))}")
         else:
             lines.append(line)
     if remaining:
-        lines.extend(f"{key}={value}" for key, value in remaining.items())
+        lines.extend(f"{key}={serialize_env_value(value)}" for key, value in remaining.items())
     return "\n".join(lines) + "\n"
 
 

@@ -150,6 +150,32 @@ class PublicConfigTests(unittest.TestCase):
         )
 
 
+class EnvironmentCompatibilityTests(unittest.TestCase):
+    def test_receipt_decodes_compose_credentials_without_changing_them(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app = root / "pi-dns-warden"
+            app.mkdir()
+            (app / ".env").write_text(
+                'TORHOLE_EDITION=advanced\nTORHOLE_TOPOLOGY=single-lan\n'
+                "TORHOLE_ADMIN_PASSWORD=\"fixture's $$password # secret\"\n"
+                "PIHOLE_TRUSTED_PASSWORD=\"fixture's $$password # secret\"\n"
+            )
+            with mock.patch.object(server, "ROOT_DIR", root):
+                receipt = server.existing_install_receipt()
+            self.assertEqual(receipt["credentials"]["TORHOLE_ADMIN_PASSWORD"], "fixture's $password # secret")
+            self.assertEqual(receipt["credentials"]["PIHOLE_TRUSTED_PASSWORD"], "fixture's $password # secret")
+
+    def test_rewriting_credentials_uses_literal_compose_encoding(self):
+        value = "fixture's $password # secret"
+        result = server._replace_env_values("PASSWORD=old\n", {"PASSWORD": value})
+        self.assertEqual(result, "PASSWORD=\"fixture's $$password # secret\"\n")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / ".env"
+            path.write_text(result)
+            self.assertEqual(server.parse_env(path)["PASSWORD"], value)
+
+
 class BlocklistValidationTests(unittest.TestCase):
     def test_accepts_known_lists_in_canonical_order(self):
         self.assertEqual(
