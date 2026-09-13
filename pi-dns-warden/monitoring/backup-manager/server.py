@@ -29,6 +29,7 @@ from urllib.error import HTTPError, URLError
 import sys as _sys
 
 _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import env_store
 
 
 ROOT_DIR = Path(os.environ.get("TORHOLE_ROOT_DIR", "/workspace")).resolve()
@@ -537,6 +538,7 @@ def _restore_web_access_file(path, previous, mode):
         temp_path.unlink(missing_ok=True)
 
 
+@env_store.serialized_env_operation
 def configure_https(mode, certificate=None, private_key=None):
     """Render, validate, and schedule a generated/custom HTTPS transition.
 
@@ -643,7 +645,6 @@ def delete_backup_archive(archive_name):
 # rest of this file — and the test suites — keep addressing them here while
 # the decomposition proceeds. env_store.ENV_FILE is the patch point for
 # tests that redirect writes to a tempdir.
-import env_store
 # Pi-hole API client lives in pihole_client (T-048 step 4); re-exported.
 from pihole_client import (
     PIHOLE_API_TARGETS,
@@ -769,6 +770,7 @@ _EDITION_RE = re.compile(r"^(home|advanced)$")
 _TOPOLOGY_RE = re.compile(r"^(single-lan|vlan)$")
 
 
+@env_store.serialized_env_operation
 def apply_setup_config(requested):
     """Persist the Setup wizard's captured fields into .env.
 
@@ -901,6 +903,7 @@ def verify_admin_password(supplied):
     return secrets.compare_digest(supplied.encode("utf-8"), current.encode("utf-8"))
 
 
+@env_store.serialized_env_operation
 def update_admin_password(new_password, current_password=None):
     """Change the admin password end-to-end:
         1. verify current_password (if supplied) against the .env plaintext
@@ -3057,16 +3060,18 @@ def write_file(path: Path, content: str):
     path.write_text(content, encoding="utf-8")
 
 
+@env_store.serialized_env_operation
 def rollback_notification_state(env_text, config_text):
     # Write via env_store's path so every .env write shares one source of
     # truth (and one test patch point).
-    write_file(env_store.ENV_FILE, env_text)
+    env_store.restore_env_text(env_text)
     if config_text:
         write_file(ALERTMANAGER_CONFIG_FILE, config_text)
     run_script(str(ROOT_DIR / "ops/scripts/17-render-alertmanager.sh"))
     reload_alertmanager()
 
 
+@env_store.serialized_env_operation
 def set_notification_channel(channel_name, enabled):
     if channel_name not in CHANNEL_FIELDS:
         raise ValueError("Unknown notification channel.")

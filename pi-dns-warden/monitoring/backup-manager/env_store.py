@@ -8,8 +8,12 @@ secret-key guardrails. server.py re-exports these names for compatibility.
 
 import os
 import re
+import shlex
 import shutil
+import tempfile
+import threading
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
 
 ROOT_DIR = Path(os.environ.get("TORHOLE_ROOT_DIR", "/workspace")).resolve()
@@ -19,6 +23,18 @@ ENV_FILE = ROOT_DIR / ".env"
 # update_env_keys rejects them unless allow_secret_keys=True; dedicated
 # helpers (update_admin_password, notification-channel writes) own them.
 _SECRET_KEYS = re.compile(r"(PASSWORD|SECRET|KEY|TOKEN|PASS)", re.IGNORECASE)
+
+# One lock covers both individual writes and callers that may roll them back.
+# Reentrancy lets those callers hold the transaction through rendering/reload.
+_ENV_LOCK = threading.RLock()
+
+
+def serialized_env_operation(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with _ENV_LOCK:
+            return function(*args, **kwargs)
+    return wrapped
 
 
 def read_env_text():
@@ -33,8 +49,19 @@ def parse_env_text(text):
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or "=" not in line:
             continue
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip()
+        if stripped.startswith("export "):
+            stripped = stripped[7:].lstrip()
+        key, raw_value = stripped.split("=", 1)
+        raw_value = raw_value.strip()
+        # Match ops/lib/load-env.sh: parse quoting, never evaluate shell code.
+        if raw_value.startswith(("'", '"')):
+            parts = shlex.split(raw_value, comments=True, posix=True)
+            if len(parts) > 1:
+                raise ValueError(f"Unexpected tokens after quoted value for {key.strip()}")
+            value = parts[0] if parts else ""
+        else:
+            value = re.split(r"\s+#", raw_value, maxsplit=1)[0].rstrip()
+        values[key.strip()] = value
     return values
 
 
@@ -50,10 +77,10 @@ def read_env_values_safe():
 
 
 def update_env_value_text(text, key, value):
-    replacement = f"{key}={value}"
+    replacement = f"{key}={shlex.quote(value)}"
     pattern = re.compile(rf"^{re.escape(key)}=.*$", re.MULTILINE)
     if pattern.search(text):
-        return pattern.sub(replacement, text, count=1)
+        return pattern.sub(lambda _: replacement, text, count=1)
 
     suffix = "" if text.endswith("\n") else "\n"
     return f"{text}{suffix}{replacement}\n"
@@ -72,11 +99,6 @@ def update_env_value_text(text, key, value):
 # quoted/multi-line garbage.
 _ENV_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
-# .env holds plaintext secrets and is shell-sourced-equivalent by the loader,
-# so every file we create in its write lifecycle must be owner-only.
-_ENV_MODE = 0o600
-
-
 def _reject_env_control_chars(key, value):
     """A value that contains a newline, carriage return or NUL would split into
     extra .env lines (smuggling a second key) or truncate the file. Reject them
@@ -85,6 +107,7 @@ def _reject_env_control_chars(key, value):
         raise ValueError(f"Value for {key!r} may not contain newlines or NUL bytes.")
 
 
+@serialized_env_operation
 def backup_env_file():
     """Copy the current .env to a timestamped sibling file. Returns the
     backup path so callers can log it or reference it on rollback.
@@ -94,21 +117,35 @@ def backup_env_file():
     if not ENV_FILE.exists():
         return None
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    backup_path = ENV_FILE.with_name(f".env.bak-{stamp}")
-    # shutil.copy2 preserves permissions + mtime. We want a byte-identical
-    # snapshot we could cp back on rollback.
-    shutil.copy2(ENV_FILE, backup_path)
-    # The source .env may be too permissive on legacy hosts; never let a
-    # secret-bearing backup be more readable than 0600 regardless.
-    os.chmod(backup_path, _ENV_MODE)
+    fd, name = tempfile.mkstemp(prefix=f".env.bak-{stamp}-", dir=ENV_FILE.parent)
+    backup_path = Path(name)
+    try:
+        with os.fdopen(fd, "wb") as target, ENV_FILE.open("rb") as source:
+            shutil.copyfileobj(source, target)
+    except Exception:
+        backup_path.unlink(missing_ok=True)
+        raise
     return backup_path
 
 
+def _atomic_env_write(text):
+    # mkstemp creates a unique, exclusive 0600 inode before any secrets enter it.
+    fd, name = tempfile.mkstemp(prefix=".env.new-", dir=ENV_FILE.parent)
+    tmp_path = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as target:
+            target.write(text)
+        os.replace(tmp_path, ENV_FILE)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+@serialized_env_operation
 def update_env_keys(updates, *, allow_secret_keys=False):
     """Apply a batch of {key: value} updates to .env atomically.
 
-    Writes to a sibling .env.new file first, validates it parses back to
-    the expected values, then renames it over .env. If anything in that
+    Validates the new text parses back to the expected values, writes to
+    a private unique sibling file, then renames it over .env. If anything in that
     chain fails, .env is left untouched.
 
     Every call also creates a .env.bak-<timestamp> via backup_env_file()
@@ -160,40 +197,25 @@ def update_env_keys(updates, *, allow_secret_keys=False):
         _reject_env_control_chars(key, serialized)
         text = update_env_value_text(text, key, serialized)
 
-    tmp_path = ENV_FILE.with_name(".env.new")
-    try:
-        tmp_path.write_text(text, encoding="utf-8")
-        # The temp file becomes .env on rename, so it must already be 0600 —
-        # otherwise there is a window where secrets sit world-readable.
-        os.chmod(tmp_path, _ENV_MODE)
-        # Re-read from disk to make sure the parser agrees with what we
-        # intended. Catches broken quoting / control chars before we
-        # commit the rename.
-        roundtrip = parse_env_text(tmp_path.read_text(encoding="utf-8"))
-        for key, value in updates.items():
-            expected = "" if value is None else str(value)
-            if roundtrip.get(key) != expected:
-                raise ValueError(
-                    f"Round-trip parse mismatch for {key!r}: "
-                    f"wrote {expected!r}, read back {roundtrip.get(key)!r}"
-                )
-        # Atomic replace — on POSIX this is a single rename(). The destination
-        # inode is REPLACED by the temp file's inode (0600), which is exactly
-        # why we chmod the temp file above; the operation is crash-safe.
-        os.replace(tmp_path, ENV_FILE)
-        # Belt and braces: if .env pre-existed with looser perms and something
-        # about the rename preserved them, force owner-only.
-        os.chmod(ENV_FILE, _ENV_MODE)
-    finally:
-        if tmp_path.exists():
-            try:
-                tmp_path.unlink()
-            except OSError:
-                pass
+    roundtrip = parse_env_text(text)
+    for key, value in updates.items():
+        expected = "" if value is None else str(value)
+        if roundtrip.get(key) != expected:
+            raise ValueError(
+                f"Round-trip parse mismatch for {key!r}: "
+                f"wrote {expected!r}, read back {roundtrip.get(key)!r}"
+            )
+    _atomic_env_write(text)
 
     return backup_path, read_env_values()
 
 
+@serialized_env_operation
+def restore_env_text(text):
+    _atomic_env_write(text)
+
+
+@serialized_env_operation
 def restore_env_from_backup(backup_path):
     """Copy a backup file back over .env. Used when a later step in a
     write flow (render script, container restart) fails and we need to
@@ -201,6 +223,5 @@ def restore_env_from_backup(backup_path):
     """
     if backup_path is None or not Path(backup_path).exists():
         return False
-    shutil.copy2(backup_path, ENV_FILE)
-    os.chmod(ENV_FILE, _ENV_MODE)
+    restore_env_text(Path(backup_path).read_text(encoding="utf-8"))
     return True
