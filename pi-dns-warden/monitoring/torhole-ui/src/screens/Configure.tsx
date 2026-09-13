@@ -46,12 +46,12 @@ import {
   fetchConfig,
   fetchNotificationChannels,
   enableLocalHttps,
-  formatRelative,
   sendTestAlert,
   setNotificationChannel,
   updateAdminPassword,
   updateConfigValue,
   useSnapshot,
+  snapshotFreshness,
   type NotificationChannel,
   type SnapshotState,
 } from "../lib/snapshot";
@@ -134,8 +134,6 @@ export default function ConfigureScreen() {
 }
 
 function Header({ state }: { state: SnapshotState }) {
-  const fetched =
-    state.kind === "ready" ? formatRelative(new Date(state.fetchedAt).toISOString()) : "—";
   return (
     <div className="flex items-end justify-between mb-7">
       <div>
@@ -147,11 +145,11 @@ function Header({ state }: { state: SnapshotState }) {
         </h1>
       </div>
       <div className="flex items-center gap-2 text-[11px] text-th-text-muted">
-        <span className="relative flex h-1.5 w-1.5">
+        {state.kind === "ready" && <span className="relative flex h-1.5 w-1.5">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-th-primary opacity-60"></span>
           <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-th-primary"></span>
-        </span>
-        <span className="font-mono uppercase tracking-[0.14em]">live · {fetched}</span>
+        </span>}
+        <span className="font-mono uppercase tracking-[0.14em]">{snapshotFreshness(state)}</span>
       </div>
     </div>
   );

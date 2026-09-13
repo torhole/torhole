@@ -270,7 +270,16 @@ export interface Snapshot {
 export type SnapshotState =
   | { kind: "loading" }
   | { kind: "ready"; data: Snapshot; fetchedAt: number }
-  | { kind: "error"; error: string; fetchedAt: number };
+  | { kind: "error"; error: string; fetchedAt: number; lastSuccessfulAt?: number };
+
+/** Human-readable freshness shared by all snapshot screens. */
+export function snapshotFreshness(state: SnapshotState): string {
+  if (state.kind === "loading") return "Updating…";
+  if (state.kind === "ready") return `Updated ${formatRelative(new Date(state.fetchedAt).toISOString())}`;
+  return state.lastSuccessfulAt === undefined
+    ? "Updates unavailable"
+    : `Updates unavailable · last updated ${formatRelative(new Date(state.lastSuccessfulAt).toISOString())}`;
+}
 
 export type BuildInfoState =
   | { kind: "loading" }
@@ -327,8 +336,8 @@ export interface UseSnapshotResult {
  * useSnapshot — single shared poller for the admin UI.
  *
  * Polls /api/system/snapshot every SNAPSHOT_POLL_MS, updates on success,
- * preserves the last known good snapshot on transient errors so screens
- * don't flicker between "data" and "loading" on every poll.
+ * marks measurements unavailable on errors so historical health is never
+ * presented as current proof. The last successful fetch time remains visible.
  *
  * Exposes a `refetch` function that callers can invoke after running an
  * action (e.g. rotate identity, take snapshot) to immediately reflect the
@@ -336,7 +345,7 @@ export interface UseSnapshotResult {
  */
 export function useSnapshot(): UseSnapshotResult {
   const [state, setState] = useState<SnapshotState>({ kind: "loading" });
-  const lastGood = useRef<Snapshot | null>(null);
+  const lastSuccessfulAt = useRef<number | undefined>(undefined);
   const tickRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
@@ -347,24 +356,17 @@ export function useSnapshot(): UseSnapshotResult {
       try {
         const data = await fetchSnapshot(controller.signal);
         if (cancelled) return;
-        lastGood.current = data;
-        setState({ kind: "ready", data, fetchedAt: Date.now() });
+        lastSuccessfulAt.current = Date.now();
+        setState({ kind: "ready", data, fetchedAt: lastSuccessfulAt.current });
       } catch (err) {
         if (cancelled) return;
         if ((err as Error).name === "AbortError") return;
-        if (lastGood.current) {
-          setState({
-            kind: "ready",
-            data: lastGood.current,
-            fetchedAt: Date.now(),
-          });
-        } else {
-          setState({
-            kind: "error",
-            error: (err as Error).message,
-            fetchedAt: Date.now(),
-          });
-        }
+        setState({
+          kind: "error",
+          error: (err as Error).message,
+          fetchedAt: Date.now(),
+          lastSuccessfulAt: lastSuccessfulAt.current,
+        });
       }
     };
     tickRef.current = tick;

@@ -37,10 +37,10 @@ import {
   finishBootstrap,
   fetchBootstrapStatus,
   fetchConfig,
-  formatRelative,
   recoverBootstrapReceipt,
   startBootstrapInstall,
   useSnapshot,
+  snapshotFreshness,
   type BootstrapInstallStatus,
   type SetupApplyResult,
   type SnapshotState,
@@ -456,8 +456,6 @@ export default function SetupScreen({ bootstrap = false }: { bootstrap?: boolean
 }
 
 function Header({ state }: { state: SnapshotState }) {
-  const fetched =
-    state.kind === "ready" ? formatRelative(new Date(state.fetchedAt).toISOString()) : "—";
   return (
     <div className="flex items-end justify-between mb-7">
       <div>
@@ -469,7 +467,7 @@ function Header({ state }: { state: SnapshotState }) {
         </h1>
       </div>
       <div className="flex items-center gap-2 text-[11px] text-th-text-muted">
-        <span className="font-mono uppercase tracking-[0.14em]">live · {fetched}</span>
+        <span className="font-mono uppercase tracking-[0.14em]">{snapshotFreshness(state)}</span>
       </div>
     </div>
   );

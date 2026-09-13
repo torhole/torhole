@@ -41,6 +41,7 @@ import {
   runLeakTest,
   useQueryFeed,
   useSnapshot,
+  snapshotFreshness,
   type LeakTestHistoryEntry,
   type LeakTestResult,
   type QueryEvent,
@@ -248,8 +249,6 @@ function computeInternalMeta(state: SnapshotState): string | undefined {
 }
 
 function Header({ state }: { state: SnapshotState }) {
-  const fetched =
-    state.kind === "ready" ? formatRelative(new Date(state.fetchedAt).toISOString()) : "—";
   return (
     <div className="flex items-end justify-between mb-7">
       <div>
@@ -261,11 +260,11 @@ function Header({ state }: { state: SnapshotState }) {
         </h1>
       </div>
       <div className="flex items-center gap-2 text-[11px] text-th-text-muted">
-        <span className="relative flex h-1.5 w-1.5">
+        {state.kind === "ready" && <span className="relative flex h-1.5 w-1.5">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-th-primary opacity-60"></span>
           <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-th-primary"></span>
-        </span>
-        <span className="font-mono uppercase tracking-[0.14em]">live · {fetched}</span>
+        </span>}
+        <span className="font-mono uppercase tracking-[0.14em]">{snapshotFreshness(state)}</span>
       </div>
     </div>
   );
@@ -1126,7 +1125,7 @@ function InternalCircuitsPanel({ state }: { state: SnapshotState }) {
   if (state.kind !== "ready") {
     return (
       <div className="bg-th-panel border border-th-line rounded-lg p-5 text-[11px] text-th-text-muted font-mono">
-        loading…
+        {state.kind === "error" ? "Circuit status unavailable" : "loading…"}
       </div>
     );
   }

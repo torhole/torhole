@@ -423,7 +423,7 @@ function Sidebar({
 
       {!collapsed && (
         <div className="shrink-0 border-t border-th-line/40 px-5 py-4 text-[10px] text-th-text-muted/50 font-mono uppercase tracking-[0.14em]">
-          Torhole {version} · live
+          Torhole {version}
         </div>
       )}
     </aside>
@@ -563,12 +563,14 @@ function QuickActions({ refetch }: { refetch: () => void }) {
     try {
       await fn();
       setState({ kind: "success", id, message: okMsg });
-      refetch();
       // Kick a second refetch after a beat so slower pipelines (validation,
       // backup) have time to update the snapshot with their result.
       setTimeout(refetch, 1800);
     } catch (err) {
       setState({ kind: "error", id, message: (err as Error).message });
+    } finally {
+      // Failed domain results also change the recorded checks.
+      refetch();
     }
   };
 
@@ -591,14 +593,24 @@ function QuickActions({ refetch }: { refetch: () => void }) {
       label: "Run leak test",
       icon: Zap,
       hint: "SOCKS5 → Tor → check.torproject.org",
-      onClick: () => run("leak", runLeakTest, "leak test complete"),
+      onClick: () => run("leak", async () => {
+        const result = await runLeakTest();
+        if (!result.pass) {
+          throw new Error(result.error || (result.verification_status === "unavailable"
+            ? "Leak test unavailable"
+            : "Leak test failed: exit is not Tor"));
+        }
+      }, "leak test passed"),
     },
     {
       id: "validate",
       label: "Run validation",
       icon: Sparkles,
       hint: "full stack validator",
-      onClick: () => run("validate", runValidation, "validation complete"),
+      onClick: () => run("validate", async () => {
+        const result = await runValidation();
+        if (result.status !== "success") throw new Error(result.summary || "Validation failed");
+      }, "validation passed"),
     },
     {
       id: "backup",

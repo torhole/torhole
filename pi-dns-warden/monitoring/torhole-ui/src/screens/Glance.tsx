@@ -1,7 +1,7 @@
 import { ShieldCheck, ShieldAlert, ArrowRight, Network, Cpu, Globe, Settings, Users, Grid2X2, LockKeyhole, CircleCheck, CircleAlert, CircleX, CircleHelp, FileCheck2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import "./glance.css";
-import { formatInt, formatRelative, type Snapshot, type SnapshotState } from "../lib/snapshot";
+import { formatInt, formatRelative, snapshotFreshness, type Snapshot, type SnapshotState } from "../lib/snapshot";
 
 // Presentation only: the snapshot remains the authority for every health claim.
 export default function Glance({ state, actions }: { state: SnapshotState; actions: React.ReactNode }) {
@@ -9,7 +9,7 @@ export default function Glance({ state, actions }: { state: SnapshotState; actio
     <div className="glance-page">
       <header className="glance-header">
         <div><h1>Glance</h1><p>Your network, at a glance.</p></div>
-        <span className="glance-updated">{state.kind === "ready" ? `Updated ${formatRelative(new Date(state.fetchedAt).toISOString())}` : state.kind === "loading" ? "Updating…" : "Updates unavailable"}</span>
+        <span className="glance-updated">{snapshotFreshness(state)}</span>
       </header>
       {state.kind === "ready" ? <Overview data={state.data} /> : (
         <section className="glance-panel glance-summary" role="status">
