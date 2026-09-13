@@ -26,6 +26,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   Activity,
   AlertCircle,
+  ArrowUp,
   Check,
   Lock,
   Pause,
@@ -53,6 +54,7 @@ import {
 
 export default function PrivacyScreen() {
   const { state, refetch } = useSnapshot();
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
   // Compute live meta for each tab from the snapshot so the tab row
   // reflects real state without extra polling.
@@ -90,12 +92,35 @@ export default function PrivacyScreen() {
 
   return (
     <div className="th-dashboard-page">
-      <PageHeader title="What does Torhole prove?" description="Review DNS routing, exit tests, and Tor circuits." state={state} />
+      <PageHeader title="What does Torhole prove?" description="Review DNS routing, exit tests, and Tor circuits." state={state} headingRef={headingRef} />
       <PrivacyHero state={state} />
       <TorRuntimeStrip state={state} />
       <CircuitPlanePanels state={state} refetch={refetch} />
       <SectionTabs tabs={tabs} scrollOnSelect contentReady={state.kind !== "loading"} />
+      <BackToTop onClick={() => {
+        headingRef.current?.focus({ preventScroll: true });
+        window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+      }} />
     </div>
+  );
+}
+
+function BackToTop({ onClick }: { onClick: () => void }) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const update = () => setVisible(window.scrollY > 240);
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    return () => window.removeEventListener("scroll", update);
+  }, []);
+
+  if (!visible) return null;
+  return (
+    <button type="button" onClick={onClick}
+      className="fixed bottom-6 right-6 z-30 inline-flex min-h-11 items-center gap-2 rounded-md border border-th-line-strong bg-th-panel px-4 text-sm text-th-text shadow-lg hover:bg-th-bg-alt">
+      <ArrowUp size={16} aria-hidden="true" />
+      Back to top
+    </button>
   );
 }
 

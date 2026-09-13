@@ -74,3 +74,27 @@ test("Privacy sidebar deep links reveal loaded content without jumping on refres
   await refresh;
   expect(await page.evaluate(() => window.scrollY)).toBe(0);
 });
+
+
+for (const reducedMotion of ["reduce", "no-preference"] as const) {
+  test(`Privacy returns to the top without changing the selected section (${reducedMotion})`, async ({ page }) => {
+    const { snapshot } = await import("./fixtures/snapshot");
+    await page.setViewportSize({ width: 1024, height: 600 });
+    await page.emulateMedia({ reducedMotion });
+    await page.route("**/api/**", route => route.fulfill({ json: { config: {} } }));
+    await page.route("**/api/system/snapshot", route => route.fulfill({ json: snapshot }));
+    await page.goto("/?mode=advanced#/privacy");
+    const top = page.getByRole("button", { name: "Back to top", exact: true });
+    await expect(top).not.toBeVisible();
+    await page.getByRole("link", { name: "Live queries", exact: true }).click();
+    await expect(top).toBeVisible();
+    await expect(top).toBeInViewport();
+    await top.focus();
+    await page.keyboard.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+    await expect(top).not.toBeVisible();
+    await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
+    await expect(page.getByRole("tab", { name: "Live query feed", exact: true })).toHaveAttribute("aria-selected", "true");
+    await expect(page).toHaveURL(/section=query-feed$/);
+  });
+}
