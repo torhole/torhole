@@ -12,8 +12,10 @@ bash "$ROOT_DIR/ops/scripts/12-sync-topology.sh"
 bash "$ROOT_DIR/ops/scripts/14-build-admin-ui.sh"
 bash "$ROOT_DIR/ops/scripts/17-render-alertmanager.sh"
 bash "$ROOT_DIR/ops/scripts/18-render-auth.sh"
+bash "$ROOT_DIR/ops/scripts/13-render-prometheus.sh"
+bash "$ROOT_DIR/ops/scripts/14-render-caddy-topology.sh"
 bash "$ROOT_DIR/ops/scripts/16-render-reverse-proxy-dns.sh"
-bash "$ROOT_DIR/ops/scripts/19-validate-stack.sh"
+bash "$ROOT_DIR/ops/scripts/19-validate-stack.sh" --allow-image-pulls
 bash "$ROOT_DIR/ops/scripts/50-backup.sh"
 bash "$ROOT_DIR/ops/scripts/20-render-torrc.sh"
 "${COMPOSE[@]}" -f docker-compose.yml -f docker-compose.monitoring.yml pull --ignore-buildable

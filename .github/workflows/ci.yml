@@ -36,6 +36,7 @@ jobs:
       - name: Backend characterization tests
         run: |
           python3 monitoring/backup-manager/test_characterization.py
+          python3 monitoring/backup-manager/test_validation.py
           python3 monitoring/pihole-exporter/test_exporter.py
           python3 ops/tests/test-monitoring-dashboards.py
 

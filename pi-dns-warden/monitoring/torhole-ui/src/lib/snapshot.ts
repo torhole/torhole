@@ -137,12 +137,24 @@ export interface LeakTestState {
   history?: LeakTestHistoryEntry[];
 }
 
-export type ValidationCheckStatus = "success" | "error" | "skipped";
+export type ValidationCheckStatus = "success" | "error" | "skipped" | "queued" | "running";
 
 export interface ValidationCheck {
   id: string;
   label: string;
   status: ValidationCheckStatus;
+  description?: string;
+  remediation?: string;
+}
+
+export interface ValidationPreview {
+  scope: string;
+  impact: string;
+  checks: Omit<ValidationCheck, "status">[];
+  running: boolean;
+  started_at: string | null;
+  progress: ValidationCheck[];
+  last_result: ValidationResult | null;
 }
 
 export interface ValidationResult {
@@ -582,6 +594,12 @@ export async function runValidation(): Promise<ValidationResult> {
     throw new Error((data && data.error) || `HTTP ${res.status}`);
   }
   return data as ValidationResult;
+}
+
+export async function fetchValidationPreview(): Promise<ValidationPreview> {
+  const res = await fetch("/api/system/validation", { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
 }
 
 /** GET /api/recovery — list of backup archives. Not in the snapshot because

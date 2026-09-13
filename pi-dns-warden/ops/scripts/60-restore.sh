@@ -79,7 +79,9 @@ restore_volumes "$WORKDIR/extract"
 write_recovery_status "restore" "running" "Rendering and validating restored config" "$ARCHIVE"
 "${ROOT_DIR}/ops/scripts/17-render-alertmanager.sh"
 "${ROOT_DIR}/ops/scripts/16-render-reverse-proxy-dns.sh"
-"${ROOT_DIR}/ops/scripts/19-validate-stack.sh"
+"${ROOT_DIR}/ops/scripts/13-render-prometheus.sh"
+"${ROOT_DIR}/ops/scripts/14-render-caddy-topology.sh"
+"${ROOT_DIR}/ops/scripts/19-validate-stack.sh" --allow-image-pulls
 
 if [[ "$AUTO_RESTART" -eq 1 ]]; then
   write_recovery_status "restore" "running" "Restarting restored stack" "$ARCHIVE"

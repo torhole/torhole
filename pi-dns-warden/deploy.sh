@@ -220,7 +220,9 @@ echo "[11/13] Rendering shared auth config"
 bash ./ops/scripts/18-render-auth.sh
 
 echo "[12/13] Validating rendered config"
-bash ./ops/scripts/19-validate-stack.sh
+bash ./ops/scripts/13-render-prometheus.sh
+bash ./ops/scripts/14-render-caddy-topology.sh
+bash ./ops/scripts/19-validate-stack.sh --allow-image-pulls
 
 echo "[13/13] Starting and verifying containers"
 bash ./ops/scripts/20-up.sh

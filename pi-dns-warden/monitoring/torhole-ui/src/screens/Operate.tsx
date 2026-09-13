@@ -25,6 +25,7 @@ import {
   Bell,
   Boxes,
   Check,
+  ChevronDown,
   CircleX,
   Container as ContainerIcon,
   Cpu,
@@ -54,6 +55,7 @@ import {
   fetchConfig,
   fetchDnsInsights,
   fetchRecovery,
+  fetchValidationPreview,
   formatBytes,
   formatRelative,
   restoreBackup,
@@ -69,6 +71,7 @@ import {
   type ValidationCheck,
   type ValidationCheckStatus,
   type ValidationResult,
+  type ValidationPreview,
 } from "../lib/snapshot";
 
 export default function OperateScreen() {
@@ -606,20 +609,42 @@ type ValidationRunState =
   | { kind: "done"; result: ValidationResult }
   | { kind: "error"; message: string };
 
-function ValidationSection({
-  state,
-  refetch,
-}: {
-  state: SnapshotState;
-  refetch: () => void;
-}) {
+function ValidationSection({ state, refetch }: { state: SnapshotState; refetch: () => void }) {
   const [run, setRun] = useState<ValidationRunState>({ kind: "idle" });
+  const [preview, setPreview] = useState<ValidationPreview | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
 
-  const lastFromSnapshot =
-    state.kind === "ready" ? state.data.validation.last_result : null;
+  useEffect(() => {
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const data = await fetchValidationPreview();
+        if (active) { setPreview(data); setPreviewError(null); }
+      } catch (e) {
+        if (active) setPreviewError(`Could not load validation preview: ${(e as Error).message}`);
+      }
+      if (active) timer = setTimeout(poll, 1000);
+    };
+    void poll();
+    return () => { active = false; clearTimeout(timer); };
+  }, [retry]);
 
-  const result: ValidationResult | null =
-    run.kind === "done" ? run.result : lastFromSnapshot;
+  const running = run.kind === "running" || Boolean(preview?.running);
+  const lastFromSnapshot = state.kind === "ready" ? state.data.validation.last_result : null;
+  const result = run.kind === "done" ? run.result : preview?.last_result ?? lastFromSnapshot;
+  const catalog = preview?.checks ?? [];
+  const checks: ValidationCheck[] = running
+    ? preview?.running ? preview.progress : catalog.map(c => ({ ...c, status: "queued" }))
+    : result?.checks.length
+      ? result.checks.map(c => ({ ...catalog.find(item => item.id === c.id), ...c }))
+      : catalog.map(c => ({ ...c, status: "queued" }));
+  const completed = checks.filter(c => c.status === "success" || c.status === "error").length;
+  const summary = running
+    ? `${completed}/${checks.length} checks complete`
+    : result?.summary ?? "Ready to validate";
+  const rowKey = running ? "current" : result?.finished_at ?? "preview";
 
   const handleRun = async () => {
     setRun({ kind: "running" });
@@ -627,139 +652,113 @@ function ValidationSection({
       const r = await runValidation();
       setRun({ kind: "done", result: r });
       refetch();
-      setTimeout(() => setRun({ kind: "idle" }), 5000);
     } catch (e) {
-      setRun({ kind: "error", message: (e as Error).message });
-      setTimeout(() => setRun({ kind: "idle" }), 5000);
+      setRun({ kind: "error", message: `${(e as Error).message}. The request was interrupted; validation may still be running. Check live progress before retrying.` });
     }
   };
 
+  const downloadReport = () => {
+    if (!result) return;
+    // Legacy results may contain raw secrets: export only structured fields.
+    const report = {
+      status: result.status, started_at: result.started_at, finished_at: result.finished_at,
+      scope: preview?.scope, checks: result.checks.map(({ id, label, status }) => ({ id, label, status })),
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "torhole-validation.json";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
   return (
-    <TabPanel
-      action={
-        <>
-          <div className="text-[10px] font-mono text-th-text-muted uppercase tracking-[0.14em] mr-auto">
-            {result ? `last run: ${result.status}` : "no runs yet"}
+    <TabPanel>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <div className="min-w-0">
+          <div role="status" className={`flex items-center gap-2 text-sm font-semibold ${!running && result?.status === "error" ? "text-th-danger" : "text-th-text"}`}>
+            {running ? <RefreshCw size={14} className="animate-spin motion-reduce:animate-none shrink-0" /> : result ? statusIcon(result.status) : <ShieldCheck size={14} />}
+            {summary}
           </div>
-          <button
-            type="button"
-            onClick={handleRun}
-            disabled={run.kind === "running"}
-            className={`flex items-center gap-1.5 px-3 rounded-md text-[10.5px] font-mono uppercase tracking-[0.14em] min-h-[36px] transition-colors ${
-              run.kind === "running"
-                ? "bg-th-bg/60 border border-th-line text-th-text-muted cursor-wait"
-                : "bg-th-bg/60 border border-th-line text-th-text-muted hover:text-th-text hover:border-th-primary/40"
-            }`}
-          >
-            {run.kind === "running" ? (
-              <>
-                <RefreshCw size={12} className="animate-spin" />
-                running…
-              </>
-            ) : (
-              <>
-                <Sparkles size={12} />
-                run validation
-              </>
-            )}
+          <p className="text-xs text-th-text-muted mt-1">
+            {running ? "Current run" : result ? `Last run ${formatRelative(result.finished_at)}` : "No validation run yet"}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {result && !running && <button type="button" onClick={downloadReport} className="flex items-center gap-1.5 min-h-9 px-2 text-xs text-th-text-muted hover:text-th-text whitespace-nowrap">
+            <Download size={13} />Download report
+          </button>}
+          <button type="button" onClick={handleRun} disabled={running || !preview || Boolean(previewError)}
+            className="flex items-center gap-1.5 min-h-9 px-3 text-xs font-semibold border border-th-primary/40 rounded-md text-th-primary hover:bg-th-primary/10 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">
+            <Play size={12} />{running ? "running…" : "run validation"}
           </button>
-        </>
-      }
-    >
-      {!result ? (
-        <div className="text-[11px] text-th-text-muted font-mono py-3">
-          no validation run yet · click "run validation" to check the stack
         </div>
-      ) : (
-        <>
-          <div
-            className={`rounded-md border p-3 mb-3 ${
-              result.status === "success"
-                ? "bg-th-primary/[0.04] border-th-primary/30"
-                : "bg-th-danger/[0.06] border-th-danger/40"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <div
-                className={`w-5 h-5 rounded flex items-center justify-center ${
-                  result.status === "success"
-                    ? "bg-th-primary/15 text-th-primary"
-                    : "bg-th-danger/15 text-th-danger"
-                }`}
-              >
-                {result.status === "success" ? (
-                  <Check size={13} strokeWidth={3} />
-                ) : (
-                  <CircleX size={13} strokeWidth={2.5} />
-                )}
-              </div>
-              <div
-                className={`text-[12.5px] font-semibold ${
-                  result.status === "success" ? "text-th-primary" : "text-th-danger"
-                }`}
-              >
-                {result.summary}
-              </div>
-              <div className="ml-auto text-[10px] font-mono text-th-text-muted uppercase tracking-[0.14em]">
-                {formatRelative(result.finished_at)}
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            {result.checks.map((check) => (
-              <CheckRow key={check.id} check={check} />
-            ))}
-          </div>
-
-          {result.detail && result.status !== "success" && (
-            <details className="mt-3">
-              <summary className="text-[10px] uppercase tracking-[0.14em] text-th-text-muted font-mono cursor-pointer hover:text-th-text">
-                failure detail
-              </summary>
-              <pre className="mt-2 p-2 bg-th-bg/60 border border-th-line/60 rounded text-[10px] font-mono text-th-text-mono overflow-x-auto whitespace-pre-wrap break-words">
-                {result.detail}
-              </pre>
-            </details>
-          )}
-        </>
-      )}
-
-      {run.kind === "error" && (
-        <div className="text-[11px] text-th-danger font-mono mt-2 px-2 py-1.5 bg-th-danger/10 border border-th-danger/30 rounded">
-          {run.message}
+      </div>
+      <p className="text-xs text-th-text-muted mb-4">Configuration only — not a DNS/privacy test.</p>
+      {previewError && <div role="alert" className="text-th-danger text-xs mb-3">
+        {previewError} <button type="button" className="underline whitespace-nowrap" onClick={() => setRetry(n => n + 1)}>Retry preview</button>
+      </div>}
+      {run.kind === "error" && <p role="alert" className="text-xs text-th-danger mb-3">{run.message}</p>}
+      {!preview && !previewError && <p className="text-xs text-th-text-muted">Loading check list…</p>}
+      <section aria-label={running ? "Current validation" : "Validation checks"}>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-xs font-semibold">Checks</h2>
+          <span className="text-xs text-th-text-muted">{checks.length} checks · expand for details</span>
         </div>
-      )}
+        {running && previewError && <p className="text-xs text-th-warning mb-2">Progress unavailable — last observed state shown.</p>}
+        <div className="divide-y divide-th-line/60">
+          {checks.map(check => <CheckRow key={`${rowKey}-${check.id}`} check={check} notRun={!running && !result} />)}
+        </div>
+      </section>
+      {running && result && <details className="border-t border-th-line mt-4 pt-3 text-xs">
+        <summary className="cursor-pointer text-th-text-muted">Previous result</summary>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <p>{result.summary} <span className="text-th-text-muted">· {formatRelative(result.finished_at)}</span></p>
+          <button type="button" onClick={downloadReport} className="text-th-text-muted underline whitespace-nowrap">Download previous report</button>
+        </div>
+      </details>}
+      {preview && <details className="border-t border-th-line mt-4 pt-3 text-xs text-th-text-muted">
+        <summary className="cursor-pointer">Scope and technical details</summary>
+        <div className="space-y-2 mt-2 max-w-3xl">
+          <p>{preview.scope}</p>
+          <p>{preview.impact}</p>
+          <p>Skipped checks were not verified. For full diagnostics, run <code>ops/scripts/19-validate-stack.sh</code> on the host. Its output may contain sensitive configuration.</p>
+        </div>
+      </details>}
     </TabPanel>
   );
 }
 
-function CheckRow({ check }: { check: ValidationCheck }) {
-  const icon = statusIcon(check.status);
+function CheckRow({ check, notRun = false }: { check: ValidationCheck; notRun?: boolean }) {
+  const [expanded, setExpanded] = useState(check.status === "error");
+  useEffect(() => {
+    if (check.status === "error") setExpanded(true);
+  }, [check.status]);
   return (
-    <div className="flex items-center gap-2 px-2 py-1 text-[11px]">
-      {icon}
-      <span className="font-mono text-th-text-mono">{check.label}</span>
-      <span
-        className={`ml-auto text-[9.5px] font-mono uppercase tracking-[0.14em] ${
-          check.status === "success"
-            ? "text-th-primary/70"
-            : check.status === "error"
-            ? "text-th-danger"
-            : "text-th-text-muted/50"
-        }`}
-      >
-        {check.status}
-      </span>
+    <div className="py-0.5">
+      <button type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}
+        className="flex items-center gap-2 w-full min-h-9 px-1 text-xs text-left rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-th-primary hover:bg-th-primary/5">
+        {statusIcon(check.status)}
+        <span className="min-w-0 flex-1">{check.label}</span>
+        <span className={`shrink-0 text-[11px] ${check.status === "error" ? "text-th-danger" : check.status === "success" ? "text-th-primary" : "text-th-text-muted"}`}>
+          {notRun ? "not run" : check.status}
+        </span>
+        <ChevronDown size={12} className={`shrink-0 text-th-text-muted transition-transform ${expanded ? "rotate-180" : ""}`} />
+      </button>
+      {expanded && <div className="pl-6 pr-3 pb-3 text-xs text-th-text-muted space-y-1 max-w-3xl">
+        <p>{check.description ?? "Run validation again to load this check's details."}</p>
+        {check.status === "error" && <p className="text-th-danger">{check.remediation ?? "Check the local validator output for the failure details."}</p>}
+        {check.status === "skipped" && <p>This check was not verified; rerun validation after resolving the failure.</p>}
+      </div>}
     </div>
   );
 }
 
 function statusIcon(status: ValidationCheckStatus) {
-  if (status === "success")
-    return <ShieldCheck size={12} className="text-th-primary" strokeWidth={2.5} />;
-  if (status === "error") return <CircleX size={12} className="text-th-danger" strokeWidth={2.5} />;
-  return <MinusCircle size={12} className="text-th-text-muted/50" strokeWidth={2} />;
+  if (status === "running") return <RefreshCw size={12} className="text-th-primary animate-spin motion-reduce:animate-none shrink-0" />;
+  if (status === "success") return <ShieldCheck size={12} className="text-th-primary shrink-0" strokeWidth={2.5} />;
+  if (status === "error") return <CircleX size={12} className="text-th-danger shrink-0" strokeWidth={2.5} />;
+  return <MinusCircle size={12} className="text-th-text-muted/50 shrink-0" strokeWidth={2} />;
 }
 
 /* ----------------------------------------------------------------------- *
