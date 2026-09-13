@@ -1,6 +1,6 @@
 # Torhole maintenance playbook
 
-Version 1.0 — 2026-09-13. Read the section relevant to the task; [AGENTS.md](AGENTS.md) holds the shared constraints.
+Version 1.1 — 2026-09-13. Read the section relevant to the task; [AGENTS.md](AGENTS.md) holds the shared constraints.
 
 This is a repository workflow reference, explicitly linked from `AGENTS.md`. It is not an installed Codex skill or model configuration. Installed skills have their own `SKILL.md` entrypoints; use available skills when they materially help the requested work.
 
@@ -18,9 +18,12 @@ Run relevant files directly from the repository root; the suites load their neig
 python3 pi-dns-warden/monitoring/backup-manager/test_security.py
 python3 pi-dns-warden/monitoring/backup-manager/test_characterization.py
 python3 pi-dns-warden/monitoring/backup-manager/test_validation.py
+python3 pi-dns-warden/monitoring/backup-manager/test_regressions.py
+python3 pi-dns-warden/monitoring/backup-manager/test_pihole_failures.py
 python3 pi-dns-warden/bootstrap/test_server.py
 python3 pi-dns-warden/bootstrap/test_host_runner.py
 python3 pi-dns-warden/home-dashboard/test_server.py
+python3 pi-dns-warden/control-helper/test_server.py
 python3 pi-dns-warden/monitoring/pihole-exporter/test_exporter.py
 python3 pi-dns-warden/ops/tests/test-monitoring-dashboards.py
 ```
@@ -38,6 +41,7 @@ bash pi-dns-warden/ops/tests/test-security-compose.sh
 bash pi-dns-warden/ops/tests/test-topology-compose.sh
 bash pi-dns-warden/ops/tests/test-prometheus-render.sh
 bash pi-dns-warden/ops/tests/test-get-torhole.sh
+python3 pi-dns-warden/ops/tests/test_recovery.py
 ```
 
 Use `bash -n` on changed shell scripts and ShellCheck when available. The security Compose test requires the Compose CLI; syntax checks cannot replace it. Validate all three deployment variants with example values in a temporary copy when changing Compose. Use `config --quiet` to avoid dumping interpolated secrets.
@@ -67,6 +71,15 @@ For status/control changes, cover successful fetch followed by failure, stale da
 For recovery work, test corrupt, empty, incomplete, and supported legacy archives without touching a real installation. Check that rejection happens before downtime or file replacement, and that the backup inventory includes the state needed for fresh-host recovery. Test actual restore behavior on a disposable Linux deployment when that work is authorized.
 
 For release changes, inspect both CI and `.github/workflows/release.yml`. Version matching, archive checksums, and provenance do not prove that the tagged commit passed tests. Retain build identity and verify the artifact corresponds to the tested revision.
+
+CI is reusable and the release job depends on it at the tagged revision. Its
+integration job runs `test-maintenance-entrypoints.py`,
+`test-ansible-integration.py`, `test_ci_contract.py`, and the opt-in
+`test_recovery_integration.py` under `pi-dns-warden/ops/tests/`. Follow
+[README-TESTING.md](README-TESTING.md) for dependencies and the Docker opt-in.
+The recovery drill creates and removes only unique test volumes; the Ansible
+fixture replaces deployment executables with harmless scripts. Neither replaces
+target-host DNS testing.
 
 ## Live verification
 
