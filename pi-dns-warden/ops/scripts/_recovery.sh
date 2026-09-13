@@ -14,6 +14,7 @@ PROJECT_NAME="${COMPOSE_PROJECT_NAME:-${TORHOLE_PROJECT_NAME:-$(basename "${TORH
 BACKUP_MANAGER_IMAGE_DEFAULT="${PROJECT_NAME}-backup-manager"
 BACKUP_MANAGER_IMAGE="${BACKUP_MANAGER_IMAGE:-$BACKUP_MANAGER_IMAGE_DEFAULT}"
 CAPTURED_VOLUMES=()
+RECOVERY_ARCHIVE_TOOL="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/recovery_archive.py"
 
 RECOVERY_VOLUMES=(
   prometheus_data
@@ -24,6 +25,7 @@ RECOVERY_VOLUMES=(
   alertmanager_data
   caddy_data
   caddy_config
+  authelia_data
 )
 
 ensure_recovery_dirs() {
@@ -37,6 +39,11 @@ to_host_path() {
     printf '%s\n' "$path"
     return 0
   fi
+
+  case "$path" in
+    "$ROOT_DIR"|"$ROOT_DIR"/*) ;;
+    *) echo "Recovery path is outside the shared project directory." >&2; return 1 ;;
+  esac
 
   printf '%s%s\n' "$HOST_ROOT_DIR" "${path#"$ROOT_DIR"}"
 }
@@ -118,7 +125,7 @@ helper_backup_volume() {
   local logical_name="$3"
   local host_output_dir
 
-  host_output_dir="$(to_host_path "$output_dir")"
+  host_output_dir="$(to_host_path "$output_dir")" || return 1
 
   docker run --rm \
     -v "${docker_volume}:/volume:ro" \
@@ -133,13 +140,13 @@ helper_restore_volume() {
   local logical_name="$3"
   local host_input_dir
 
-  host_input_dir="$(to_host_path "$input_dir")"
+  host_input_dir="$(to_host_path "$input_dir")" || return 1
 
   docker run --rm \
     -v "${docker_volume}:/volume" \
     -v "${host_input_dir}:/backup:ro" \
     "$BACKUP_MANAGER_IMAGE" \
-    sh -lc "find /volume -mindepth 1 -delete && tar -C /volume -xzf /backup/${logical_name}.tar.gz"
+    sh -lc "test -s /backup/${logical_name}.tar.gz && tar -tzf /backup/${logical_name}.tar.gz >/dev/null && find /volume -mindepth 1 -delete && tar -C /volume -xzf /backup/${logical_name}.tar.gz"
 }
 
 ensure_helper_image() {
@@ -251,20 +258,14 @@ backup_to_archive() {
 }
 
 validate_archive_safety() {
-  local archive="$1"
-  local entry
-
-  while IFS= read -r entry; do
-    if [[ "$entry" == /* || "$entry" == *".."* ]]; then
-      echo "Unsafe archive entry: $entry" >&2
-      exit 1
-    fi
-  done < <(tar -tzf "$archive")
+  python3 "$RECOVERY_ARCHIVE_TOOL" validate "$1"
 }
 
 restore_project_tree() {
   local source_root="$1"
   local legacy=0
+
+  python3 "$RECOVERY_ARCHIVE_TOOL" check-tree "$source_root" || return 1
 
   if [[ -d "$source_root/project" ]]; then
     source_root="$source_root/project"

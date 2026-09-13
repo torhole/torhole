@@ -44,11 +44,16 @@ ensure_recovery_dirs
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
 SAFETY_ARCHIVE="${DEFAULT_SAFETY_DIR}/pre-restore-${STAMP}.tar.gz"
-WORKDIR="$(mktemp -d)"
+WORKDIR="$(mktemp -d "${RUN_DIR}/restore.XXXXXX")"
 trap 'rm -rf "$WORKDIR"; rm -f "$WATCHDOG_PAUSE_FILE"' EXIT
 
 write_recovery_status "restore" "running" "Preparing restore" "$ARCHIVE"
-validate_archive_safety "$ARCHIVE"
+# Extract and validate the exact staged payload before backup, shutdown or
+# replacement. Never reopen a potentially changed input after shutdown.
+if ! python3 "$RECOVERY_ARCHIVE_TOOL" extract "$ARCHIVE" "$WORKDIR/extract"; then
+  write_recovery_status "restore" "error" "Backup preflight failed; installation unchanged" "$ARCHIVE"
+  exit 1
+fi
 
 if [[ "$ASSUME_YES" -ne 1 ]]; then
   echo "This will stop the Torhole stack, restore project files and service volumes, and may replace current state."
@@ -66,9 +71,6 @@ backup_to_archive "$SAFETY_ARCHIVE"
 touch "$WATCHDOG_PAUSE_FILE"
 write_recovery_status "restore" "running" "Stopping stack for restore" "$ARCHIVE"
 "${ROOT_DIR}/ops/scripts/90-down.sh"
-
-mkdir -p "$WORKDIR/extract"
-tar -C "$WORKDIR/extract" -xzf "$ARCHIVE"
 
 write_recovery_status "restore" "running" "Restoring project files" "$ARCHIVE"
 restore_project_tree "$WORKDIR/extract"
