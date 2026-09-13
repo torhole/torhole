@@ -21,6 +21,13 @@ state, not to this already-updated checkout.
 | 08 deployment entrypoints | Backup before update rendering and Ansible sync; shared deployer; preserve unspecified generated secrets | Backup failure aborts mutation; both topologies; real localhost Ansible modules with harmless deploy/backup executables |
 | 09 CI and documentation | Release depends on same-revision reusable CI; integration job; broader syntax/lint coverage; render Caddy include before validation; refreshed operator guides | CI dependency contract; invalid control-helper syntax fails; Caddy include exists before validation; native Caddy/Prometheus validators |
 
+All ten original priority findings are covered by these groups: findings 1 and
+3 map to recovery; 2 and 9 to dashboard reporting; 4 and 5 to deployment
+entrypoints; 6 to configuration transactions; 7 to Pi-hole failures; 8 to Home
+DNS; and 10 to Tor control. Website feedback and CI/documentation are additional
+improvements, which is why the nine groups do not correspond one-to-one with
+the ten findings.
+
 The failures were reproduced before the corresponding corrections. Follow-up
 tests also exposed the container staging-path issue, link boundary cases,
 quoted credential mismatch, and missing Caddy CI include, which are included in
@@ -110,3 +117,19 @@ future unattended builds and updates.
 See [testing](../README-TESTING.md), [Ansible](../README-ANSIBLE.md), and
 [release integrity](../pi-dns-warden/docs/release-integrity.md) for maintained
 commands and deployment boundaries.
+
+
+## Dashboard follow-up
+
+The Glance page framing, typography, and panel surfaces are now shared across
+Privacy, Operate, Configure, Setup, and About. The Privacy section buttons,
+sidebar links (including the current selection), and bookmarks reveal the
+selected content after initial loading. Reduced motion is respected; snapshot
+refreshes do not move the reading position. The exit-check description now
+states that it verifies the test request's Tor exit, rather than claiming that
+one successful request proves the route of every DNS query.
+
+Verification: typecheck and production build passed; the 47-test browser suite
+passed, followed by one additional focused warning-border regression. Visual
+checks covered both themes at 1024px and 1440px; scroll regressions used a
+1024×600 viewport. The dashboard retains its existing 1024px minimum width.

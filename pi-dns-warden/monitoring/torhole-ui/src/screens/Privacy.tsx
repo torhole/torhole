@@ -665,8 +665,8 @@ function LeakTestPanel({ state, refetch }: { state: SnapshotState; refetch: () =
   return (
     <div className="bg-th-panel border border-th-line rounded-lg p-5 flex flex-col gap-3">
       <div className="text-[12px] text-th-text-muted leading-relaxed">
-        Probes <span className="font-mono text-th-text-mono">check.torproject.org/api/ip</span> through{" "}
-        <span className="font-mono text-th-text-mono">tor:9050</span>. Pass = every query exits via Tor.
+        Checks the Tor exit using the Tor Project. A pass confirms that this request used Tor.
+        DNS routing and isolation are checked separately.
       </div>
 
       <LeakTestResultBlock

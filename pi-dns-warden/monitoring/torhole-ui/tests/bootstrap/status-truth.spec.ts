@@ -50,3 +50,12 @@ for (const scenario of [
     await expect(button).toHaveAttribute("title", scenario.message);
   });
 }
+
+
+test("Privacy describes the scope of the Tor exit check accurately", async ({ page }) => {
+  await page.route("**/api/system/snapshot", route => route.fulfill({ json: snapshot }));
+  await page.goto("/?mode=advanced#/privacy?section=leak-test");
+  await expect(page.getByRole("tabpanel")).toContainText("A pass confirms that this request used Tor.");
+  await expect(page.getByRole("tabpanel")).toContainText("DNS routing and isolation are checked separately.");
+  await expect(page.getByRole("tabpanel")).not.toContainText("Pass = every query exits via Tor");
+});
