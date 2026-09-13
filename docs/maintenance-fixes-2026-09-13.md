@@ -1,8 +1,8 @@
 # Maintenance fixes — 2026-09-13
 
 Implemented against the existing working tree, preserving the earlier validation
-and dashboard work. No commits, release publication, or live deployment were
-performed. The local review bundle under `scratch/review-fixes-2026-09-13/`
+and dashboard work. The initial inspection and local verification preceded
+commits and deployment; the staging follow-up is recorded below. The local review bundle under `scratch/review-fixes-2026-09-13/`
 contains separate patches relative to the saved starting tree, so the earlier
 uncommitted changes are excluded. Apply those patches only to that starting
 state, not to this already-updated checkout.
@@ -51,11 +51,49 @@ from its fixture so it can run unprivileged. The UI build refreshes ignored
 generated assets. Non-blocking tooling messages included Node's module-loader
 deprecation warning and Caddy's existing formatting warning.
 
+## Staging follow-up
+
+The work was committed in twelve reviewable changes, ending at `12c1b6a`, and
+that source revision was deployed to the existing Advanced VLAN test VM using
+`deploy.sh --skip-prereqs`. The first three commits preserve the earlier agent
+instructions, validation experience, and Glance/navigation changes separately
+from the nine maintenance fixes. No remote push or release publication occurred.
+
+The test VM runs Debian 13 with Python 3.13.5. A Proxmox filesystem snapshot and
+the installed version's recovery archive were created before source replacement.
+The archive contains the previous version's backup coverage; the VM snapshot
+provides the broader rollback point. The VM remains running for further testing.
+
+| Target-host check | Result |
+| --- | --- |
+| Recovery, configuration concurrency, Pi-hole failures, Home DNS, Tor control, deployment-entrypoint regressions | 51 passed |
+| Disposable Docker SQLite recovery and missing-payload preservation | 2 passed |
+| UI production build and native configuration validation | Passed |
+| Validation through the rebuilt administration API | All 10 checks reported success |
+| API image/source comparison | Backend modules matched the installed source |
+| Live invalid-archive restore | Rejected before downtime; error reported; container IDs/start times and sampled source/environment hashes unchanged |
+| Post-deployment privacy verification | Both Pi-hole planes resolved; Tor egress confirmed; control authentication passed; dnscrypt networks remained internal |
+| IP recovery authentication | Unauthenticated request rejected; authenticated request succeeded |
+| Final runtime state | All 19 stack containers running; declared health checks healthy |
+
+The live rejection test restored the preceding recovery-status file after
+asserting the expected error, so its synthetic failure does not remain in the UI.
+The disposable recovery drill did not restore or replace the installed volumes.
+
+Deployment initially failed because the VM's configured host resolver was
+unavailable. A temporary systemd-resolved override routes host DNS through the
+working staging Pi-hole on its Docker bridge. Build containers additionally
+needed narrowly scoped temporary DNS rules to reach that Pi-hole. Those firewall
+rules were removed before the final privacy verification; no direct upstream DNS
+fallback was introduced. The host resolver override remains runtime-only and
+will be lost on reboot. A working persistent host resolver is still needed for
+future unattended builds and updates.
+
 ## Operational limits
 
-- Full target-host DNS, VLAN routing, Tor fail-closed behavior, reboot/soak, and
-  production restore drills were not run. Hosted integration does not replace
-  those checks.
+- Both staging DNS planes and Tor egress were checked, but external VLAN clients,
+  deliberate Tor-outage injection, reboot/soak, and full installed-volume restore
+  were not exercised. Home had regression coverage, not a live Home deployment.
 - Backend transaction locking coordinates one server process. Do not edit
   configuration concurrently through independent host-side deployment tools.
 - Backups capture running volume files. A planned quiesced backup or host/VM
