@@ -65,8 +65,9 @@ class DeploymentRole(unittest.TestCase):
             }, "roles": ["pihole_dns"]}]
             path = root / "playbook.yml"
             path.write_text(yaml.safe_dump(playbook))
-            env = {**os.environ, "ANSIBLE_HOME": str(root / "ansible-home"),
-                   "ANSIBLE_LOCAL_TEMP": str(root / "local-tmp"),
+            # ANSIBLE_HOME also controls default collection discovery. Preserve
+            # the caller's installation and isolate only execution scratch files.
+            env = {**os.environ, "ANSIBLE_LOCAL_TEMP": str(root / "local-tmp"),
                    "ANSIBLE_REMOTE_TEMP": str(root / "remote-tmp")}
             result = subprocess.run([BINARY, "-i", "localhost,", str(path)], env=env, text=True, capture_output=True)
             events = (root / "events").read_text().splitlines() if (root / "events").exists() else []
