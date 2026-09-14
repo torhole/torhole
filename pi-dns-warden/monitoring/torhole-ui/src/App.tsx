@@ -208,20 +208,14 @@ function EnvBannerStrip() {
  * Sidebar
  * ----------------------------------------------------------------------- */
 
-/** Redirect to Authelia's logout endpoint, which destroys the SSO session
- *  cookie for the whole lab domain and bounces back to this UI (which will
- *  then hit the auth gate again). The auth host is derived from the current
- *  hostname (torhole.<domain> -> auth.<domain>) rather than the snapshot so
- *  sign-out still works when the backend is unreachable. */
+/** The proxy routes HTTPS logout to the configured authentication host.
+ *  Leaving out a return URL keeps the browser at login after logout. */
 function signOut() {
   if (window.location.protocol === "http:") {
     window.location.reload();
     return;
   }
-  const parts = window.location.hostname.split(".");
-  const authHost = ["auth", ...parts.slice(1)].join(".");
-  const rd = encodeURIComponent(`${window.location.origin}/`);
-  window.location.href = `${window.location.protocol}//${authHost}/logout?rd=${rd}`;
+  window.location.assign("/logout");
 }
 
 type SidebarGroup = {
