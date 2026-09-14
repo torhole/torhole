@@ -1,5 +1,8 @@
 import importlib.util
+import gzip
 import io
+import json
+import tarfile
 import os
 import stat
 import subprocess
@@ -278,6 +281,93 @@ class QueryStreamTests(unittest.TestCase):
         self.assertEqual(wire.count('data: {"id":1,"time":10}'), 1)
         self.assertIn(": keepalive\n\n", wire)
         self.assertNotIn("data: null", wire)
+
+
+class BackupMetadataReadTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.archive = Path(self.temp.name) / "fixture.tar.gz"
+        self.payload = os.urandom(4 * 1024 * 1024)
+        self.metadata = {"project_name": "fixture", "format_version": 2,
+                         "captured_volumes": [], "configured_volumes": [],
+                         "created_at": "2026-09-14T00:00:00+00:00"}
+        with server._BACKUP_METADATA_CACHE_LOCK:
+            server._BACKUP_METADATA_CACHE.clear()
+
+    def write_archive(self, entries):
+        with tarfile.open(self.archive, "w:gz") as archive:
+            for name, data in entries:
+                member = tarfile.TarInfo(name)
+                member.size = len(data)
+                archive.addfile(member, io.BytesIO(data))
+
+    def read_with_byte_count(self):
+        import builtins
+        original = builtins.open
+        count = [0]
+
+        class CountingFile:
+            def __init__(self, handle):
+                self.handle = handle
+
+            def read(self, size=-1):
+                data = self.handle.read(size)
+                count[0] += len(data)
+                return data
+
+            def __getattr__(self, name):
+                return getattr(self.handle, name)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                self.handle.close()
+
+        def opened(path, *args, **kwargs):
+            handle = original(path, *args, **kwargs)
+            return CountingFile(handle) if Path(path) == self.archive else handle
+
+        with mock.patch("builtins.open", side_effect=opened):
+            metadata = server.read_backup_metadata(self.archive)
+        return metadata, count[0]
+
+    def test_metadata_first_does_not_scan_large_trailing_payload(self):
+        self.write_archive([("metadata.json", json.dumps(self.metadata).encode()),
+                            ("volumes/fixture.tar.gz", self.payload)])
+        metadata, count = self.read_with_byte_count()
+        self.assertEqual(metadata, self.metadata)
+        self.assertGreater(count, 0, "The real compressed input must be measured")
+        self.assertLess(count, 512 * 1024, "Metadata listing scanned the archive payload")
+
+    def test_legacy_without_metadata_has_bounded_fallback(self):
+        self.write_archive([("project/large-file", self.payload)])
+        metadata, count = self.read_with_byte_count()
+        self.assertEqual(metadata, {})
+        self.assertGreater(count, 0)
+        self.assertLess(count, 512 * 1024, "Legacy archive fallback scanned the payload")
+
+    def test_oversized_metadata_is_not_loaded(self):
+        oversized = {**self.metadata, "padding": "x" * (128 * 1024)}
+        self.write_archive([("metadata.json", json.dumps(oversized).encode())])
+        self.assertEqual(server.read_backup_metadata(self.archive), {})
+
+    def test_metadata_beyond_scan_budget_is_unavailable_without_full_scan(self):
+        self.write_archive([("project/large-file", self.payload),
+                            ("metadata.json", json.dumps(self.metadata).encode())])
+        metadata, count = self.read_with_byte_count()
+        self.assertEqual(metadata, {})
+        self.assertLess(count, 512 * 1024)
+
+    def test_malformed_header_is_safe_unavailable(self):
+        self.archive.write_bytes(gzip.compress(b"invalid header" * 64))
+        self.assertEqual(server.read_backup_metadata(self.archive), {})
+
+    def test_small_prefix_before_metadata_is_supported(self):
+        self.write_archive([("project/fixture", b"small fixture"),
+                            ("metadata.json", json.dumps(self.metadata).encode())])
+        self.assertEqual(server.read_backup_metadata(self.archive), self.metadata)
 
 
 if __name__ == "__main__":

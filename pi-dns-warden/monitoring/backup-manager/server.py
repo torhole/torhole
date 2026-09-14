@@ -1,4 +1,6 @@
 import fcntl
+import gzip
+import io
 import json
 import math
 import os
@@ -341,9 +343,12 @@ def recovery_busy():
     return False
 
 
-# Reading metadata.json from a multi-hundred-MB tar.gz takes seconds. Cache by
-# (path, mtime) so unchanged files are free on subsequent lists. Backups are
-# immutable after creation; mtime is a perfect cache key.
+# Listing is best-effort, not archive validation. Current backups put metadata
+# first; bound decompression even for legacy archives or oversized tar headers.
+# Restore independently validates the complete archive before changing services.
+_BACKUP_METADATA_SCAN_BYTES = 256 * 1024
+_BACKUP_METADATA_MAX_BYTES = 64 * 1024
+# Cache by (path, mtime) so unchanged files need no further reads.
 _BACKUP_METADATA_CACHE = {}
 _BACKUP_METADATA_CACHE_LOCK = threading.Lock()
 
@@ -360,21 +365,27 @@ def read_backup_metadata(path: Path):
         if cached and cached[0] == mtime:
             return cached[1]
 
+    metadata = {}
     try:
-        with tarfile.open(path, "r:gz") as archive:
-            member = archive.getmember("metadata.json")
-            handle = archive.extractfile(member)
-            if handle is None:
-                metadata = {}
-            else:
-                payload = json.loads(handle.read().decode("utf-8"))
-                metadata = {
-                    "project_name": payload.get("project_name"),
-                    "format_version": payload.get("format_version"),
-                    "captured_volumes": payload.get("captured_volumes", []),
-                    "configured_volumes": payload.get("configured_volumes", []),
-                    "created_at": payload.get("created_at"),
-                }
+        with gzip.open(path, "rb") as compressed:
+            prefix = compressed.read(_BACKUP_METADATA_SCAN_BYTES)
+        with tarfile.open(fileobj=io.BytesIO(prefix), mode="r|") as archive:
+            for member in archive:
+                if member.name != "metadata.json":
+                    continue
+                if not member.isfile() or member.size > _BACKUP_METADATA_MAX_BYTES:
+                    break
+                handle = archive.extractfile(member)
+                if handle is not None:
+                    payload = json.loads(handle.read().decode("utf-8"))
+                    metadata = {
+                        "project_name": payload.get("project_name"),
+                        "format_version": payload.get("format_version"),
+                        "captured_volumes": payload.get("captured_volumes", []),
+                        "configured_volumes": payload.get("configured_volumes", []),
+                        "created_at": payload.get("created_at"),
+                    }
+                break
     except Exception:
         metadata = {}
 
