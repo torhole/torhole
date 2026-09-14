@@ -287,13 +287,24 @@ The restore script:
   so browser-triggered restores and host Docker see the same volume payloads
 - accepts format-2 archives and complete legacy flat archives; incomplete or
   unsupported layouts are rejected before shutdown
+- requires all archived stack images and the recovery helper to be available
+  locally before shutdown; it does not pull or build images during recovery
 - creates a safety backup of the current state after preflight
 - stops the stack before applying the archive
-- restores both the project tree and the service volumes
+- restores both the project tree and the service volumes, preserving safe
+  directory access modes without replacing the installation root's permissions
 - re-renders and validates config before restart
 - requires explicit restore confirmation
 
-The CLI leaves services stopped unless `--auto-restart` is supplied. A rejected
+Container images are not included in the backup archive. Before recovery on a
+fresh host, load the required images into Docker's local cache while networking
+is available. Missing images cause preflight to fail before changing the
+installation. Keep image digests with the backup when reproducibility matters;
+a cached mutable tag alone does not identify the original image contents.
+
+The CLI leaves services stopped unless `--auto-restart` is supplied. Restart
+uses `--pull never --no-build`, so it can restore the DNS service without
+requiring that service to reach an image registry. A rejected
 preflight leaves the installed tree and services unchanged. Failures after
 replacement still require inspecting the recorded status and safety archive;
 the safety backup is not an automatic rollback. Configuration validity is

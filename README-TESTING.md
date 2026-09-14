@@ -21,7 +21,8 @@ Maintenance tests use temporary directories and fake host commands. The CI
 contract check requires PyYAML. Ansible template checks also require Jinja2;
 without those libraries the template checks skip. CI installs Ansible, which
 supplies both. `test_recovery.py` exercises archive validation and restore preflight without changing a
-real installation.
+real installation. It also checks cached-image preflight and restored directory
+permissions under a restrictive `umask 077`.
 
 The complete command list is maintained in `.github/workflows/ci.yml`. It also
 runs backend, bootstrap, Home, control-helper and exporter tests, shell loader
