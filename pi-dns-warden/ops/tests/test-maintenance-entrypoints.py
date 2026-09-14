@@ -52,6 +52,34 @@ class UpdateOrdering(unittest.TestCase):
         self.assertEqual(events, ["50-backup.sh"])
 
 
+class TorPasswordRendering(unittest.TestCase):
+    def test_tor_hash_receives_decoded_literal_password(self):
+        spec = importlib.util.spec_from_file_location("tor_password_env", APP / "monitoring/backup-manager/env_store.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts = root / "ops/scripts"
+            scripts.mkdir(parents=True)
+            (root / "ops/lib").mkdir()
+            (root / "tor").mkdir()
+            (root / "bin").mkdir()
+            shutil.copy(APP / "ops/scripts/20-render-torrc.sh", scripts)
+            shutil.copy(APP / "ops/lib/load-env.sh", root / "ops/lib")
+            (root / "tor/torrc").write_text("# BEGIN HASHED_CONTROL_PASSWORD (generated)\nHashedControlPassword 16:OLD\n# END HASHED_CONTROL_PASSWORD\n")
+            docker = root / "bin/docker"
+            docker.write_text("#!/bin/sh\nif [ \"$1\" = ps ]; then echo tor; else printf '%s' \"$5\" > \"$PASSWORD_LOG\"; echo 16:FIXTURE; fi\n")
+            docker.chmod(0o755)
+            payload = "  fixture' \\ $dollar \"quote\"  "
+            (root / ".env").write_text("TOR_CONTROL_PASSWORD=ignored\nTOR_CONTROL_PASSWORD=" + module.serialize_env_value(payload) + "\n")
+            log = root / "password"
+            result = subprocess.run(["bash", str(scripts / "20-render-torrc.sh")],
+                env={**os.environ, "PATH": str(root / "bin") + ":" + os.environ["PATH"], "PASSWORD_LOG": str(log)},
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(log.read_text(), payload)
+
+
 class AnsibleEntrypoints(unittest.TestCase):
     def test_production_hands_rendering_and_services_to_deployer(self):
         playbook = (ROOT / "ansible/playbook.yml").read_text()

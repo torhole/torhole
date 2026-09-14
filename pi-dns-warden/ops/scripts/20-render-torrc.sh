@@ -33,19 +33,14 @@ if [[ ! -f "$TORRC" ]]; then
   exit 1
 fi
 
-# Read TOR_CONTROL_PASSWORD without sourcing .env (which would leak
-# unrelated vars into this shell). Strip CR and surrounding quotes.
-#
-# NOTE: use `tail -n1` so that if .env accidentally contains two
-# TOR_CONTROL_PASSWORD= lines (e.g. a botched rotation), we pick the
-# same literal value that the shared safe dotenv loader in deploy.sh reads. POSIX
-# shell semantics take the last assignment wins — head -n1 here would
-# silently desync the hash from the running server.py view.
-PASSWORD="$(grep -E '^TOR_CONTROL_PASSWORD=' "$ENV_FILE" | tail -n1 | cut -d= -f2- | tr -d '\r' | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\\(.*\\)'\$/\\1/")"
-# Trim leading and trailing whitespace (spaces, tabs) only. Interior
-# whitespace is preserved because a legitimate password may contain it.
-PASSWORD="${PASSWORD#"${PASSWORD%%[![:space:]]*}"}"   # trim leading
-PASSWORD="${PASSWORD%"${PASSWORD##*[![:space:]]}"}"   # trim trailing
+# Use the same literal codec as deployment and backend readers. A subshell
+# keeps unrelated environment values out of this process and preserves spaces.
+PASSWORD="$(
+  # shellcheck disable=SC1091
+  source "$ROOT_DIR/ops/lib/load-env.sh"
+  load_env_file "$ENV_FILE"
+  printf '%s' "${TOR_CONTROL_PASSWORD:-}"
+)"
 if [[ -z "$PASSWORD" ]]; then
   echo "20-render-torrc: TOR_CONTROL_PASSWORD is unset or empty in $ENV_FILE" >&2
   echo "  (If this is a fresh install, set it in .env first — see .env.example)" >&2
