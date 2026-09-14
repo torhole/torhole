@@ -22,9 +22,9 @@ regression that exercises the reported failure.
 
 ## Verification
 
-- 230 backend and integration tests passed, including actual Compose dotenv
+- 233 backend and integration tests passed, including actual Compose dotenv
   round trips, localhost Ansible fixtures, and disposable Docker recovery.
-- UI typecheck, production build, and all 59 mocked browser tests passed.
+- UI typecheck, production build, and all 61 mocked browser tests passed.
 - npm audit reported zero vulnerabilities after the lockfile refresh.
 - Six shell suites passed in a disposable checkout.
 - The bootstrap Python module layout and credential codec passed an isolated
@@ -106,6 +106,24 @@ An isolated ARM64 run passed 175 backend and maintenance tests on a target
 host without modifying its installed services. Image identities were recorded
 on staging. Target inspection found local Compose and authentication-renderer
 customizations; rollout must preserve these files and existing private state.
+
+## Sign-out validation
+
+Both production dashboard buttons were confirmed to construct an incorrect
+shared authentication hostname, causing a proxy 502 instead of terminating the
+intended session. The UI now navigates to its own `/logout` route; Caddy redirects
+that route to the configured authentication host before the access gate. No
+return-to-dashboard parameter is supplied, and HTML responses use `no-store`.
+
+The UI correction (`e3373e8`) and proxy correction (`22e8fa5`) have separate
+regressions. All 61 browser tests, three real Caddy integration tests, typecheck,
+and production UI build passed. Caddy tests cover custom auth hosts and aliases,
+expired sessions, and HTML versus asset cache behavior; CI now runs them.
+
+Staging candidate `22e8fa5`, displaying version 0.2.4, passed the live proxy flow:
+one click reached the login page, and reopening the dashboard required login.
+Both production test sessions were ended through their correct auth hosts;
+production configuration and application files were not changed.
 
 ## Deployment boundaries
 

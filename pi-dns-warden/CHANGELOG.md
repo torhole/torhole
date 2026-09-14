@@ -10,6 +10,8 @@ Planned version: **0.2.4**. Publication remains subject to release CI and
 applicable deployment checks.
 
 ### Fixed
+- Sign out uses the configured authentication host behind reverse proxies and
+  finishes at the login page; dashboard HTML is no longer cached.
 - Validate restore archives and cached images before downtime; retain
   authentication state and safe directory permissions during recovery.
 - Preserve literal credentials across configuration writers, Ansible, and Tor

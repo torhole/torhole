@@ -58,6 +58,18 @@ and checks missing payloads do not erase existing volume contents. It uses the
 actual recovery helpers and removes its test volumes. It does not boot Authelia
 or the DNS stack. Docker access and host bind-mount support are required.
 
+The sign-out integration fixture runs the real Caddyfile with synthetic
+configuration, a disposable local CA, and a stub authentication gate:
+
+```bash
+docker pull caddy:latest
+TORHOLE_RUN_DOCKER_TESTS=1 python3 pi-dns-warden/ops/tests/test_caddy_integration.py
+```
+
+It checks configured auth hosts and aliases, logout after session expiry, and
+HTML cache headers without contacting a deployment. The browser suite separately
+checks the HTTPS Sign out button on custom dashboard hostnames.
+
 ## UI and browser checks
 
 ```bash
