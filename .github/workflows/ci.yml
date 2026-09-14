@@ -165,3 +165,10 @@ jobs:
         env:
           TORHOLE_RUN_DOCKER_TESTS: "1"
         run: python pi-dns-warden/ops/tests/test_recovery_integration.py
+
+      - name: Pull Caddy fixture image
+        run: docker pull caddy:latest
+      - name: Verify logout routing and HTML cache headers
+        env:
+          TORHOLE_RUN_DOCKER_TESTS: "1"
+        run: python pi-dns-warden/ops/tests/test_caddy_integration.py

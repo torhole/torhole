@@ -48,8 +48,12 @@ import tls-snippets.caddy
   # handle_path strips /v2 before looking in the canonical build directory.
   handle_path /v2/* {
     root * /srv/admin-ui
-    try_files {path} /index.html
-    file_server
+    route {
+      try_files {path} /index.html
+      @versioned_html path / /index.html
+      header @versioned_html Cache-Control no-store
+      file_server
+    }
   }
 
   @legacy_operate path /operate /operate.html /dns-planes /observability /recovery /system
@@ -69,8 +73,12 @@ import tls-snippets.caddy
 
   handle {
     root * /srv/admin-ui
-    try_files {path} /index.html
-    file_server
+    route {
+      try_files {path} /index.html
+      @app_html path / /index.html
+      header @app_html Cache-Control no-store
+      file_server
+    }
   }
 }
 
@@ -84,6 +92,12 @@ import tls-snippets.caddy
 {$TORHOLE_WEB_SCHEME}://{$TORHOLE_HOST_TORHOLE}.{$REVERSE_PROXY_DOMAIN}, {$TORHOLE_WEB_SCHEME}://{$TORHOLE_ALIAS_TORHOLE}.{$REVERSE_PROXY_DOMAIN} {
   import tls_mode
   route {
+    # Logout must remain reachable after the auth session has expired. Use
+    # the configured host and let Authelia finish at its own login page.
+    handle /logout {
+      header Cache-Control no-store
+      redir {$TORHOLE_WEB_SCHEME}://{$TORHOLE_HOST_AUTH}.{$REVERSE_PROXY_DOMAIN}/logout 302
+    }
     import local_ca_download
     import recovery_health
     import access_gate
