@@ -53,7 +53,7 @@ class UpdateOrdering(unittest.TestCase):
 
 
 class TorPasswordRendering(unittest.TestCase):
-    def test_tor_hash_receives_decoded_literal_password(self):
+    def run_tor_fixture(self, malformed=False):
         spec = importlib.util.spec_from_file_location("tor_password_env", APP / "monitoring/backup-manager/env_store.py")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -71,13 +71,25 @@ class TorPasswordRendering(unittest.TestCase):
             docker.write_text("#!/bin/sh\nif [ \"$1\" = ps ]; then echo tor; else printf '%s' \"$5\" > \"$PASSWORD_LOG\"; echo 16:FIXTURE; fi\n")
             docker.chmod(0o755)
             payload = "  fixture' \\ $dollar \"quote\"  "
-            (root / ".env").write_text("TOR_CONTROL_PASSWORD=ignored\nTOR_CONTROL_PASSWORD=" + module.serialize_env_value(payload) + "\n")
+            (root / ".env").write_text('TOR_CONTROL_PASSWORD="unterminated\n' if malformed else
+                "TOR_CONTROL_PASSWORD=ignored\nTOR_CONTROL_PASSWORD=" + module.serialize_env_value(payload) + "\n")
             log = root / "password"
             result = subprocess.run(["bash", str(scripts / "20-render-torrc.sh")],
-                env={**os.environ, "PATH": str(root / "bin") + ":" + os.environ["PATH"], "PASSWORD_LOG": str(log)},
+                env={**os.environ, "PATH": str(root / "bin") + ":" + os.environ["PATH"], "PASSWORD_LOG": str(log), "TOR_CONTROL_PASSWORD": "inherited-fixture"},
                 capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(log.read_text(), payload)
+            if malformed:
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(log.exists(), "Malformed dotenv reached Tor hashing")
+                self.assertIn("HashedControlPassword 16:OLD", (root / "tor/torrc").read_text())
+            else:
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(log.read_text(), payload)
+
+    def test_tor_hash_receives_decoded_literal_password(self):
+        self.run_tor_fixture()
+
+    def test_malformed_env_cannot_hash_inherited_password(self):
+        self.run_tor_fixture(malformed=True)
 
 
 class AnsibleEntrypoints(unittest.TestCase):

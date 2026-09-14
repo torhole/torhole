@@ -38,7 +38,7 @@ fi
 PASSWORD="$(
   # shellcheck disable=SC1091
   source "$ROOT_DIR/ops/lib/load-env.sh"
-  load_env_file "$ENV_FILE"
+  load_env_file "$ENV_FILE" || exit 1
   printf '%s' "${TOR_CONTROL_PASSWORD:-}"
 )"
 if [[ -z "$PASSWORD" ]]; then

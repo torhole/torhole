@@ -359,7 +359,7 @@ load_cached_restore_env() {
       TORHOLE_TOPOLOGY|*_IMAGE) unset "$variable" ;;
     esac
   done < <(compgen -v)
-  load_env_file "$1"
+  load_env_file "$1" || return 1
 }
 
 check_cached_restore_images() {
@@ -372,7 +372,7 @@ check_cached_restore_images() {
   # shellcheck disable=SC1091
   source "$ROOT_DIR/ops/lib/load-env.sh"
   if ! (
-    load_cached_restore_env "$project/.env"
+    load_cached_restore_env "$project/.env" || exit 1
     restore_compose "$project" config --images
   ) >"$inventory"; then
     echo "Cannot resolve cached image inventory for the staged backup." >&2
@@ -397,6 +397,6 @@ check_cached_restore_images() {
 }
 
 start_restored_stack_cached() (
-  load_cached_restore_env "$ROOT_DIR/.env"
+  load_cached_restore_env "$ROOT_DIR/.env" || exit 1
   restore_compose "$ROOT_DIR" up -d --pull never --no-build
 )

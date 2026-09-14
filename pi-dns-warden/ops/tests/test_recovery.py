@@ -197,11 +197,13 @@ check_cached_restore_images() { :; }
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def cached_restore_fixture(self, missing=False, topology="single-lan"):
+    def cached_restore_fixture(self, missing=False, topology="single-lan", malformed=False):
         archive = self.archive()
         tree = self.base / "tree-modern"
         project = tree / "project"
         (project / ".env").write_text(f"TORHOLE_TOPOLOGY={topology}\n" if topology else "# legacy topology defaults to VLAN\n")
+        if malformed:
+            (project / ".env").write_text('TOR_CONTROL_PASSWORD="unterminated\n')
         for script in (project / "ops/scripts").glob("*.sh"):
             script.chmod(0o755)
         # An older archive's startup script still tries the network. Recovery
@@ -228,7 +230,7 @@ esac
             env={**os.environ, "PATH": str(binary) + ":" + os.environ["PATH"],
                  "TEST_EVENTS": str(self.events), "TORHOLE_TOPOLOGY": "single-lan", "PIHOLE_IMAGE": "fixture-installed-pihole", "MISSING_IMAGE": "1" if missing else "0"},
             capture_output=True, text=True)
-        return result, self.events.read_text()
+        return result, self.events.read_text() if self.events.exists() else ""
 
     def test_restore_uses_cached_images_without_archived_network_startup(self):
         result, events = self.cached_restore_fixture()
@@ -265,6 +267,13 @@ esac
         self.assertEqual(result.returncode, 0, result.stderr + events)
         self.assertIn("image inspect fixture-default-pihole", events)
         self.assertNotIn("fixture-installed-pihole", events)
+
+    def test_malformed_staged_env_stops_before_image_resolution_and_shutdown(self):
+        result, events = self.cached_restore_fixture(malformed=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("config --images", events)
+        self.assertNotIn("down", events)
+        self.assertTrue(self.marker.exists())
 
     def test_corrupt_nested_volume_is_rejected(self):
         result = self.shell('validate_archive_safety "$1"', self.archive(volume=b"broken"))
