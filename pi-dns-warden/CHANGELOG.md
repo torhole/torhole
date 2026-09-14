@@ -6,6 +6,24 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Planned version: **0.2.4**. Publication remains subject to release CI and
+applicable deployment checks.
+
+### Fixed
+- Validate restore archives and cached images before downtime; retain
+  authentication state and safe directory permissions during recovery.
+- Preserve literal credentials across configuration writers, Ansible, and Tor
+  rendering; serialize configuration changes and report failures accurately.
+- Distinguish stale, missing, failed, and successful privacy measurements;
+  require observed checks across every active DNS plane.
+- Bound cold backup metadata reads so large backups do not stall the dashboard.
+- Align topology-aware updates and Ansible with backup-before-change ordering.
+
+### Changed
+- Standardize dashboard styling and give Privacy tools separate routed pages.
+- Gate releases on reusable CI and isolated deployment/recovery integration.
+- Refresh UI dependencies and maintenance, recovery, and agent documentation.
+
 ## [0.2.3] - 2026-09-05
 
 ### Fixed
