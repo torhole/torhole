@@ -11,7 +11,7 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Privacy actions", () => {
   test("renew global Tor identity reaches success state", async ({ page }) => {
-    await page.goto("/#/privacy");
+    await page.goto("/#/privacy/internal");
 
     await expect(page.getByText("DNS plane isolation")).toBeVisible();
 
@@ -27,7 +27,7 @@ test.describe("Privacy actions", () => {
   test("run leak test shows a PASS result", async ({ page }) => {
     await page.goto("/#/privacy");
 
-    await expect(page.getByRole("tab", { name: /DNS leak test/i })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Privacy pages" }).getByRole("link", { name: /DNS leak test/i })).toBeVisible();
 
     // Click the run button. The backend does a real SOCKS5 → TLS → GET
     // through Tor to check.torproject.org and can take 5-15 seconds.
@@ -42,7 +42,7 @@ test.describe("Privacy actions", () => {
     // heading and the exit_ip mono row. "exit ip" now appears twice on the
     // page (the hero tile added in Phase D, and the leak test result block),
     // so we use .last() to match the one inside the just-rendered result.
-    await expect(page.getByText(/PASS\s*·\s*DNS exits via Tor/i)).toBeVisible({
+    await expect(page.getByText(/PASS\s*·\s*Tor exit verified/i)).toBeVisible({
       timeout: 20_000,
     });
     await expect(page.getByText("exit ip", { exact: true }).last()).toBeVisible();

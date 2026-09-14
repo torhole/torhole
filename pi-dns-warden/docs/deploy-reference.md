@@ -254,16 +254,24 @@ history must be preserved.
 
 ### Backup and restore
 
-Create a point-in-time backup before risky changes:
+Create a backup before risky changes, including before downloading replacement
+source when rollback to the previous code is required:
 
 ```bash
 ./ops/scripts/50-backup.sh
 ```
 
 Backups now include:
+
 - project config and deployment scripts
 - `pihole/` bind-mounted state, including local DNS entries and Pi-hole data
-- Docker volume data for `Grafana`, `Prometheus`, `Loki`, `Alertmanager`, `Caddy`, `Dockhand`, and `Alloy`
+- Docker volume data for `Grafana`, `Prometheus`, `Loki`, `Alertmanager`, `Caddy`, `Dockhand`, `Alloy`, and `Authelia` (including its authentication database)
+
+The backup records which volumes were actually present and captured. It archives
+running volume files; use a host/VM snapshot or a planned quiesced backup when
+application-consistent recovery across all databases is required. An older
+archive cannot restore authentication state that it never captured. Take a new
+backup after upgrading and test recovery on a disposable host.
 
 Restore a previous backup archive:
 
@@ -272,11 +280,35 @@ sudo ./ops/scripts/60-restore.sh /opt/pi-dns-warden/backups/torhole-backup-YYYYM
 ```
 
 The restore script:
-- creates a safety backup of the current state first
+
+- checks the gzip/tar content, required project files and restore scripts,
+  metadata, nested volume archives, and link boundaries before changing services
+- extracts into a private staging directory under the shared `run/` directory,
+  so browser-triggered restores and host Docker see the same volume payloads
+- accepts format-2 archives and complete legacy flat archives; incomplete or
+  unsupported layouts are rejected before shutdown
+- requires all archived stack images and the recovery helper to be available
+  locally before shutdown; it does not pull or build images during recovery
+- creates a safety backup of the current state after preflight
 - stops the stack before applying the archive
-- restores both the project tree and the service volumes
+- restores both the project tree and the service volumes, preserving safe
+  directory access modes without replacing the installation root's permissions
 - re-renders and validates config before restart
 - requires explicit restore confirmation
+
+Container images are not included in the backup archive. Before recovery on a
+fresh host, load the required images into Docker's local cache while networking
+is available. Missing images cause preflight to fail before changing the
+installation. Keep image digests with the backup when reproducibility matters;
+a cached mutable tag alone does not identify the original image contents.
+
+The CLI leaves services stopped unless `--auto-restart` is supplied. Restart
+uses `--pull never --no-build`, so it can restore the DNS service without
+requiring that service to reach an image registry. A rejected
+preflight leaves the installed tree and services unchanged. Failures after
+replacement still require inspecting the recorded status and safety archive;
+the safety backup is not an automatic rollback. Configuration validity is
+separate from live DNS and fail-closed verification.
 
 For unattended recovery from the landing page, the Torhole main page (`https://torhole.<your-domain>`) exposes a protected recovery panel. Use the Torhole admin credentials configured in `.env` for the protected monitoring surfaces to create a backup or schedule a restore without leaving the page.
 The recovery panel polls running jobs automatically and each archive reports how many service volumes were captured alongside the Pi-hole state.

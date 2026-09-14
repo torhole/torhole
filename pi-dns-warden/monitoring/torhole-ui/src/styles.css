@@ -66,24 +66,24 @@ body {
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --color-th-bg:          #F3F7F5;
-  --color-th-bg-alt:      #E8F0EC;
-  --color-th-panel:       #FFFFFF;
-  --color-th-panel-alt:   #F7FAF8;
-  --color-th-line:        #D5E1DA;
-  --color-th-line-strong: #B9CBC1;
-  --color-th-text:        #102019;
-  --color-th-text-muted:  #5F7469;
-  --color-th-text-mono:   #40594C;
-  --color-th-primary:     #0F9F4A;
+  --color-th-bg:          #DDE4E0;
+  --color-th-bg-alt:      #D3DDD6;
+  --color-th-panel:       #E8EDE9;
+  --color-th-panel-alt:   #E2E8E3;
+  --color-th-line:        #C5D0C8;
+  --color-th-line-strong: #A8B9AE;
+  --color-th-text:        #24352C;
+  --color-th-text-muted:  #4B5F54;
+  --color-th-text-mono:   #40564A;
+  --color-th-primary:     #197044;
   --color-th-accent:      #6554C0;
-  --color-th-success:     #0F9F4A;
-  --color-th-warning:     #B96D00;
-  --color-th-danger:      #D6343A;
-  --color-th-info:        #087FA4;
-  --th-grid-line: rgba(31, 75, 52, 0.045);
-  --th-orb: rgba(15, 159, 74, 0.11);
-  --th-scanline: rgba(16, 32, 25, 0.028);
+  --color-th-success:     #197044;
+  --color-th-warning:     #805000;
+  --color-th-danger:      #AB3339;
+  --color-th-info:        #146581;
+  --th-grid-line: rgba(31, 75, 52, 0.018);
+  --th-orb: rgba(15, 159, 74, 0.025);
+  --th-scanline: rgba(16, 32, 25, 0.012);
 }
 
 * {
@@ -209,4 +209,63 @@ a {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Shared with Glance: quiet page framing, readable prose, precise data. */
+.th-dashboard-page {
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 36px 40px;
+  min-height: 100%;
+  background: var(--color-th-bg);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.th-dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+.th-dashboard-header h1 {
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -.035em;
+  line-height: 1.2;
+}
+.th-dashboard-header p {
+  margin-top: 8px;
+  max-width: 70ch;
+  font-size: 15px;
+  color: var(--color-th-text-muted);
+}
+.th-dashboard-updated {
+  font-size: 12px;
+  color: var(--color-th-text-muted);
+  white-space: nowrap;
+}
+.glance-panel,
+.th-dashboard-panel,
+.th-dashboard-surface {
+  border: 1px solid var(--color-th-line);
+  border-radius: 10px;
+  background: var(--color-th-panel);
+}
+.th-dashboard-panel { padding: 22px; }
+.th-ui-label {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.th-privacy-summary { padding: 30px; }
+.th-dashboard-page :is(a, button, summary):focus-visible {
+  outline: 2px solid var(--color-th-primary);
+  outline-offset: 3px;
+}
+@media (max-width: 1199px) {
+  .th-dashboard-page { padding: 28px 24px; }
+  .th-dashboard-header { flex-wrap: wrap; gap: 12px; }
+  .th-dashboard-panel { padding: 20px; }
+  .th-privacy-summary { padding: 24px; }
 }

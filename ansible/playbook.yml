@@ -11,7 +11,4 @@
         fail_msg: "Only Debian/Ubuntu/Raspbian are supported by this playbook right now."
   roles:
     - base
-    - docker
-    - networking
     - pihole_dns
-    - systemd

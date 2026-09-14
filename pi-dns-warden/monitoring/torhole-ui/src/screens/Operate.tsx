@@ -1,3 +1,4 @@
+import PageHeader from "../components/PageHeader";
 /*
  * Operate screen — "What button do I press to fix or change something?"
  *
@@ -25,6 +26,7 @@ import {
   Bell,
   Boxes,
   Check,
+  ChevronDown,
   CircleX,
   Container as ContainerIcon,
   Cpu,
@@ -54,6 +56,7 @@ import {
   fetchConfig,
   fetchDnsInsights,
   fetchRecovery,
+  fetchValidationPreview,
   formatBytes,
   formatRelative,
   restoreBackup,
@@ -69,6 +72,7 @@ import {
   type ValidationCheck,
   type ValidationCheckStatus,
   type ValidationResult,
+  type ValidationPreview,
 } from "../lib/snapshot";
 
 export default function OperateScreen() {
@@ -127,37 +131,14 @@ export default function OperateScreen() {
   ];
 
   return (
-    <div className="th-page-enter px-6 py-7 lg:px-10 lg:py-9 xl:px-14 max-w-[1500px] 2xl:max-w-[1700px] mx-auto">
-      <Header state={state} />
+    <div className="th-dashboard-page">
+      <PageHeader title="What do you need to change?" description="Manage services, backups, and configuration checks." state={state} />
       <SectionTabs tabs={tabs} defaultTabId="containers" />
       <LogPane containerName={logContainer} onClose={() => setLogContainer(null)} />
     </div>
   );
 }
 
-function Header({ state }: { state: SnapshotState }) {
-  const fetched =
-    state.kind === "ready" ? formatRelative(new Date(state.fetchedAt).toISOString()) : "—";
-  return (
-    <div className="flex items-end justify-between mb-7">
-      <div>
-        <div className="text-[10.5px] uppercase tracking-[0.22em] text-th-text-muted font-mono">
-          Operate
-        </div>
-        <h1 className="text-[28px] font-bold tracking-tight mt-1 leading-none">
-          What do you need to change?
-        </h1>
-      </div>
-      <div className="flex items-center gap-2 text-[11px] text-th-text-muted">
-        <span className="relative flex h-1.5 w-1.5">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-th-primary opacity-60"></span>
-          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-th-primary"></span>
-        </span>
-        <span className="font-mono uppercase tracking-[0.14em]">live · {fetched}</span>
-      </div>
-    </div>
-  );
-}
 
 /* ----------------------------------------------------------------------- *
  * Containers — table with start/stop/restart
@@ -175,7 +156,7 @@ function ContainersSection({
   if (state.kind !== "ready") {
     return (
       <TabPanel>
-        <div className="text-[11px] text-th-text-muted py-3 font-mono">loading…</div>
+        <div className="text-[12px] text-th-text-muted py-3 font-mono">{state.kind === "error" ? "Container status unavailable" : "loading…"}</div>
       </TabPanel>
     );
   }
@@ -197,7 +178,7 @@ function ContainersSection({
       <div className="overflow-x-auto">
         <table className="w-full text-[12px] font-mono">
           <thead>
-            <tr className="text-[9.5px] uppercase tracking-[0.14em] text-th-text-muted/70 border-b border-th-line/60">
+            <tr className="th-ui-label text-th-text-muted border-b border-th-line/60">
               <th className="text-left py-2 pl-1 pr-3 w-[14px]"></th>
               <th className="text-left py-2 pr-3">name</th>
               <th className="text-left py-2 pr-3">role</th>
@@ -271,7 +252,7 @@ function ContainerRow({
         <span className={`inline-block w-1.5 h-1.5 rounded-full ${dot}`} />
       </td>
       <td className="py-2 pr-3 text-th-text-mono">{container.name}</td>
-      <td className="py-2 pr-3 text-th-text-muted text-[10.5px] uppercase tracking-[0.08em]">
+      <td className="th-ui-label py-2 pr-3 text-th-text-muted">
         {container.core ? "core" : "support"}
       </td>
       <td className="py-2 pr-3 text-th-text-muted tabular-nums">{uptime}</td>
@@ -313,7 +294,7 @@ function ContainerRow({
           )}
         </div>
         {action.kind === "error" && (
-          <div className="text-[10px] text-th-danger text-right mt-1 truncate max-w-[240px]">
+          <div className="text-[12px] text-th-danger text-right mt-1 truncate max-w-[240px]">
             {action.message}
           </div>
         )}
@@ -349,7 +330,7 @@ function ActionBtn({
       onClick={onClick}
       disabled={disabled}
       title={label}
-      className={`inline-flex items-center gap-1 px-2 py-1.5 rounded bg-th-bg/60 border border-th-line text-th-text-muted transition-colors text-[10px] uppercase tracking-[0.14em] ${colour} disabled:opacity-40 disabled:cursor-not-allowed min-h-[28px]`}
+      className={`inline-flex items-center gap-1 px-2 py-1.5 rounded bg-th-bg/60 border border-th-line text-th-text-muted transition-colors text-[12px] th-ui-label ${colour} disabled:opacity-40 disabled:cursor-not-allowed min-h-[28px]`}
     >
       <Icon size={11} strokeWidth={2.2} className={spinning ? "animate-spin" : ""} />
       {label}
@@ -423,14 +404,14 @@ function BackupsSection() {
     <TabPanel
       action={
         <>
-          <div className="text-[10px] font-mono text-th-text-muted uppercase tracking-[0.14em] mr-auto">
+          <div className="th-ui-label text-th-text-muted mr-auto">
             {backups.length} snapshot{backups.length === 1 ? "" : "s"}
           </div>
           <button
             type="button"
             onClick={handleCreate}
             disabled={create.kind === "running"}
-            className={`flex items-center gap-1.5 px-3 rounded-md text-[10.5px] font-mono uppercase tracking-[0.14em] min-h-[36px] transition-colors ${
+            className={`flex items-center gap-1.5 px-3 rounded-md text-[12px] th-ui-label min-h-[36px] transition-colors ${
               create.kind === "running"
                 ? "bg-th-bg/60 border border-th-line text-th-text-muted cursor-wait"
                 : create.kind === "success"
@@ -466,14 +447,14 @@ function BackupsSection() {
       }
     >
       {loading && backups.length === 0 ? (
-        <div className="text-[11px] text-th-text-muted py-3 font-mono">loading…</div>
+        <div className="text-[12px] text-th-text-muted py-3 font-mono">loading…</div>
       ) : err ? (
-        <div className="flex items-start gap-2 text-[11px] text-th-danger font-mono py-2">
+        <div className="flex items-start gap-2 text-[12px] text-th-danger font-mono py-2">
           <AlertCircle size={13} />
           {err}
         </div>
       ) : backups.length === 0 ? (
-        <div className="text-[11px] text-th-text-muted py-3 font-mono">
+        <div className="text-[12px] text-th-text-muted py-3 font-mono">
           no backups yet · click "create snapshot" to make the first one
         </div>
       ) : (
@@ -489,7 +470,7 @@ function BackupsSection() {
         </div>
       )}
       {create.kind === "error" && (
-        <div className="text-[11px] text-th-danger font-mono mt-2 px-2 py-1.5 bg-th-danger/10 border border-th-danger/30 rounded">
+        <div className="text-[12px] text-th-danger font-mono mt-2 px-2 py-1.5 bg-th-danger/10 border border-th-danger/30 rounded">
           {create.message}
         </div>
       )}
@@ -555,20 +536,20 @@ function BackupRow({
 }) {
   const ageIso = backup.metadata.created_at || backup.modified_at;
   return (
-    <div className="flex items-center gap-3 px-3 py-2 bg-th-bg/40 border border-th-line/60 rounded text-[11px]">
+    <div className="flex items-center gap-3 px-3 py-2 bg-th-bg/40 border border-th-line/60 rounded text-[12px]">
       <Database size={13} className="text-th-text-muted shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="font-mono text-th-text-mono truncate" title={backup.name}>
           {backup.name}
         </div>
-        <div className="font-mono text-[9.5px] text-th-text-muted/70 mt-0.5">
+        <div className="font-mono text-[12px] text-th-text-muted/70 mt-0.5">
           {formatBytes(backup.size_bytes)} · {formatRelative(ageIso)}
         </div>
       </div>
       <a
         href={`/api/recovery/download?archive=${encodeURIComponent(backup.name)}`}
         download
-        className="flex items-center gap-1 px-2.5 py-2 rounded bg-th-bg/60 border border-th-line text-th-text-muted hover:text-th-text hover:border-th-primary/40 transition-colors text-[10px] uppercase tracking-[0.14em] font-mono min-h-[32px]"
+        className="th-ui-label flex items-center gap-1 px-2.5 py-2 rounded bg-th-bg/60 border border-th-line text-th-text-muted hover:text-th-text hover:border-th-primary/40 transition-colors min-h-[32px]"
         title="Download archive"
       >
         <Download size={11} />
@@ -577,7 +558,7 @@ function BackupRow({
       <button
         type="button"
         onClick={onRestore}
-        className="flex items-center gap-1 px-2.5 py-2 rounded bg-th-bg/60 border border-th-line text-th-text-muted hover:text-th-warning hover:border-th-warning/40 transition-colors text-[10px] uppercase tracking-[0.14em] font-mono min-h-[32px]"
+        className="th-ui-label flex items-center gap-1 px-2.5 py-2 rounded bg-th-bg/60 border border-th-line text-th-text-muted hover:text-th-warning hover:border-th-warning/40 transition-colors min-h-[32px]"
         title="Restore — overwrites live volumes"
       >
         <RotateCcw size={11} />
@@ -586,7 +567,7 @@ function BackupRow({
       <button
         type="button"
         onClick={onDelete}
-        className="flex items-center gap-1 px-2.5 py-2 rounded bg-th-bg/60 border border-th-line text-th-text-muted hover:text-th-danger hover:border-th-danger/40 transition-colors text-[10px] uppercase tracking-[0.14em] font-mono min-h-[32px]"
+        className="th-ui-label flex items-center gap-1 px-2.5 py-2 rounded bg-th-bg/60 border border-th-line text-th-text-muted hover:text-th-danger hover:border-th-danger/40 transition-colors min-h-[32px]"
         title="Delete — permanently remove archive"
       >
         <Trash2 size={11} />
@@ -606,20 +587,42 @@ type ValidationRunState =
   | { kind: "done"; result: ValidationResult }
   | { kind: "error"; message: string };
 
-function ValidationSection({
-  state,
-  refetch,
-}: {
-  state: SnapshotState;
-  refetch: () => void;
-}) {
+function ValidationSection({ state, refetch }: { state: SnapshotState; refetch: () => void }) {
   const [run, setRun] = useState<ValidationRunState>({ kind: "idle" });
+  const [preview, setPreview] = useState<ValidationPreview | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
 
-  const lastFromSnapshot =
-    state.kind === "ready" ? state.data.validation.last_result : null;
+  useEffect(() => {
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const data = await fetchValidationPreview();
+        if (active) { setPreview(data); setPreviewError(null); }
+      } catch (e) {
+        if (active) setPreviewError(`Could not load validation preview: ${(e as Error).message}`);
+      }
+      if (active) timer = setTimeout(poll, 1000);
+    };
+    void poll();
+    return () => { active = false; clearTimeout(timer); };
+  }, [retry]);
 
-  const result: ValidationResult | null =
-    run.kind === "done" ? run.result : lastFromSnapshot;
+  const running = run.kind === "running" || Boolean(preview?.running);
+  const lastFromSnapshot = state.kind === "ready" ? state.data.validation.last_result : null;
+  const result = run.kind === "done" ? run.result : preview?.last_result ?? lastFromSnapshot;
+  const catalog = preview?.checks ?? [];
+  const checks: ValidationCheck[] = running
+    ? preview?.running ? preview.progress : catalog.map(c => ({ ...c, status: "queued" }))
+    : result?.checks.length
+      ? result.checks.map(c => ({ ...catalog.find(item => item.id === c.id), ...c }))
+      : catalog.map(c => ({ ...c, status: "queued" }));
+  const completed = checks.filter(c => c.status === "success" || c.status === "error").length;
+  const summary = running
+    ? `${completed}/${checks.length} checks complete`
+    : result?.summary ?? "Ready to validate";
+  const rowKey = running ? "current" : result?.finished_at ?? "preview";
 
   const handleRun = async () => {
     setRun({ kind: "running" });
@@ -627,139 +630,113 @@ function ValidationSection({
       const r = await runValidation();
       setRun({ kind: "done", result: r });
       refetch();
-      setTimeout(() => setRun({ kind: "idle" }), 5000);
     } catch (e) {
-      setRun({ kind: "error", message: (e as Error).message });
-      setTimeout(() => setRun({ kind: "idle" }), 5000);
+      setRun({ kind: "error", message: `${(e as Error).message}. The request was interrupted; validation may still be running. Check live progress before retrying.` });
     }
   };
 
+  const downloadReport = () => {
+    if (!result) return;
+    // Legacy results may contain raw secrets: export only structured fields.
+    const report = {
+      status: result.status, started_at: result.started_at, finished_at: result.finished_at,
+      scope: preview?.scope, checks: result.checks.map(({ id, label, status }) => ({ id, label, status })),
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "torhole-validation.json";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
   return (
-    <TabPanel
-      action={
-        <>
-          <div className="text-[10px] font-mono text-th-text-muted uppercase tracking-[0.14em] mr-auto">
-            {result ? `last run: ${result.status}` : "no runs yet"}
+    <TabPanel>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <div className="min-w-0">
+          <div role="status" className={`flex items-center gap-2 text-sm font-semibold ${!running && result?.status === "error" ? "text-th-danger" : "text-th-text"}`}>
+            {running ? <RefreshCw size={14} className="animate-spin motion-reduce:animate-none shrink-0" /> : result ? statusIcon(result.status) : <ShieldCheck size={14} />}
+            {summary}
           </div>
-          <button
-            type="button"
-            onClick={handleRun}
-            disabled={run.kind === "running"}
-            className={`flex items-center gap-1.5 px-3 rounded-md text-[10.5px] font-mono uppercase tracking-[0.14em] min-h-[36px] transition-colors ${
-              run.kind === "running"
-                ? "bg-th-bg/60 border border-th-line text-th-text-muted cursor-wait"
-                : "bg-th-bg/60 border border-th-line text-th-text-muted hover:text-th-text hover:border-th-primary/40"
-            }`}
-          >
-            {run.kind === "running" ? (
-              <>
-                <RefreshCw size={12} className="animate-spin" />
-                running…
-              </>
-            ) : (
-              <>
-                <Sparkles size={12} />
-                run validation
-              </>
-            )}
+          <p className="text-xs text-th-text-muted mt-1">
+            {running ? "Current run" : result ? `Last run ${formatRelative(result.finished_at)}` : "No validation run yet"}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {result && !running && <button type="button" onClick={downloadReport} className="flex items-center gap-1.5 min-h-9 px-2 text-xs text-th-text-muted hover:text-th-text whitespace-nowrap">
+            <Download size={13} />Download report
+          </button>}
+          <button type="button" onClick={handleRun} disabled={running || !preview || Boolean(previewError)}
+            className="flex items-center gap-1.5 min-h-9 px-3 text-xs font-semibold border border-th-primary/40 rounded-md text-th-primary hover:bg-th-primary/10 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">
+            <Play size={12} />{running ? "running…" : "run validation"}
           </button>
-        </>
-      }
-    >
-      {!result ? (
-        <div className="text-[11px] text-th-text-muted font-mono py-3">
-          no validation run yet · click "run validation" to check the stack
         </div>
-      ) : (
-        <>
-          <div
-            className={`rounded-md border p-3 mb-3 ${
-              result.status === "success"
-                ? "bg-th-primary/[0.04] border-th-primary/30"
-                : "bg-th-danger/[0.06] border-th-danger/40"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <div
-                className={`w-5 h-5 rounded flex items-center justify-center ${
-                  result.status === "success"
-                    ? "bg-th-primary/15 text-th-primary"
-                    : "bg-th-danger/15 text-th-danger"
-                }`}
-              >
-                {result.status === "success" ? (
-                  <Check size={13} strokeWidth={3} />
-                ) : (
-                  <CircleX size={13} strokeWidth={2.5} />
-                )}
-              </div>
-              <div
-                className={`text-[12.5px] font-semibold ${
-                  result.status === "success" ? "text-th-primary" : "text-th-danger"
-                }`}
-              >
-                {result.summary}
-              </div>
-              <div className="ml-auto text-[10px] font-mono text-th-text-muted uppercase tracking-[0.14em]">
-                {formatRelative(result.finished_at)}
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            {result.checks.map((check) => (
-              <CheckRow key={check.id} check={check} />
-            ))}
-          </div>
-
-          {result.detail && result.status !== "success" && (
-            <details className="mt-3">
-              <summary className="text-[10px] uppercase tracking-[0.14em] text-th-text-muted font-mono cursor-pointer hover:text-th-text">
-                failure detail
-              </summary>
-              <pre className="mt-2 p-2 bg-th-bg/60 border border-th-line/60 rounded text-[10px] font-mono text-th-text-mono overflow-x-auto whitespace-pre-wrap break-words">
-                {result.detail}
-              </pre>
-            </details>
-          )}
-        </>
-      )}
-
-      {run.kind === "error" && (
-        <div className="text-[11px] text-th-danger font-mono mt-2 px-2 py-1.5 bg-th-danger/10 border border-th-danger/30 rounded">
-          {run.message}
+      </div>
+      <p className="text-xs text-th-text-muted mb-4">Configuration only — not a DNS/privacy test.</p>
+      {previewError && <div role="alert" className="text-th-danger text-xs mb-3">
+        {previewError} <button type="button" className="underline whitespace-nowrap" onClick={() => setRetry(n => n + 1)}>Retry preview</button>
+      </div>}
+      {run.kind === "error" && <p role="alert" className="text-xs text-th-danger mb-3">{run.message}</p>}
+      {!preview && !previewError && <p className="text-xs text-th-text-muted">Loading check list…</p>}
+      <section aria-label={running ? "Current validation" : "Validation checks"}>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-xs font-semibold">Checks</h2>
+          <span className="text-xs text-th-text-muted">{checks.length} checks · expand for details</span>
         </div>
-      )}
+        {running && previewError && <p className="text-xs text-th-warning mb-2">Progress unavailable — last observed state shown.</p>}
+        <div className="divide-y divide-th-line/60">
+          {checks.map(check => <CheckRow key={`${rowKey}-${check.id}`} check={check} notRun={!running && !result} />)}
+        </div>
+      </section>
+      {running && result && <details className="border-t border-th-line mt-4 pt-3 text-xs">
+        <summary className="cursor-pointer text-th-text-muted">Previous result</summary>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <p>{result.summary} <span className="text-th-text-muted">· {formatRelative(result.finished_at)}</span></p>
+          <button type="button" onClick={downloadReport} className="text-th-text-muted underline whitespace-nowrap">Download previous report</button>
+        </div>
+      </details>}
+      {preview && <details className="border-t border-th-line mt-4 pt-3 text-xs text-th-text-muted">
+        <summary className="cursor-pointer">Scope and technical details</summary>
+        <div className="space-y-2 mt-2 max-w-3xl">
+          <p>{preview.scope}</p>
+          <p>{preview.impact}</p>
+          <p>Skipped checks were not verified. For full diagnostics, run <code>ops/scripts/19-validate-stack.sh</code> on the host. Its output may contain sensitive configuration.</p>
+        </div>
+      </details>}
     </TabPanel>
   );
 }
 
-function CheckRow({ check }: { check: ValidationCheck }) {
-  const icon = statusIcon(check.status);
+function CheckRow({ check, notRun = false }: { check: ValidationCheck; notRun?: boolean }) {
+  const [expanded, setExpanded] = useState(check.status === "error");
+  useEffect(() => {
+    if (check.status === "error") setExpanded(true);
+  }, [check.status]);
   return (
-    <div className="flex items-center gap-2 px-2 py-1 text-[11px]">
-      {icon}
-      <span className="font-mono text-th-text-mono">{check.label}</span>
-      <span
-        className={`ml-auto text-[9.5px] font-mono uppercase tracking-[0.14em] ${
-          check.status === "success"
-            ? "text-th-primary/70"
-            : check.status === "error"
-            ? "text-th-danger"
-            : "text-th-text-muted/50"
-        }`}
-      >
-        {check.status}
-      </span>
+    <div className="py-0.5">
+      <button type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}
+        className="flex items-center gap-2 w-full min-h-9 px-1 text-xs text-left rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-th-primary hover:bg-th-primary/5">
+        {statusIcon(check.status)}
+        <span className="min-w-0 flex-1">{check.label}</span>
+        <span className={`shrink-0 text-[12px] ${check.status === "error" ? "text-th-danger" : check.status === "success" ? "text-th-primary" : "text-th-text-muted"}`}>
+          {notRun ? "not run" : check.status}
+        </span>
+        <ChevronDown size={12} className={`shrink-0 text-th-text-muted transition-transform ${expanded ? "rotate-180" : ""}`} />
+      </button>
+      {expanded && <div className="pl-6 pr-3 pb-3 text-xs text-th-text-muted space-y-1 max-w-3xl">
+        <p>{check.description ?? "Run validation again to load this check's details."}</p>
+        {check.status === "error" && <p className="text-th-danger">{check.remediation ?? "Check the local validator output for the failure details."}</p>}
+        {check.status === "skipped" && <p>This check was not verified; rerun validation after resolving the failure.</p>}
+      </div>}
     </div>
   );
 }
 
 function statusIcon(status: ValidationCheckStatus) {
-  if (status === "success")
-    return <ShieldCheck size={12} className="text-th-primary" strokeWidth={2.5} />;
-  if (status === "error") return <CircleX size={12} className="text-th-danger" strokeWidth={2.5} />;
-  return <MinusCircle size={12} className="text-th-text-muted/50" strokeWidth={2} />;
+  if (status === "running") return <RefreshCw size={12} className="text-th-primary animate-spin motion-reduce:animate-none shrink-0" />;
+  if (status === "success") return <ShieldCheck size={12} className="text-th-primary shrink-0" strokeWidth={2.5} />;
+  if (status === "error") return <CircleX size={12} className="text-th-danger shrink-0" strokeWidth={2.5} />;
+  return <MinusCircle size={12} className="text-th-text-muted/50 shrink-0" strokeWidth={2} />;
 }
 
 /* ----------------------------------------------------------------------- *
@@ -966,7 +943,7 @@ function QueryInsights() {
   return (
     <div className="mb-6">
       <div className="flex items-center justify-between mb-3">
-        <div className="text-[10px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono">
+        <div className="th-ui-label text-th-text-muted">
           Query insights · last 24h
         </div>
         <div className="flex gap-1.5">
@@ -975,7 +952,7 @@ function QueryInsights() {
               key={p.id}
               type="button"
               onClick={() => setPlaneId(p.id)}
-              className={`px-2.5 py-1.5 rounded border text-[10px] font-mono uppercase tracking-[0.14em] min-h-[30px] transition-colors ${
+              className={`px-2.5 py-1.5 rounded border text-[12px] th-ui-label min-h-[30px] transition-colors ${
                 plane?.id === p.id
                   ? "border-th-primary/50 text-th-primary bg-th-primary/10"
                   : "border-th-line text-th-text-muted hover:text-th-text"
@@ -988,19 +965,19 @@ function QueryInsights() {
       </div>
 
       {err && (
-        <div className="p-3 bg-th-danger/10 border border-th-danger/30 rounded text-[11px] text-th-danger font-mono mb-3">
+        <div className="p-3 bg-th-danger/10 border border-th-danger/30 rounded text-[12px] text-th-danger font-mono mb-3">
           insights unavailable: {err}
         </div>
       )}
 
       {!data && !err && (
-        <div className="p-4 text-[11px] font-mono text-th-text-muted/60 border border-dashed border-th-line rounded">
+        <div className="p-4 text-[12px] font-mono text-th-text-muted/60 border border-dashed border-th-line rounded">
           loading query insights…
         </div>
       )}
 
       {plane && !plane.available && (
-        <div className="p-3 bg-th-warning/10 border border-th-warning/30 rounded text-[11px] text-th-warning font-mono">
+        <div className="p-3 bg-th-warning/10 border border-th-warning/30 rounded text-[12px] text-th-warning font-mono">
           {plane.label}: Pi-hole stats API unreachable.
         </div>
       )}
@@ -1043,11 +1020,11 @@ function InsightList({
   const max = entries.reduce((m, e) => Math.max(m, e.count), 0);
   return (
     <div className="bg-th-bg/40 border border-th-line/60 rounded-md p-3">
-      <div className="text-[9.5px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono mb-2.5">
+      <div className="th-ui-label text-th-text-muted mb-2.5">
         {title}
       </div>
       {entries.length === 0 ? (
-        <div className="text-[10.5px] font-mono text-th-text-muted/50">no data yet</div>
+        <div className="text-[12px] font-mono text-th-text-muted/50">no data yet</div>
       ) : (
         <div className="space-y-1.5">
           {entries.map((e) => (
@@ -1058,10 +1035,10 @@ function InsightList({
                 style={{ width: max > 0 ? `${(e.count / max) * 100}%` : "0%" }}
               />
               <div className="relative flex items-center justify-between gap-2 px-1.5 py-1">
-                <span className="font-mono text-[10.5px] text-th-text-mono truncate">
+                <span className="font-mono text-[12px] text-th-text-mono truncate">
                   {e.label}
                 </span>
-                <span className="font-mono text-[10px] text-th-text-muted tabular-nums shrink-0">
+                <span className="font-mono text-[12px] text-th-text-muted tabular-nums shrink-0">
                   {e.count.toLocaleString()}
                 </span>
               </div>
@@ -1111,7 +1088,7 @@ function InsightsSection({ state }: { state: SnapshotState }) {
     <TabPanel>
       <QueryInsights />
 
-      <div className="flex items-start gap-2 mb-4 p-3 bg-th-bg/40 border border-th-line/60 rounded text-[11px] text-th-text-muted leading-relaxed">
+      <div className="flex items-start gap-2 mb-4 p-3 bg-th-bg/40 border border-th-line/60 rounded text-[12px] text-th-text-muted leading-relaxed">
         <BarChart3 size={13} className="text-th-text-muted/70 shrink-0 mt-0.5" />
         <div>
           Curated deep-links into the observability stack. Each tile opens in a
@@ -1122,7 +1099,7 @@ function InsightsSection({ state }: { state: SnapshotState }) {
       </div>
 
       {domainErr && (
-        <div className="flex items-start gap-2 text-[11px] text-th-danger font-mono py-2 mb-3">
+        <div className="flex items-start gap-2 text-[12px] text-th-danger font-mono py-2 mb-3">
           <AlertCircle size={13} />
           {domainErr}
         </div>
@@ -1146,7 +1123,7 @@ function InsightsSection({ state }: { state: SnapshotState }) {
           if (tiles.length === 0) return null;
           return (
             <div key={group.id}>
-              <div className="text-[9.5px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono mb-2">
+              <div className="th-ui-label text-th-text-muted mb-2">
                 {group.label}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
@@ -1218,7 +1195,7 @@ function InsightTileCard({
               aria-label={dotTitle}
             />
           </div>
-          <div className="text-[10.5px] text-th-text-muted mt-0.5 leading-snug">
+          <div className="text-[12px] text-th-text-muted mt-0.5 leading-snug">
             {tile.description}
           </div>
         </div>
@@ -1276,7 +1253,7 @@ function TabPanel({
   children: React.ReactNode;
 }) {
   return (
-    <div className={`bg-th-panel border border-th-line rounded-lg p-4 ${className}`}>
+    <div className={`th-dashboard-panel ${className}`}>
       {action && (
         <div className="flex items-center justify-end gap-2 mb-3">{action}</div>
       )}

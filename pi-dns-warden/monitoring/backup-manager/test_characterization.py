@@ -87,6 +87,13 @@ class RecoveryBusyTests(unittest.TestCase):
 
 
 class WebAccessUpgradeTests(unittest.TestCase):
+    def setUp(self):
+        # Rendering moved out of run_system_validation, so mock the actual
+        # external command boundary for these HTTPS orchestration tests.
+        patch = mock.patch.object(server, "run_script", return_value=mock.Mock(returncode=0, stdout="", stderr=""))
+        self.render_script = patch.start()
+        self.addCleanup(patch.stop)
+
     def test_http_upgrade_renders_validates_and_schedules_narrow_activation(self):
         current = {"TORHOLE_WEB_MODE": "http", "HOST_MGMT_IP": "10.0.0.149"}
         updated = {
@@ -118,6 +125,8 @@ class WebAccessUpgradeTests(unittest.TestCase):
             allow_secret_keys=False,
         )
         schedule.assert_called_once_with()
+        self.render_script.assert_any_call(str(server.ROOT_DIR / "ops/scripts/13-render-prometheus.sh"))
+        self.render_script.assert_any_call(str(server.ROOT_DIR / "ops/scripts/14-render-caddy-topology.sh"))
         self.assertTrue(result["scheduled"])
         self.assertEqual(result["https_url"], "https://torhole.hplab.local/")
         self.assertEqual(
@@ -597,15 +606,22 @@ class ConfigCapabilityTests(unittest.TestCase):
 
 
 class ValidationParsingTests(unittest.TestCase):
-    def test_all_success_when_returncode_zero(self):
+    def test_missing_checks_are_not_success_when_returncode_zero(self):
         checks = server.parse_validation_checks("", 0)
         self.assertTrue(checks)
-        self.assertTrue(all(c["status"] == "success" for c in checks))
+        self.assertTrue(all(c["status"] == "skipped" for c in checks))
+
+    def test_only_explicit_completion_is_success(self):
+        first, second = server.detect_validation_checks()[:2]
+        output = f"[validate] {first['marker']}\n[validate:success] {first['marker']}\n[validate] {second['marker']}\n"
+        checks = {c['id']: c['status'] for c in server.parse_validation_checks(output, 0)}
+        self.assertEqual(checks[first['id']], 'success')
+        self.assertEqual(checks[second['id']], 'skipped')
 
     def test_failure_marks_last_seen_marker_as_error(self):
         expected = server.detect_validation_checks()
         first, second = expected[0], expected[1]
-        output = f"[validate] {first['marker']}\n[validate] {second['marker']}\n"
+        output = f"[validate] {first['marker']}\n[validate:success] {first['marker']}\n[validate] {second['marker']}\n"
         checks = server.parse_validation_checks(output, 1)
         by_id = {c["id"]: c["status"] for c in checks}
         self.assertEqual(by_id[second["id"]], "error")
@@ -627,14 +643,14 @@ class SnapshotHeadlineTests(unittest.TestCase):
         headline = server._compose_snapshot_headline(
             False, "healthy", {"healthy": 2, "total": 2}, {"offline": 0, "degraded": 0}
         )
-        self.assertIn("compromised", headline)
+        self.assertIn("unverified", headline)
 
     def test_all_healthy(self):
         headline = server._compose_snapshot_headline(
             True, "healthy", {"healthy": 2, "total": 2}, {"offline": 0, "degraded": 0}
         )
         self.assertEqual(
-            headline, "Privacy guarantee intact. 2/2 DNS planes serving via Tor."
+            headline, "Tor configuration and runtime checks healthy. 2/2 DNS plane APIs available."
         )
 
     def test_intact_but_container_issues(self):
@@ -643,7 +659,7 @@ class SnapshotHeadlineTests(unittest.TestCase):
         )
         self.assertEqual(
             headline,
-            "Privacy guarantee intact, but 1 container offline and 2 containers degraded.",
+            "Tor configuration and runtime checks healthy; 1 container offline and 2 containers degraded.",
         )
 
 

@@ -10,7 +10,7 @@ FROM docker:27-cli
 
 RUN apk add --no-cache bash python3 docker-cli-compose
 WORKDIR /app
-COPY bootstrap/server.py ./
+COPY bootstrap/server.py monitoring/backup-manager/env_store.py ./
 COPY --from=ui /ui ./ui
 EXPOSE 8099
 CMD ["python3", "/app/server.py"]

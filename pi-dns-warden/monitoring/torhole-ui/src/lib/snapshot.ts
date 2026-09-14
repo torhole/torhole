@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export const SNAPSHOT_SCHEMA_VERSION = 1;
 export const SNAPSHOT_POLL_MS = 5000;
+const SNAPSHOT_TIMEOUT_MS = 10000;
 
 export type StatusKind = "healthy" | "degraded" | "offline";
 
@@ -137,12 +138,24 @@ export interface LeakTestState {
   history?: LeakTestHistoryEntry[];
 }
 
-export type ValidationCheckStatus = "success" | "error" | "skipped";
+export type ValidationCheckStatus = "success" | "error" | "skipped" | "queued" | "running";
 
 export interface ValidationCheck {
   id: string;
   label: string;
   status: ValidationCheckStatus;
+  description?: string;
+  remediation?: string;
+}
+
+export interface ValidationPreview {
+  scope: string;
+  impact: string;
+  checks: Omit<ValidationCheck, "status">[];
+  running: boolean;
+  started_at: string | null;
+  progress: ValidationCheck[];
+  last_result: ValidationResult | null;
 }
 
 export interface ValidationResult {
@@ -258,7 +271,16 @@ export interface Snapshot {
 export type SnapshotState =
   | { kind: "loading" }
   | { kind: "ready"; data: Snapshot; fetchedAt: number }
-  | { kind: "error"; error: string; fetchedAt: number };
+  | { kind: "error"; error: string; fetchedAt: number; lastSuccessfulAt?: number };
+
+/** Human-readable freshness shared by all snapshot screens. */
+export function snapshotFreshness(state: SnapshotState): string {
+  if (state.kind === "loading") return "Updating…";
+  if (state.kind === "ready") return `Updated ${formatRelative(new Date(state.fetchedAt).toISOString())}`;
+  return state.lastSuccessfulAt === undefined
+    ? "Updates unavailable"
+    : `Updates unavailable · last updated ${formatRelative(new Date(state.lastSuccessfulAt).toISOString())}`;
+}
 
 export type BuildInfoState =
   | { kind: "loading" }
@@ -312,11 +334,11 @@ export interface UseSnapshotResult {
 }
 
 /**
- * useSnapshot — single shared poller for the admin UI.
+ * useSnapshot — bounded polling for an admin UI consumer.
  *
  * Polls /api/system/snapshot every SNAPSHOT_POLL_MS, updates on success,
- * preserves the last known good snapshot on transient errors so screens
- * don't flicker between "data" and "loading" on every poll.
+ * marks measurements unavailable on errors so historical health is never
+ * presented as current proof. The last successful fetch time remains visible.
  *
  * Exposes a `refetch` function that callers can invoke after running an
  * action (e.g. rotate identity, take snapshot) to immediately reflect the
@@ -324,45 +346,60 @@ export interface UseSnapshotResult {
  */
 export function useSnapshot(): UseSnapshotResult {
   const [state, setState] = useState<SnapshotState>({ kind: "loading" });
-  const lastGood = useRef<Snapshot | null>(null);
+  const lastSuccessfulAt = useRef<number | undefined>(undefined);
   const tickRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    const controller = new AbortController();
+    let active: AbortController | null = null;
+    let timeout: number | undefined;
+
+    const unavailable = (error: string) => setState({
+      kind: "error",
+      error,
+      fetchedAt: Date.now(),
+      lastSuccessfulAt: lastSuccessfulAt.current,
+    });
 
     const tick = async () => {
+      if (active || cancelled) return;
+      const controller = new AbortController();
+      active = controller;
+      const deadline = window.setTimeout(() => {
+        if (cancelled || active !== controller) return;
+        active = null;
+        controller.abort();
+        unavailable("Snapshot request timed out");
+      }, SNAPSHOT_TIMEOUT_MS);
+      timeout = deadline;
       try {
         const data = await fetchSnapshot(controller.signal);
-        if (cancelled) return;
-        lastGood.current = data;
-        setState({ kind: "ready", data, fetchedAt: Date.now() });
+        if (cancelled || active !== controller) return;
+        lastSuccessfulAt.current = Date.now();
+        setState({ kind: "ready", data, fetchedAt: lastSuccessfulAt.current });
       } catch (err) {
-        if (cancelled) return;
-        if ((err as Error).name === "AbortError") return;
-        if (lastGood.current) {
-          setState({
-            kind: "ready",
-            data: lastGood.current,
-            fetchedAt: Date.now(),
-          });
-        } else {
-          setState({
-            kind: "error",
-            error: (err as Error).message,
-            fetchedAt: Date.now(),
-          });
-        }
+        if (cancelled || active !== controller) return;
+        unavailable((err as Error).message);
+      } finally {
+        window.clearTimeout(deadline);
+        if (active === controller) active = null;
       }
     };
     tickRef.current = tick;
 
     void tick();
     const interval = window.setInterval(tick, SNAPSHOT_POLL_MS);
+    // Age the visible timestamp even while the network is silent. Preserve
+    // the result/error and its original timestamps; polling owns transitions.
+    const freshness = window.setInterval(() => {
+      setState(current => current.kind === "loading" ? current : { ...current });
+    }, 1000);
     return () => {
       cancelled = true;
-      controller.abort();
+      active?.abort();
+      window.clearTimeout(timeout);
       window.clearInterval(interval);
+      window.clearInterval(freshness);
       tickRef.current = null;
     };
   }, []);
@@ -582,6 +619,12 @@ export async function runValidation(): Promise<ValidationResult> {
     throw new Error((data && data.error) || `HTTP ${res.status}`);
   }
   return data as ValidationResult;
+}
+
+export async function fetchValidationPreview(): Promise<ValidationPreview> {
+  const res = await fetch("/api/system/validation", { credentials: "include", cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
 }
 
 /** GET /api/recovery — list of backup archives. Not in the snapshot because

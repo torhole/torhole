@@ -87,7 +87,9 @@ def dns_query(name):
             sock.settimeout(4)
             sock.sendto(packet, (DNS_HOST, 53))
             response, _ = sock.recvfrom(4096)
-        flags, answers = struct.unpack("!HH", response[2:6])
+        response_id, flags, questions, answers, _, _ = struct.unpack("!HHHHHH", response[:12])
+        if response_id != query_id or questions != 1 or not flags & 0x8000 or flags & 0x7A0F:
+            raise ValueError("Invalid, truncated, or unsuccessful DNS response")
         offset = 12
         while response[offset] != 0:
             offset += response[offset] + 1
@@ -100,12 +102,14 @@ def dns_query(name):
                 while response[offset] != 0:
                     offset += response[offset] + 1
                 offset += 1
-            rtype, _rclass, _ttl, length = struct.unpack("!HHIH", response[offset:offset + 10])
+            rtype, rclass, _ttl, length = struct.unpack("!HHIH", response[offset:offset + 10])
             offset += 10
-            if rtype == 1 and length == 4:
+            if offset + length > len(response):
+                raise ValueError("Truncated DNS answer")
+            if rtype == 1 and rclass == 1 and length == 4:
                 ips.append(socket.inet_ntoa(response[offset:offset + 4]))
             offset += length
-        return {"ok": bool(flags & 0x8000) and answers > 0, "answers": answers, "ips": ips}
+        return {"ok": bool(ips), "answers": answers, "ips": ips}
     except Exception as exc:
         return {"ok": False, "answers": 0, "error": str(exc)}
 

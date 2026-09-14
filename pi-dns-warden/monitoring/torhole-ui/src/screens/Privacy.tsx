@@ -1,30 +1,19 @@
+import PageHeader from "../components/PageHeader";
 /*
  * Privacy screen — answers "What does Torhole prove?"
  *
- * Layout (tabbed as of iteration 8):
- *   Sticky top (always visible):
- *     - Header + Privacy hero
- *     - Per-plane Tor circuit isolation cards
- *
- *   Tabbed below (SectionTabs preserves state via hidden CSS):
- *     - DNS leak test (run button + result block + history strip)
- *     - Live query feed (terminal-styled SSE stream)
- *     - Internal Tor circuits (HS_VANGUARDS, CONFLUX — advanced)
- *
- * Why tabs: the stacked-sections layout made the page 3-4 viewport-heights
- * long, which hurt the "glance and act" feel. Tabs keep the privacy proof
- * (hero + circuits) pinned at the top and let the operator focus on one
- * secondary view at a time. Content stays mounted — non-active tabs are
- * hidden via CSS so SSE connections, leak test results, and scroll
- * positions persist across switches.
+ * Three routed pages share the header and top navigation. Only the active
+ * page is mounted, so leaving the live feed releases its connection.
+ * Old section-query bookmarks redirect to the corresponding page.
  *
  * Reuses the same brand tokens and primitives as Glance.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Activity,
   AlertCircle,
+  ArrowUp,
   Check,
   Lock,
   Pause,
@@ -34,7 +23,7 @@ import {
   Trash2,
   Zap,
 } from "lucide-react";
-import SectionTabs, { type SectionTabDef } from "../components/SectionTabs";
+import { Navigate, NavLink, useLocation, useParams } from "react-router-dom";
 import {
   formatRelative,
   rotateTorIdentity,
@@ -52,49 +41,77 @@ import {
 
 export default function PrivacyScreen() {
   const { state, refetch } = useSnapshot();
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
-  // Compute live meta for each tab from the snapshot so the tab row
-  // reflects real state without extra polling.
-  const leakMeta = computeLeakMeta(state);
-  const internalMeta = computeInternalMeta(state);
-
-  const tabs: SectionTabDef[] = [
-    {
-      id: "leak-test",
-      eyebrow: "proof",
-      title: "DNS leak test",
-      meta: leakMeta,
-      icon: <Zap size={11} />,
-      content: <LeakTestPanel state={state} refetch={refetch} />,
-    },
-    {
-      id: "query-feed",
-      eyebrow: "proof",
-      title: "Live query feed",
-      // The live meta for the feed is computed inside the component via SSE;
-      // we pass a static placeholder here that's replaced by useQueryFeedMeta.
-      meta: undefined,
-      icon: <Activity size={11} />,
-      content: (active) => <LiveQueryFeedPanel active={active} />,
-    },
-    {
-      id: "internal",
-      eyebrow: "advanced",
-      title: "Tor circuits",
-      meta: internalMeta,
-      icon: <Lock size={11} />,
-      content: <InternalCircuitsPanel state={state} />,
-    },
+  const location = useLocation();
+  const path = useParams()["*"];
+  const pages = [
+    { id: "leak-test", title: "DNS leak test", icon: <Zap size={12} /> },
+    { id: "query-feed", title: "Live query feed", icon: <Activity size={12} /> },
+    { id: "internal", title: "Tor circuits", icon: <Lock size={12} /> },
   ];
+  const legacy = new URLSearchParams(location.search).get("section");
+  const page = pages.find(item => item.id === path)
+    ?? pages.find(item => item.id === legacy) ?? pages[0];
+  const canonical = `/privacy/${page.id}`;
+
+  // Page navigation resets position once; polling never moves the viewport.
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [location.key]);
+
+  if (location.pathname !== canonical || legacy !== null) {
+    const search = new URLSearchParams(location.search);
+    search.delete("section");
+    return <Navigate to={{ pathname: canonical, search: search.toString() }} replace />;
+  }
 
   return (
-    <div className="th-page-enter px-6 py-7 lg:px-10 lg:py-9 xl:px-14 max-w-[1500px] 2xl:max-w-[1700px] mx-auto">
-      <Header state={state} />
-      <PrivacyHero state={state} />
-      <TorRuntimeStrip state={state} />
-      <CircuitPlanePanels state={state} refetch={refetch} />
-      <SectionTabs tabs={tabs} />
+    <div className="th-dashboard-page">
+      <PageHeader title="What does Torhole prove?" description="Review DNS routing, exit tests, and Tor circuits." state={state} headingRef={headingRef} />
+      <nav aria-label="Privacy pages" className="flex gap-1 overflow-x-auto border-b border-th-line mb-4">
+        {pages.map(item => <NavLink key={item.id} to={`/privacy/${item.id}`}
+          className={({ isActive }) => `flex shrink-0 items-center gap-2 whitespace-nowrap min-h-10 px-3 text-xs border-b-2 ${isActive ? "border-th-primary text-th-primary font-semibold" : "border-transparent text-th-text-muted hover:text-th-text"}`}>
+          {item.icon}{item.title}
+        </NavLink>)}
+      </nav>
+      <section aria-labelledby="privacy-view-title" key={page.id}>
+        <h2 id="privacy-view-title" className="text-lg font-semibold mb-4">{page.title}</h2>
+        {page.id === "leak-test" && <>
+          <LeakTestPanel state={state} refetch={refetch} />
+          <div className="mt-6"><PrivacyHero state={state} /></div>
+        </>}
+        {page.id === "query-feed" && <LiveQueryFeedPanel active />}
+        {page.id === "internal" && <>
+          <InternalCircuitsPanel state={state} />
+          <div className="mt-6"><TorRuntimeStrip state={state} /></div>
+          <CircuitPlanePanels state={state} refetch={refetch} />
+        </>}
+      </section>
+      <BackToTop onClick={() => {
+        headingRef.current?.focus({ preventScroll: true });
+        window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+      }} />
     </div>
+  );
+}
+
+function BackToTop({ onClick }: { onClick: () => void }) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const update = () => setVisible(window.scrollY > 240);
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    return () => window.removeEventListener("scroll", update);
+  }, []);
+
+  if (!visible) return null;
+  return (
+    <button type="button" onClick={onClick}
+      className="fixed bottom-6 right-6 z-30 inline-flex min-h-11 items-center gap-2 rounded-md border border-th-line-strong bg-th-panel px-4 text-sm text-th-text shadow-lg hover:bg-th-bg-alt">
+      <ArrowUp size={16} aria-hidden="true" />
+      Back to top
+    </button>
   );
 }
 
@@ -116,7 +133,7 @@ function TorRuntimeStrip({ state }: { state: SnapshotState }) {
     return (
       <div className="mb-6 rounded-lg border border-th-warning/40 bg-th-warning/[0.06] px-5 py-3 flex items-center gap-3">
         <AlertCircle size={14} className="text-th-warning shrink-0" />
-        <div className="text-[11.5px] font-mono text-th-warning">
+        <div className="text-[12px] font-mono text-th-warning">
           Tor control port unavailable — {runtime.reason || "unknown reason"}
         </div>
       </div>
@@ -155,11 +172,11 @@ function TorRuntimeStrip({ state }: { state: SnapshotState }) {
               }`}
             />
           </span>
-          <div className="text-[10px] uppercase tracking-[0.18em] font-mono text-th-text-muted">
+          <div className="th-ui-label text-th-text-muted">
             Tor control port · live
           </div>
         </div>
-        <div className="text-[10px] font-mono text-th-text-muted/60">
+        <div className="text-[12px] font-mono text-th-text-muted/60">
           v{runtime.version || "?"} · traffic {formatBytes(runtime.traffic_read_bytes)} in · {formatBytes(runtime.traffic_written_bytes)} out
         </div>
       </div>
@@ -218,55 +235,15 @@ function RuntimeStatCell({
     : "text-th-warning";
   return (
     <div className="px-5 py-3.5 flex flex-col gap-1">
-      <div className="text-[9px] uppercase tracking-[0.16em] font-mono text-th-text-muted/60">
+      <div className="th-ui-label text-th-text-muted">
         {label}
       </div>
       <div className={`text-[15px] font-mono font-semibold ${color}`}>{value}</div>
       {sub && (
-        <div className="text-[9.5px] font-mono text-th-text-muted/60 uppercase tracking-[0.1em]">
+        <div className="th-ui-label text-th-text-muted">
           {sub}
         </div>
       )}
-    </div>
-  );
-}
-
-function computeLeakMeta(state: SnapshotState): string | undefined {
-  if (state.kind !== "ready") return undefined;
-  const lt = state.data.leak_test;
-  if (!lt.last_result) return "never run";
-  const verdict = lt.last_result.pass ? "pass" : "fail";
-  const count = lt.history_count || 0;
-  return `${verdict} · ${count} run${count === 1 ? "" : "s"}`;
-}
-
-function computeInternalMeta(state: SnapshotState): string | undefined {
-  if (state.kind !== "ready") return undefined;
-  const circuits = state.data.tor.circuits;
-  if (!circuits.available) return "unavailable";
-  return `${circuits.count} reported`;
-}
-
-function Header({ state }: { state: SnapshotState }) {
-  const fetched =
-    state.kind === "ready" ? formatRelative(new Date(state.fetchedAt).toISOString()) : "—";
-  return (
-    <div className="flex items-end justify-between mb-7">
-      <div>
-        <div className="text-[10.5px] uppercase tracking-[0.22em] text-th-text-muted font-mono">
-          Privacy
-        </div>
-        <h1 className="text-[28px] font-bold tracking-tight mt-1 leading-none">
-          What does Torhole prove?
-        </h1>
-      </div>
-      <div className="flex items-center gap-2 text-[11px] text-th-text-muted">
-        <span className="relative flex h-1.5 w-1.5">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-th-primary opacity-60"></span>
-          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-th-primary"></span>
-        </span>
-        <span className="font-mono uppercase tracking-[0.14em]">live · {fetched}</span>
-      </div>
     </div>
   );
 }
@@ -301,13 +278,13 @@ function PrivacyHero({ state }: { state: SnapshotState }) {
   const configuredPlaneCount = data.dns.planes.length;
 
   return (
-    <div className="th-scanlines th-hero-surface relative overflow-hidden mb-6 rounded-xl px-9 py-8 border bg-gradient-to-br from-th-panel via-th-panel to-th-primary/[0.04] border-th-line">
+    <div className="th-dashboard-panel th-privacy-summary mb-6">
       <div className="flex items-start gap-7">
         <div
-          className={`w-[80px] h-[80px] rounded-xl flex items-center justify-center shrink-0 ${
+          className={`w-[60px] h-[60px] flex items-center justify-center shrink-0 ${
             intact
-              ? "bg-th-primary/12 text-th-primary ring-1 ring-th-primary/30 shadow-[0_0_32px_rgba(34,197,94,0.18)]"
-              : "bg-th-danger/15 text-th-danger ring-1 ring-th-danger/30"
+              ? "text-th-primary"
+              : "text-th-danger"
           }`}
         >
           {intact ? (
@@ -317,13 +294,13 @@ function PrivacyHero({ state }: { state: SnapshotState }) {
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-[34px] font-bold leading-[1.05] tracking-[-0.02em] text-th-text">
-            Every DNS query exits via Tor
+          <div className="text-[24px] font-semibold leading-[1.3] tracking-tight text-th-text">
+            {intact ? "DNS path checks passed" : "DNS path not verified"}
           </div>
           <div className="text-[13.5px] text-th-text-muted mt-2">
             {tor.bootstrap.status === "healthy"
-              ? `Tor bootstrapped. ${circuits.count} circuit entr${circuits.count === 1 ? "y" : "ies"} reported; ${configuredPlaneCount} isolated DNS plane${configuredPlaneCount === 1 ? "" : "s"} configured.`
-              : "Tor is not bootstrapped — privacy guarantee in flux."}
+              ? `Tor bootstrapped. ${circuits.count} circuit entr${circuits.count === 1 ? "y" : "ies"} reported; ${configuredPlaneCount} DNS plane${configuredPlaneCount === 1 ? "" : "s"} configured. Routing and isolation status come from configuration and runtime checks.`
+              : "Tor is not bootstrapped — the DNS path is not verified."}
           </div>
 
           {/* Inline proof tiles. These complement the Tor runtime strip
@@ -394,7 +371,7 @@ function exitIpValue(data: Snapshot): string {
   if (!last) return "never tested";
   const status = leakVerificationStatus(last);
   if (status === "unavailable") return "verifier unavailable";
-  if (status === "confirmed_not_tor") return "leak detected";
+  if (status === "confirmed_not_tor") return "probe exit is not Tor";
   return last.ip || "unknown";
 }
 
@@ -419,8 +396,8 @@ function ProofTile({ label, value, status }: { label: string; value: string; sta
   const dot =
     status === "healthy" ? "bg-th-primary" : status === "degraded" ? "bg-th-warning" : "bg-th-danger";
   return (
-    <div className="bg-th-bg/60 border border-th-line/60 rounded-md px-3 py-2.5">
-      <div className="text-[9.5px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono mb-1">
+    <div className="bg-th-bg/40 border border-th-line rounded-md px-4 py-3">
+      <div className="th-ui-label text-th-text-muted mb-1">
         {label}
       </div>
       <div className="flex items-center gap-2">
@@ -454,7 +431,7 @@ function CircuitPlanePanels({ state, refetch }: { state: SnapshotState; refetch:
           <AlertCircle size={18} className="text-th-warning shrink-0 mt-0.5" />
           <div className="text-[12.5px] text-th-text-muted">
             <div className="text-th-text">Tor control port not reachable</div>
-            <div className="font-mono text-[11px] mt-1 text-th-text-muted/80">
+            <div className="font-mono text-[12px] mt-1 text-th-text-muted/80">
               {circuits.reason || "unknown reason"}
             </div>
           </div>
@@ -496,7 +473,7 @@ function CircuitPlanePanels({ state, refetch }: { state: SnapshotState; refetch:
           onClick={handleRotate}
           disabled={rotate.kind === "loading"}
           title={rotate.kind === "error" ? rotate.message : "Request a new global Tor identity"}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded border min-h-[38px] text-[10.5px] font-mono uppercase tracking-[0.12em] ${
+          className={`flex items-center gap-1.5 px-3 py-2 rounded border min-h-[38px] text-[12px] th-ui-label ${
             rotate.kind === "success"
               ? "border-th-primary/40 bg-th-primary/10 text-th-primary"
               : rotate.kind === "error"
@@ -560,11 +537,11 @@ function PlaneCircuitCard({
           <span
             className="w-1.5 h-1.5 rounded-full bg-th-primary"
           />
-          <div className="text-[10px] uppercase tracking-[0.14em] text-th-text-muted font-mono">
+          <div className="th-ui-label text-th-text-muted">
             {planeLabel}
           </div>
         </div>
-        <div className="text-[9.5px] uppercase tracking-[0.14em] text-th-primary/70 font-mono">
+        <div className="th-ui-label text-th-primary/70">
           {attributed ? `${circuits.length} attributed` : "isolation configured"}
         </div>
       </div>
@@ -576,7 +553,7 @@ function PlaneCircuitCard({
           ))}
         </div>
       ) : (
-        <div className="text-[11px] text-th-text-muted/70 font-mono py-3 px-1">
+        <div className="text-[12px] text-th-text-muted/70 font-mono py-3 px-1">
           SOCKS credential isolation is configured. Tor may prebuild circuits
           before a short DNS stream owns them, so the current circuit table has
           no reliable plane label.
@@ -590,7 +567,7 @@ function CircuitDetail({ circuit }: { circuit: TorCircuit }) {
   const builtAgo = circuit.time_created ? formatRelative(circuit.time_created) : null;
   return (
     <div className="bg-th-bg/40 border border-th-line/60 rounded p-2.5">
-      <div className="flex items-baseline justify-between text-[9.5px] font-mono uppercase tracking-[0.14em] text-th-text-muted/70 mb-2">
+      <div className="th-ui-label flex items-baseline justify-between text-th-text-muted mb-2">
         <span>circuit #{circuit.id}</span>
         {builtAgo && <span>built {builtAgo}</span>}
       </div>
@@ -618,13 +595,13 @@ function CircuitHop({
   isLast: boolean;
 }) {
   return (
-    <div className="flex items-start gap-2 text-[10.5px] font-mono">
+    <div className="flex items-start gap-2 text-[12px] font-mono">
       <div className="flex flex-col items-center pt-[5px]">
         <div className="w-1.5 h-1.5 rounded-full bg-th-primary/70 ring-1 ring-th-primary/20" />
         {!isLast && <div className="w-px h-3 bg-th-line/80 mt-0.5" />}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[8.5px] uppercase tracking-[0.16em] text-th-text-muted/60">
+        <div className="th-ui-label text-th-text-muted">
           {label}
         </div>
         <div className="text-th-text-mono leading-tight truncate" title={`${hop.nickname} (${hop.fp})`}>
@@ -656,10 +633,13 @@ function LeakTestPanel({ state, refetch }: { state: SnapshotState; refetch: () =
     state.kind === "ready" ? state.data.leak_test.recent_pass_rate : null;
   const historyCount =
     state.kind === "ready" ? state.data.leak_test.history_count : 0;
+  // The backend calculates the rate and conclusive count over its last
+  // 20 runs; history_count is the entire retained history.
+  const recentCount = Math.min(historyCount, 20);
   const conclusiveCount =
     state.kind === "ready"
-      ? state.data.leak_test.conclusive_count ?? state.data.leak_test.history_count
-      : 0;
+      ? state.data.leak_test.conclusive_count ?? null
+      : null;
   // history may be absent on an older backend that hasn't been rebuilt yet —
   // fall back to an empty array so the UI doesn't crash on a version skew.
   const history: LeakTestHistoryEntry[] =
@@ -686,9 +666,9 @@ function LeakTestPanel({ state, refetch }: { state: SnapshotState; refetch: () =
 
   return (
     <div className="bg-th-panel border border-th-line rounded-lg p-5 flex flex-col gap-3">
-      <div className="text-[11.5px] text-th-text-muted leading-relaxed">
-        Probes <span className="font-mono text-th-text-mono">check.torproject.org/api/ip</span> through{" "}
-        <span className="font-mono text-th-text-mono">tor:9050</span>. Pass = every query exits via Tor.
+      <div className="text-[12px] text-th-text-muted leading-relaxed">
+        Checks the Tor exit using the Tor Project. A pass confirms that this request used Tor.
+        DNS routing and isolation are checked separately.
       </div>
 
       <LeakTestResultBlock
@@ -696,17 +676,20 @@ function LeakTestPanel({ state, refetch }: { state: SnapshotState; refetch: () =
         running={runState.kind === "running"}
       />
 
-      {recentPassRate !== null && historyCount > 0 && (
-        <div className="flex items-center gap-3 mt-0.5">
-          <div className="text-[10px] font-mono text-th-text-muted uppercase tracking-[0.14em] shrink-0">
-              recent · {Math.round(recentPassRate * 100)}% conclusive ({conclusiveCount}/{historyCount})
+      {historyCount > 0 && (
+        <div className="flex flex-wrap items-center gap-3 mt-0.5">
+          <div className="th-ui-label text-th-text-muted shrink-0">
+            <div>{recentPassRate === null
+              ? "No conclusive checks"
+              : `${Math.round(recentPassRate * 100)}% passed among conclusive checks`}</div>
+            <div>{conclusiveCount !== null && `${conclusiveCount} conclusive · `}last {recentCount} runs</div>
           </div>
           <LeakTestHistoryStrip history={history} />
         </div>
       )}
 
       {runState.kind === "error" && (
-        <div className="text-[11px] text-th-danger font-mono px-2 py-1.5 bg-th-danger/10 border border-th-danger/30 rounded">
+        <div className="text-[12px] text-th-danger font-mono px-2 py-1.5 bg-th-danger/10 border border-th-danger/30 rounded">
           transport error: {runState.message}
         </div>
       )}
@@ -715,7 +698,7 @@ function LeakTestPanel({ state, refetch }: { state: SnapshotState; refetch: () =
         type="button"
         onClick={handleRun}
         disabled={runState.kind === "running"}
-        className={`mt-auto flex items-center justify-center gap-1.5 px-3 py-2.5 rounded text-[11px] font-mono uppercase tracking-[0.14em] min-h-[44px] transition-colors ${
+        className={`mt-auto flex items-center justify-center gap-1.5 px-3 py-2.5 rounded text-[12px] th-ui-label min-h-[44px] transition-colors ${
           runState.kind === "running"
             ? "bg-th-bg/60 border border-th-line text-th-text-muted cursor-wait"
             : "bg-th-bg/60 border border-th-line text-th-text-muted hover:text-th-text hover:border-th-primary/40 hover:bg-th-primary/[0.04]"
@@ -756,7 +739,7 @@ function LeakTestResultBlock({
   }
   if (!result) {
     return (
-      <div className="bg-th-bg/60 border border-th-line/80 border-dashed rounded-md p-3 text-[11px] font-mono text-th-text-muted/70">
+      <div className="bg-th-bg/60 border border-th-line/80 border-dashed rounded-md p-3 text-[12px] font-mono text-th-text-muted/70">
         no leak test run yet · click "run leak test now" to verify
       </div>
     );
@@ -795,12 +778,12 @@ function LeakTestResultBlock({
           }`}
         >
           {passed
-            ? "PASS · DNS exits via Tor"
+            ? "PASS · Tor exit verified"
             : unavailable
               ? "CHECK INCONCLUSIVE · verifier unavailable"
-              : "FAIL · privacy not intact"}
+              : "FAIL · probe exit is not Tor"}
         </div>
-        <div className="ml-auto text-[10px] font-mono text-th-text-muted uppercase tracking-[0.14em]">
+        <div className="th-ui-label ml-auto text-th-text-muted">
           {ranAgo}
         </div>
       </div>
@@ -870,8 +853,8 @@ function ResultRow({
       ? "text-th-danger"
       : "text-th-text-mono";
   return (
-    <div className="flex items-baseline gap-3 text-[11.5px]">
-      <div className="text-[9.5px] uppercase tracking-[0.14em] text-th-text-muted/70 font-mono w-[68px] shrink-0">
+    <div className="flex items-baseline gap-3 text-[12px]">
+      <div className="th-ui-label text-th-text-muted w-[68px] shrink-0">
         {label}
       </div>
       <div className={`${mono ? "font-mono" : ""} ${colour} truncate`} title={value}>
@@ -928,7 +911,7 @@ function LiveQueryFeedPanel({ active }: { active: boolean }) {
       {/* Status bar — now also hosts pause/clear controls since the section
           header is gone (the tab button IS the section header). */}
       <div className="flex items-center justify-between px-3 py-2 bg-th-bg/40 border-b border-th-line/60">
-        <div className="flex items-center gap-3 text-[10px] font-mono uppercase tracking-[0.14em]">
+        <div className="th-ui-label flex items-center gap-3">
           <div className="flex items-center gap-1.5">
             <span className={`w-1.5 h-1.5 rounded-full ${statusDot}`} />
             <span className="text-th-text-muted">{statusLabel}</span>
@@ -940,7 +923,7 @@ function LiveQueryFeedPanel({ active }: { active: boolean }) {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-3 text-[10px] font-mono">
+          <div className="flex items-center gap-3 text-[12px] font-mono">
             <CountChip label="cached" value={counts.cached || 0} kind="ok" />
             <CountChip label="forwarded" value={counts.forwarded || 0} kind="info" />
             <CountChip label="blocked" value={counts.blocked || 0} kind="danger" />
@@ -952,7 +935,7 @@ function LiveQueryFeedPanel({ active }: { active: boolean }) {
           <button
             type="button"
             onClick={() => setPaused((v) => !v)}
-            className="flex items-center gap-1 px-2 py-1 rounded text-[9.5px] font-mono uppercase tracking-[0.14em] text-th-text-muted hover:text-th-text hover:bg-th-line/40 transition-colors"
+            className="th-ui-label flex items-center gap-1 px-2 py-1 rounded text-th-text-muted hover:text-th-text hover:bg-th-line/40 transition-colors"
             title={paused ? "Resume live updates" : "Pause to inspect"}
           >
             {paused ? <Play size={10} /> : <Pause size={10} />}
@@ -961,7 +944,7 @@ function LiveQueryFeedPanel({ active }: { active: boolean }) {
           <button
             type="button"
             onClick={clear}
-            className="flex items-center gap-1 px-2 py-1 rounded text-[9.5px] font-mono uppercase tracking-[0.14em] text-th-text-muted hover:text-th-danger hover:bg-th-line/40 transition-colors"
+            className="th-ui-label flex items-center gap-1 px-2 py-1 rounded text-th-text-muted hover:text-th-danger hover:bg-th-line/40 transition-colors"
             title="Clear feed buffer (does not affect server)"
           >
             <Trash2 size={10} />
@@ -973,7 +956,7 @@ function LiveQueryFeedPanel({ active }: { active: boolean }) {
       {/* Column headers — sticky inside the terminal pane so they stay
           visible while the event rows scroll underneath. Styled like the
           other muted uppercase mono eyebrows in the app. */}
-      <div className="sticky top-0 z-10 flex items-center gap-2 px-3 py-1.5 bg-th-bg/80 backdrop-blur-sm border-b border-th-line/40 font-mono text-[8.5px] uppercase tracking-[0.14em] text-th-text-muted/50">
+      <div className="th-ui-label sticky top-0 z-10 flex items-center gap-2 px-3 py-1.5 bg-th-bg/80 backdrop-blur-sm border-b border-th-line/40 text-th-text-muted">
         <span className="w-[50px] shrink-0">time</span>
         <span className="w-[44px] shrink-0">plane</span>
         <span className="w-[12px] shrink-0 text-center"></span>
@@ -985,7 +968,7 @@ function LiveQueryFeedPanel({ active }: { active: boolean }) {
       {/* Terminal feed */}
       <div
         ref={containerRef}
-        className={`${QUERY_FEED_HEIGHT} overflow-y-auto bg-th-bg/40 font-mono text-[10.5px]`}
+        className={`${QUERY_FEED_HEIGHT} overflow-y-auto bg-th-bg/40 font-mono text-[12px]`}
         style={{ scrollbarWidth: "thin" }}
       >
         {snapshot.length === 0 ? (
@@ -1023,7 +1006,7 @@ function CountChip({
       : "text-th-text-muted";
   return (
     <span className="flex items-center gap-1">
-      <span className="text-th-text-muted/60 uppercase tracking-[0.14em]">{label}</span>
+      <span className="th-ui-label text-th-text-muted">{label}</span>
       <span className={`${colour} tabular-nums`}>{value}</span>
     </span>
   );
@@ -1085,7 +1068,7 @@ function QueryRow({ event }: { event: QueryEvent }) {
       <span className="text-th-text-muted/40 w-[50px] shrink-0">
         {hh}:{mm}:{ss}
       </span>
-      <span className={`w-[44px] shrink-0 ${planeColor} uppercase text-[9.5px] tracking-[0.06em]`}>
+      <span className={`w-[44px] shrink-0 ${planeColor} uppercase text-[12px] tracking-[0.06em]`}>
         {event.plane}
       </span>
       <span className={`w-[12px] shrink-0 text-center ${statusColor}`}>{statusGlyph}</span>
@@ -1125,15 +1108,15 @@ function formatMs(ms: number): string {
 function InternalCircuitsPanel({ state }: { state: SnapshotState }) {
   if (state.kind !== "ready") {
     return (
-      <div className="bg-th-panel border border-th-line rounded-lg p-5 text-[11px] text-th-text-muted font-mono">
-        loading…
+      <div className="bg-th-panel border border-th-line rounded-lg p-5 text-[12px] text-th-text-muted font-mono">
+        {state.kind === "error" ? "Circuit status unavailable" : "loading…"}
       </div>
     );
   }
   const circuits = state.data.tor.circuits;
   if (!circuits.available) {
     return (
-      <div className="bg-th-panel border border-th-line rounded-lg p-5 flex items-start gap-2 text-[11px] text-th-warning font-mono">
+      <div className="bg-th-panel border border-th-line rounded-lg p-5 flex items-start gap-2 text-[12px] text-th-warning font-mono">
         <AlertCircle size={13} className="shrink-0 mt-0.5" />
         Tor control port not reachable — {circuits.reason || "unknown reason"}
       </div>
@@ -1142,7 +1125,7 @@ function InternalCircuitsPanel({ state }: { state: SnapshotState }) {
 
   return (
     <div className="bg-th-panel border border-th-line rounded-lg p-4">
-      <div className="text-[11px] text-th-text-muted/80 leading-relaxed mb-3">
+      <div className="text-[12px] text-th-text-muted/80 leading-relaxed mb-3">
         Tor's current circuit table, including prebuilt paths, Conflux
         multipaths, directory work, and circuits carrying application streams.
         Tor only includes a SOCKS identity when it attributes a circuit to a
@@ -1160,7 +1143,7 @@ function InternalCircuitsPanel({ state }: { state: SnapshotState }) {
 
 function InternalCircuitRow({ circuit }: { circuit: TorCircuit }) {
   return (
-    <div className="flex items-center gap-3 px-2 py-1.5 text-[10.5px] font-mono bg-th-bg/40 border border-th-line/40 rounded">
+    <div className="flex items-center gap-3 px-2 py-1.5 text-[12px] font-mono bg-th-bg/40 border border-th-line/40 rounded">
       <span className="text-th-text-muted/60 w-8 shrink-0">#{circuit.id}</span>
       <span className="text-th-text-muted/70 w-[140px] shrink-0 truncate">{circuit.purpose || "?"}</span>
       <span className="text-th-text-mono truncate">
@@ -1193,9 +1176,8 @@ function SectionCard({
     <section className={className}>
       <div className="flex items-end justify-between mb-3">
         <div className="flex items-center gap-3">
-          <div className="w-[3px] h-7 bg-th-primary/70 rounded-full" />
-          <div>
-            <div className="text-[9.5px] uppercase tracking-[0.18em] text-th-text-muted font-mono">
+                    <div>
+            <div className="th-ui-label text-th-text-muted">
               {eyebrow}
             </div>
             <div className="text-[15px] font-semibold text-th-text leading-tight mt-0.5">
@@ -1210,7 +1192,7 @@ function SectionCard({
         </div>
         {action}
       </div>
-      <div className="bg-th-panel border border-th-line rounded-lg p-4">{children}</div>
+      <div className="th-dashboard-panel">{children}</div>
     </section>
   );
 }

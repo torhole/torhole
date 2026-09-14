@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { Check, Copy, ExternalLink, Github, Info, ShieldCheck } from "lucide-react";
+import { Check, Copy, ExternalLink, Github, ShieldCheck } from "lucide-react";
 import { useBuildInfo, type BuildInfo as BuildInfoType } from "../lib/snapshot";
+
+import PageHeader from "../components/PageHeader";
 
 const REPOSITORY_URL = "https://github.com/torhole/torhole";
 
@@ -24,23 +26,11 @@ export default function AboutScreen() {
   };
 
   return (
-    <div className="p-6 lg:p-8 max-w-[1100px] mx-auto">
-      <div className="flex items-end justify-between mb-7">
-        <div>
-          <div className="text-[10.5px] uppercase tracking-[0.22em] text-th-text-muted font-mono">
-            About
-          </div>
-          <h1 className="text-[28px] font-bold tracking-tight mt-1 leading-none">
-            Which Torhole is this?
-          </h1>
-        </div>
-        <div className="flex items-center gap-2 text-[11px] text-th-text-muted font-mono uppercase tracking-[0.14em]">
-          <Info size={13} /> build identity
-        </div>
-      </div>
+    <div className="th-dashboard-page">
+      <PageHeader title="Which Torhole is this?" description="Version, build identity, and project information." />
 
-      <section className="rounded-xl border border-th-primary/30 bg-th-panel overflow-hidden shadow-[0_20px_70px_rgba(0,0,0,0.16)]">
-        <div className="p-6 border-b border-th-line bg-gradient-to-br from-th-primary/[0.10] via-transparent to-transparent flex items-center gap-4">
+      <section className="th-dashboard-surface overflow-hidden">
+        <div className="p-6 border-b border-th-line flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-th-primary/15 border border-th-primary/30 flex items-center justify-center">
             <ShieldCheck size={24} className="text-th-primary" />
           </div>
@@ -69,8 +59,8 @@ export default function AboutScreen() {
       </section>
 
       <div className="grid md:grid-cols-2 gap-4 mt-5">
-        <section className="rounded-xl border border-th-line bg-th-panel p-5">
-          <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-th-text-muted mb-2">
+        <section className="th-dashboard-panel">
+          <div className="th-ui-label text-th-text-muted mb-2">
             Support identity
           </div>
           <p className="text-sm text-th-text-muted leading-relaxed">
@@ -87,8 +77,8 @@ export default function AboutScreen() {
           </button>
         </section>
 
-        <section className="rounded-xl border border-th-line bg-th-panel p-5">
-          <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-th-text-muted mb-2">
+        <section className="th-dashboard-panel">
+          <div className="th-ui-label text-th-text-muted mb-2">
             Project
           </div>
           <div className="space-y-2">
@@ -102,8 +92,8 @@ export default function AboutScreen() {
         </section>
       </div>
 
-      <section className="rounded-xl border border-th-line bg-th-panel p-5 mt-4" aria-labelledby="independence-title">
-        <div id="independence-title" className="text-[10px] font-mono uppercase tracking-[0.18em] text-th-text-muted mb-2">
+      <section className="th-dashboard-panel mt-4" aria-labelledby="independence-title">
+        <div id="independence-title" className="th-ui-label text-th-text-muted mb-2">
           Independent project
         </div>
         <p className="text-sm text-th-text-muted leading-relaxed">
@@ -133,7 +123,7 @@ function diagnosticText(build: BuildInfoType) {
 function BuildRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="p-5 border-b border-th-line sm:odd:border-r">
-      <div className="text-[9.5px] font-mono uppercase tracking-[0.16em] text-th-text-muted">{label}</div>
+      <div className="th-ui-label text-th-text-muted">{label}</div>
       <div className="mt-1.5 font-mono text-sm text-th-text break-all">{value}</div>
     </div>
   );

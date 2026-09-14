@@ -1,5 +1,8 @@
 # Copy to dns_warden.yml and replace every CHANGE_ME value before deployment.
 
+# Advanced supports single-lan (one DNS plane) and vlan (Trusted + IoT).
+torhole_topology: vlan
+torhole_admin_user: admin
 parent_iface: eth0
 
 trusted_vlan_id: 1

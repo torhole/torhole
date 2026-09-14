@@ -7,10 +7,9 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory={{ project_dest }}
-Environment="COMPOSE_FILE=docker-compose.yml:docker-compose.monitoring.yml"
 RemainAfterExit=yes
-ExecStart=/usr/bin/docker compose --env-file .env up -d
-ExecStop=/usr/bin/docker compose --env-file .env down
+ExecStart=/usr/bin/bash {{ project_dest }}/ops/scripts/22-stack-service.sh up
+ExecStop=/usr/bin/bash {{ project_dest }}/ops/scripts/22-stack-service.sh down
 TimeoutStartSec=0
 
 [Install]

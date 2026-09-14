@@ -50,6 +50,9 @@ with open(path, "r", encoding="utf-8") as handle:
                 print(f"{path}:{line_number}: unexpected tokens after quoted value", file=sys.stderr)
                 raise SystemExit(1)
             value = parts[0] if parts else ""
+            # Compose escapes literal dollars in double-quoted dotenv values.
+            if raw_value.startswith('"'):
+                value = value.replace("$$", "$")
         else:
             value = re.split(r"\s+#", raw_value, maxsplit=1)[0].rstrip()
 

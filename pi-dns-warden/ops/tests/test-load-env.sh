@@ -24,8 +24,8 @@ load_env_file "$env_file"
 [[ "$QUOTED_VALUE" == "hello world" ]] || { echo "QUOTED_VALUE=[$QUOTED_VALUE]" >&2; exit 1; }
 [[ "$COMMENTED_VALUE" == "value" ]] || { echo "COMMENTED_VALUE=[$COMMENTED_VALUE]" >&2; exit 1; }
 
-# 2) set_config_value must store a command-substitution payload VERBATIM into
-#    the .env and never execute it. Note payload holds a literal
+# 2) set_config_value must preserve a command-substitution payload as data
+#    in .env and never execute it. Note payload holds a literal
 #    "$(touch ...)" string — if any layer evaluated it, the marker file would
 #    be created.
 payload="\$(touch \"$marker\")"
@@ -43,10 +43,10 @@ PY
 # The substitution must not have run...
 [[ ! -e "$marker" ]] || { echo "command substitution WAS executed (marker exists)" >&2; exit 1; }
 
-# ...and the value must be stored byte-for-byte in the server's .env. The RHS
-# is quoted, so this is a literal string comparison (not a glob pattern) and
-# behaves identically across bash versions.
-written="$(grep '^TZ=' "$tmp_dir/.env" | head -1)"
-[[ "$written" == "TZ=$payload" ]] || { echo "expected [TZ=$payload] got [$written]" >&2; exit 1; }
+# ...and loading the serialized value must reproduce the exact payload,
+# regardless of safe dotenv quoting added by the writer.
+load_env_file "$tmp_dir/.env"
+[[ "$TZ" == "$payload" ]] || { echo "API value did not round-trip through the loader" >&2; exit 1; }
+[[ ! -e "$marker" ]] || { echo "loader executed the command substitution" >&2; exit 1; }
 
 printf 'API-written command substitution remained literal and did not execute\n'

@@ -14,6 +14,7 @@ PROJECT_NAME="${COMPOSE_PROJECT_NAME:-${TORHOLE_PROJECT_NAME:-$(basename "${TORH
 BACKUP_MANAGER_IMAGE_DEFAULT="${PROJECT_NAME}-backup-manager"
 BACKUP_MANAGER_IMAGE="${BACKUP_MANAGER_IMAGE:-$BACKUP_MANAGER_IMAGE_DEFAULT}"
 CAPTURED_VOLUMES=()
+RECOVERY_ARCHIVE_TOOL="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/recovery_archive.py"
 
 RECOVERY_VOLUMES=(
   prometheus_data
@@ -24,6 +25,7 @@ RECOVERY_VOLUMES=(
   alertmanager_data
   caddy_data
   caddy_config
+  authelia_data
 )
 
 ensure_recovery_dirs() {
@@ -37,6 +39,11 @@ to_host_path() {
     printf '%s\n' "$path"
     return 0
   fi
+
+  case "$path" in
+    "$ROOT_DIR"|"$ROOT_DIR"/*) ;;
+    *) echo "Recovery path is outside the shared project directory." >&2; return 1 ;;
+  esac
 
   printf '%s%s\n' "$HOST_ROOT_DIR" "${path#"$ROOT_DIR"}"
 }
@@ -118,7 +125,7 @@ helper_backup_volume() {
   local logical_name="$3"
   local host_output_dir
 
-  host_output_dir="$(to_host_path "$output_dir")"
+  host_output_dir="$(to_host_path "$output_dir")" || return 1
 
   docker run --rm \
     -v "${docker_volume}:/volume:ro" \
@@ -133,13 +140,13 @@ helper_restore_volume() {
   local logical_name="$3"
   local host_input_dir
 
-  host_input_dir="$(to_host_path "$input_dir")"
+  host_input_dir="$(to_host_path "$input_dir")" || return 1
 
   docker run --rm \
     -v "${docker_volume}:/volume" \
     -v "${host_input_dir}:/backup:ro" \
     "$BACKUP_MANAGER_IMAGE" \
-    sh -lc "find /volume -mindepth 1 -delete && tar -C /volume -xzf /backup/${logical_name}.tar.gz"
+    sh -lc "test -s /backup/${logical_name}.tar.gz && tar -tzf /backup/${logical_name}.tar.gz >/dev/null && find /volume -mindepth 1 -delete && tar -C /volume -xzf /backup/${logical_name}.tar.gz"
 }
 
 ensure_helper_image() {
@@ -251,20 +258,14 @@ backup_to_archive() {
 }
 
 validate_archive_safety() {
-  local archive="$1"
-  local entry
-
-  while IFS= read -r entry; do
-    if [[ "$entry" == /* || "$entry" == *".."* ]]; then
-      echo "Unsafe archive entry: $entry" >&2
-      exit 1
-    fi
-  done < <(tar -tzf "$archive")
+  python3 "$RECOVERY_ARCHIVE_TOOL" validate "$1"
 }
 
 restore_project_tree() {
   local source_root="$1"
   local legacy=0
+
+  python3 "$RECOVERY_ARCHIVE_TOOL" check-tree "$source_root" || return 1
 
   if [[ -d "$source_root/project" ]]; then
     source_root="$source_root/project"
@@ -297,9 +298,17 @@ restore_project_tree() {
       ops \
       pihole \
       tor \
-      tor-image | tar -C "$ROOT_DIR" -xf -
+      tor-image | tar -C "$ROOT_DIR" -xpf -
   else
-    tar -C "$source_root" -cf - . | tar -C "$ROOT_DIR" -xf -
+    # The project's wrapper is a private backup staging directory, not the
+    # installed root. Copy its children without a '.' header that could change
+    # ROOT_DIR permissions; retain sanitized payload modes despite caller umask.
+    (
+      cd "$source_root"
+      shopt -s dotglob nullglob
+      entries=(*)
+      tar -cf - -- "${entries[@]}"
+    ) | tar -C "$ROOT_DIR" -xpf -
   fi
 }
 
@@ -324,3 +333,78 @@ restore_volumes() {
     helper_restore_volume "$docker_volume" "$source_root/volumes" "$logical"
   done
 }
+
+# Keep this implementation in the running recovery process: an older archive
+# may contain a startup script that pulls/builds before restoring host DNS.
+restore_compose() {
+  local project="$1"
+  shift
+  local -a command
+  if docker compose version >/dev/null 2>&1; then
+    command=(docker compose)
+  elif command -v docker-compose >/dev/null 2>&1; then
+    command=(docker-compose)
+  else
+    echo "Docker Compose is required for cached recovery." >&2
+    return 1
+  fi
+  case "${TORHOLE_TOPOLOGY:-vlan}" in
+    single-lan) ;;
+    vlan) command+=(--profile vlan) ;;
+    *) echo "Invalid restored topology." >&2; return 1 ;;
+  esac
+  "${command[@]}" --project-name "$PROJECT_NAME" --project-directory "$ROOT_DIR" \
+    --env-file "$project/.env" -f "$project/docker-compose.yml" \
+    -f "$project/docker-compose.monitoring.yml" "$@"
+}
+
+load_cached_restore_env() {
+  local variable
+  # Installed topology/image overrides must not replace archived defaults.
+  # This runs only in recovery subprocesses, leaving safety-backup settings intact.
+  while IFS= read -r variable; do
+    case "$variable" in
+      TORHOLE_TOPOLOGY|*_IMAGE) unset "$variable" ;;
+    esac
+  done < <(compgen -v)
+  load_env_file "$1" || return 1
+}
+
+check_cached_restore_images() {
+  local project="$1"
+  local inventory="$2"
+  local image
+  [[ ! -d "$project/project" ]] || project="$project/project"
+  # Define the loader before project replacement so it survives an older
+  # archived ops tree. Load staged settings only in the inventory subprocess.
+  # shellcheck disable=SC1091
+  source "$ROOT_DIR/ops/lib/load-env.sh"
+  if ! (
+    load_cached_restore_env "$project/.env" || exit 1
+    restore_compose "$project" config --images
+  ) >"$inventory"; then
+    echo "Cannot resolve cached image inventory for the staged backup." >&2
+    return 1
+  fi
+  if [[ ! -s "$inventory" ]]; then
+    echo "Staged backup has no cached image inventory." >&2
+    return 1
+  fi
+  while IFS= read -r image; do
+    [[ -n "$image" ]] || continue
+    if ! docker image inspect "$image" >/dev/null 2>&1; then
+      echo "Required cached image is missing: $image. Load it before restoring; stack unchanged." >&2
+      return 1
+    fi
+  done <"$inventory"
+  # Volume extraction must also avoid building its helper after shutdown.
+  if ! docker image inspect "$BACKUP_MANAGER_IMAGE" >/dev/null 2>&1; then
+    echo "Required cached image is missing: $BACKUP_MANAGER_IMAGE. Load it before restoring; stack unchanged." >&2
+    return 1
+  fi
+}
+
+start_restored_stack_cached() (
+  load_cached_restore_env "$ROOT_DIR/.env" || exit 1
+  restore_compose "$ROOT_DIR" up -d --pull never --no-build
+)

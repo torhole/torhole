@@ -1,10 +1,14 @@
 import fcntl
+import gzip
+import io
 import json
+import math
 import os
 import re
 import secrets
 import shlex
 import shutil
+import signal
 import socket
 import ssl
 import subprocess
@@ -28,6 +32,7 @@ from urllib.error import HTTPError, URLError
 import sys as _sys
 
 _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import env_store
 
 
 ROOT_DIR = Path(os.environ.get("TORHOLE_ROOT_DIR", "/workspace")).resolve()
@@ -84,6 +89,9 @@ RUN_DIR = ROOT_DIR / "run"
 STATUS_FILE = RUN_DIR / "recovery-status.json"
 RECOVERY_LOCK_FILE = RUN_DIR / "recovery.lock"
 VALIDATION_FILE = RUN_DIR / "system-validation.json"
+VALIDATION_LOCK = threading.Lock()
+VALIDATION_STATE_LOCK = threading.Lock()
+VALIDATION_STATE = {"running": False, "started_at": None, "output": ""}
 ENV_FILE = ROOT_DIR / ".env"
 ALERTMANAGER_CONFIG_FILE = ROOT_DIR / "monitoring/alertmanager/alertmanager.yml"
 HELPER_IMAGE = os.environ.get("BACKUP_MANAGER_IMAGE", "pi-dns-warden-backup-manager")
@@ -335,9 +343,12 @@ def recovery_busy():
     return False
 
 
-# Reading metadata.json from a multi-hundred-MB tar.gz takes seconds. Cache by
-# (path, mtime) so unchanged files are free on subsequent lists. Backups are
-# immutable after creation; mtime is a perfect cache key.
+# Listing is best-effort, not archive validation. Current backups put metadata
+# first; bound decompression even for legacy archives or oversized tar headers.
+# Restore independently validates the complete archive before changing services.
+_BACKUP_METADATA_SCAN_BYTES = 256 * 1024
+_BACKUP_METADATA_MAX_BYTES = 64 * 1024
+# Cache by (path, mtime) so unchanged files need no further reads.
 _BACKUP_METADATA_CACHE = {}
 _BACKUP_METADATA_CACHE_LOCK = threading.Lock()
 
@@ -354,21 +365,27 @@ def read_backup_metadata(path: Path):
         if cached and cached[0] == mtime:
             return cached[1]
 
+    metadata = {}
     try:
-        with tarfile.open(path, "r:gz") as archive:
-            member = archive.getmember("metadata.json")
-            handle = archive.extractfile(member)
-            if handle is None:
-                metadata = {}
-            else:
-                payload = json.loads(handle.read().decode("utf-8"))
-                metadata = {
-                    "project_name": payload.get("project_name"),
-                    "format_version": payload.get("format_version"),
-                    "captured_volumes": payload.get("captured_volumes", []),
-                    "configured_volumes": payload.get("configured_volumes", []),
-                    "created_at": payload.get("created_at"),
-                }
+        with gzip.open(path, "rb") as compressed:
+            prefix = compressed.read(_BACKUP_METADATA_SCAN_BYTES)
+        with tarfile.open(fileobj=io.BytesIO(prefix), mode="r|") as archive:
+            for member in archive:
+                if member.name != "metadata.json":
+                    continue
+                if not member.isfile() or member.size > _BACKUP_METADATA_MAX_BYTES:
+                    break
+                handle = archive.extractfile(member)
+                if handle is not None:
+                    payload = json.loads(handle.read().decode("utf-8"))
+                    metadata = {
+                        "project_name": payload.get("project_name"),
+                        "format_version": payload.get("format_version"),
+                        "captured_volumes": payload.get("captured_volumes", []),
+                        "configured_volumes": payload.get("configured_volumes", []),
+                        "created_at": payload.get("created_at"),
+                    }
+                break
     except Exception:
         metadata = {}
 
@@ -533,6 +550,7 @@ def _restore_web_access_file(path, previous, mode):
         temp_path.unlink(missing_ok=True)
 
 
+@env_store.serialized_env_operation
 def configure_https(mode, certificate=None, private_key=None):
     """Render, validate, and schedule a generated/custom HTTPS transition.
 
@@ -576,6 +594,12 @@ def configure_https(mode, certificate=None, private_key=None):
                 (render.stderr or render.stdout or "Authentication render failed.").strip()
             )
 
+        # Mode changes explicitly render their monitoring targets before the
+        # read-only validator. Previously the validator did this implicitly.
+        for script in ("13-render-prometheus.sh", "14-render-caddy-topology.sh"):
+            rendered = run_script(str(ROOT_DIR / "ops/scripts" / script))
+            if rendered.returncode != 0:
+                raise RuntimeError("Failed to render monitoring configuration for HTTPS.")
         validation = run_system_validation()
         if validation.get("status") != "success":
             raise RuntimeError(
@@ -633,7 +657,6 @@ def delete_backup_archive(archive_name):
 # rest of this file — and the test suites — keep addressing them here while
 # the decomposition proceeds. env_store.ENV_FILE is the patch point for
 # tests that redirect writes to a tempdir.
-import env_store
 # Pi-hole API client lives in pihole_client (T-048 step 4); re-exported.
 from pihole_client import (
     PIHOLE_API_TARGETS,
@@ -759,6 +782,7 @@ _EDITION_RE = re.compile(r"^(home|advanced)$")
 _TOPOLOGY_RE = re.compile(r"^(single-lan|vlan)$")
 
 
+@env_store.serialized_env_operation
 def apply_setup_config(requested):
     """Persist the Setup wizard's captured fields into .env.
 
@@ -891,6 +915,7 @@ def verify_admin_password(supplied):
     return secrets.compare_digest(supplied.encode("utf-8"), current.encode("utf-8"))
 
 
+@env_store.serialized_env_operation
 def update_admin_password(new_password, current_password=None):
     """Change the admin password end-to-end:
         1. verify current_password (if supplied) against the .env plaintext
@@ -2329,6 +2354,26 @@ def compose_status_sentence(overall_status, plane_api, recovery, notifications):
     return " ".join([stack_text, plane_text, backup_text, alert_text])
 
 
+VALIDATION_GUIDANCE = {
+    "compose": ("Resolve Compose files, environment substitutions and service definitions.", "Correct missing environment values or invalid Compose definitions."),
+    "prometheus_config": ("Check the installed scrape configuration with promtool.", "Review prometheus.runtime.yml and referenced rule files."),
+    "prometheus_rules": ("Check alert expressions and rule syntax with promtool.", "Correct the rule syntax or PromQL in alert.rules.yml."),
+    "alertmanager_config": ("Check alert routing and receiver configuration with amtool; no test alert is sent.", "Review Alertmanager routes and receiver fields; test delivery separately under Alerts."),
+    "caddy_config": ("Validate the installed Caddyfile and imported authentication/topology snippets.", "Check Caddy imports, hostnames and certificate paths."),
+    "authelia_config": ("Validate installed Authelia settings using temporary storage; no login is attempted.", "Review Authelia configuration and its referenced files."),
+    "alloy_config": ("Check the installed Alloy configuration syntax.", "Correct invalid Alloy components or references."),
+    "dashboard_json": ("Parse every Grafana dashboard JSON file; queries are not executed.", "Correct malformed JSON in the dashboard named by the local validator."),
+    "pihole_exporter_python": ("Compile exporter.py in memory without executing it or writing bytecode.", "Correct Python syntax in the Pi-hole exporter."),
+    "backup_manager_python": ("Compile server.py in memory without executing it or writing bytecode.", "Correct Python syntax in the backup manager entry point."),
+}
+VALIDATION_SCOPE = "Configuration checks only — not live DNS resolution, Tor routing, leak protection, login or alert delivery."
+VALIDATION_IMPACT = "Reads installed configuration; runs temporary validators using locally available configured images. No image pulls, configuration regeneration or service restarts. Stops at the first failure."
+
+
+class ValidationBusyError(RuntimeError):
+    pass
+
+
 def detect_validation_checks():
     checks = []
     for check_id, label, marker in VALIDATION_MARKERS:
@@ -2340,17 +2385,41 @@ def detect_validation_checks():
             continue
         if check_id == "backup_manager_python" and not (ROOT_DIR / "monitoring/backup-manager/server.py").exists():
             continue
-        checks.append({"id": check_id, "label": label, "marker": marker})
+        description, remediation = VALIDATION_GUIDANCE[check_id]
+        checks.append({"id": check_id, "label": label, "marker": marker,
+                       "description": description, "remediation": remediation})
     return checks
+
+
+def validation_preview():
+    with VALIDATION_STATE_LOCK:
+        state = dict(VALIDATION_STATE)
+    last_result = read_validation_result()
+    return {
+        "scope": VALIDATION_SCOPE,
+        "impact": VALIDATION_IMPACT,
+        "checks": [{k: v for k, v in check.items() if k != "marker"} for check in detect_validation_checks()],
+        "running": state["running"],
+        "started_at": state["started_at"],
+        "progress": parse_validation_checks(state["output"], None) if state["running"] else [],
+        "last_result": last_result if last_result.get("status") != "not_run" else None,
+    }
 
 
 def parse_validation_checks(output, returncode):
     expected = detect_validation_checks()
     marker_map = {check["marker"]: check for check in expected}
     seen = []
+    completed = set()
 
     for line in output.splitlines():
         stripped = line.strip()
+        if stripped.startswith("[validate:success] "):
+            marker = stripped[len("[validate:success] ") :].strip()
+            check = marker_map.get(marker)
+            if check and check["id"] in seen:
+                completed.add(check["id"])
+            continue
         if not stripped.startswith("[validate] "):
             continue
         marker = stripped[len("[validate] ") :].strip()
@@ -2358,16 +2427,18 @@ def parse_validation_checks(output, returncode):
         if check:
             seen.append(check["id"])
 
-    failed_id = seen[-1] if returncode != 0 and seen else None
+    failed_id = seen[-1] if returncode not in (0, None) and seen and seen[-1] not in completed else None
     checks = []
 
     for check in expected:
-        check_status = "skipped"
-        if check["id"] in seen:
-            check_status = "error" if check["id"] == failed_id else "success"
-        elif returncode == 0:
+        check_status = "queued" if returncode is None else "skipped"
+        if check["id"] == failed_id:
+            check_status = "error"
+        elif check["id"] in completed:
             check_status = "success"
-        checks.append({"id": check["id"], "label": check["label"], "status": check_status})
+        elif returncode is None and check["id"] in seen:
+            check_status = "running"
+        checks.append({**{k: v for k, v in check.items() if k != "marker"}, "status": check_status})
 
     return checks
 
@@ -2379,7 +2450,7 @@ def validation_summary(checks, success):
     failed = next((check for check in checks if check["status"] == "error"), None)
     if failed:
         return f"Validation failed at {failed['label']}."
-    return "Validation failed."
+    return "Validation did not complete all expected checks."
 
 
 def build_recovery_summary(backups=None):
@@ -2597,15 +2668,27 @@ def get_dns_stats():
             login = pihole_api_call(base_url, "/auth", method="POST", data=login_payload, headers={"Content-Type": "application/json"})
             sid = login["session"]["sid"]
             summary = pihole_api_call(base_url, "/stats/summary", headers={"X-FTL-SID": sid})
-            q = summary.get("queries", {})
+            q = summary.get("queries") if isinstance(summary, dict) else None
+            gravity = summary.get("gravity") if isinstance(summary, dict) else None
+            measurements = (
+                q.get("total"), q.get("blocked"), q.get("percent_blocked"),
+                gravity.get("domains_being_blocked"),
+            ) if isinstance(q, dict) and isinstance(gravity, dict) else ()
+            if not measurements or any(
+                type(value) not in (int, float) or not math.isfinite(value) or value < 0
+                for value in measurements
+            ):
+                planes.append({"id": target["id"], "label": target["label"],
+                               "status": "degraded", "detail": "Pi-hole statistics are unavailable: invalid or missing measurements."})
+                continue
             planes.append({
                 "id": target["id"],
                 "label": target["label"],
                 "status": "healthy",
-                "queries_today": q.get("total", 0),
-                "blocked_today": q.get("blocked", 0),
-                "percent_blocked": round(q.get("percent_blocked", 0), 1),
-                "domains_on_blocklist": summary.get("gravity", {}).get("domains_being_blocked", 0),
+                "queries_today": q["total"],
+                "blocked_today": q["blocked"],
+                "percent_blocked": round(q["percent_blocked"], 1),
+                "domains_on_blocklist": gravity["domains_being_blocked"],
             })
         except HTTPError as exc:
             planes.append({"id": target["id"], "label": target["label"], "status": "degraded", "detail": f"HTTP {exc.code}"})
@@ -2705,10 +2788,10 @@ def _compose_snapshot_headline(privacy_intact, overall_status, plane_counts, con
     degraded_containers = container_counts.get("degraded", 0)
 
     if not privacy_intact:
-        return "Privacy guarantee compromised — needs immediate attention."
+        return "Privacy posture is unverified — review the unavailable or degraded checks."
 
     if overall_status == "healthy":
-        return f"Privacy guarantee intact. {healthy_planes}/{total_planes} DNS planes serving via Tor."
+        return f"Tor configuration and runtime checks healthy. {healthy_planes}/{total_planes} DNS plane APIs available."
 
     issues = []
     if offline_containers:
@@ -2717,7 +2800,7 @@ def _compose_snapshot_headline(privacy_intact, overall_status, plane_counts, con
         issues.append(f"{degraded_containers} container{'s' if degraded_containers != 1 else ''} degraded")
     issue_text = " and ".join(issues) if issues else "some services need attention"
 
-    return f"Privacy guarantee intact, but {issue_text}."
+    return f"Tor configuration and runtime checks healthy; {issue_text}."
 
 
 _BANNER_LEVELS = frozenset({"critical", "warning", "info"})
@@ -2797,13 +2880,16 @@ def _compute_snapshot():
     elif tor_assurance["overall_status"] == "degraded" and overall_status == "healthy":
         overall_status = "degraded"
 
-    # Privacy intact is stricter than overall_status: it specifically asks
-    # whether the privacy guarantee is currently being delivered. We require
-    # Tor bootstrapped + isolation healthy + at least one DNS plane serving.
+    # Compatibility field: all observed privacy-posture checks must pass.
+    # API availability and runtime/configuration checks do not prove live DNS
+    # routing, so the headline states their scope instead of a guarantee.
     privacy_intact = (
         tor_assurance["bootstrap"]["status"] == "healthy"
         and tor_assurance["isolation"]["status"] == "healthy"
-        and plane_counts["healthy"] > 0
+        and tor_assurance["network_path"].get("status") == "healthy"
+        and tor_assurance["plane_identities"].get("overall_status") == "healthy"
+        and plane_counts["total"] > 0
+        and plane_counts["healthy"] == plane_counts["total"]
     )
 
     # Public links for SSO targets, used by the admin UI to link out to grafana etc.
@@ -2912,23 +2998,78 @@ def _compute_snapshot():
     }
 
 
+def run_validation_script(timeout=300):
+    # Retain only protocol markers, never potentially secret-bearing tool output.
+    markers = {f"{prefix} {check['marker']}" for check in detect_validation_checks()
+               for prefix in ("[validate]", "[validate:success]")}
+    output = []
+    with subprocess.Popen(
+        ["bash", str(ROOT_DIR / "ops/scripts/19-validate-stack.sh")],
+        cwd=ROOT_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        start_new_session=True,
+    ) as process:
+        def stop_group(sig):
+            try:
+                os.killpg(process.pid, sig)
+            except ProcessLookupError:
+                pass
+
+        terminate = threading.Timer(timeout, stop_group, args=(signal.SIGTERM,))
+        kill = threading.Timer(timeout + 5, stop_group, args=(signal.SIGKILL,))
+        terminate.daemon = kill.daemon = True
+        terminate.start()
+        kill.start()
+        try:
+            for line in process.stdout:
+                if line.strip() in markers:
+                    output.append(line.strip())
+                    with VALIDATION_STATE_LOCK:
+                        VALIDATION_STATE["output"] = "\n".join(output)
+            process.wait()
+        finally:
+            terminate.cancel()
+            kill.cancel()
+        return subprocess.CompletedProcess(process.args, process.wait(), "\n".join(output), "")
+
+
 def run_system_validation():
+    if not VALIDATION_LOCK.acquire(blocking=False):
+        raise ValidationBusyError("Validation is already running.")
+    try:
+        RUN_DIR.mkdir(parents=True, exist_ok=True)
+        with RECOVERY_LOCK_FILE.open("a+") as lock_file:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise ValidationBusyError("Recovery is running. Wait before validating the stack.")
+            return _run_system_validation_locked()
+    finally:
+        with VALIDATION_STATE_LOCK:
+            VALIDATION_STATE["running"] = False
+        VALIDATION_LOCK.release()
+
+
+def _run_system_validation_locked():
     started_at = utc_now()
-    result = run_script(str(ROOT_DIR / "ops/scripts/19-validate-stack.sh"))
+    with VALIDATION_STATE_LOCK:
+        VALIDATION_STATE.update(running=True, started_at=started_at, output="")
+    try:
+        result = run_validation_script()
+    except OSError:
+        result = subprocess.CompletedProcess([], 1, "", "")
     checks = parse_validation_checks(result.stdout, result.returncode)
+    success = result.returncode == 0 and bool(checks) and all(check["status"] == "success" for check in checks)
     payload = {
-        "status": "success" if result.returncode == 0 else "error",
-        "summary": validation_summary(checks, result.returncode == 0),
+        "status": "success" if success else "error",
+        "summary": validation_summary(checks, success),
         "checks": checks,
         "started_at": started_at,
         "finished_at": utc_now(),
+        "scope": VALIDATION_SCOPE,
     }
 
-    detail = (result.stderr or "").strip()
-    if not detail and result.returncode != 0:
-        detail = (result.stdout or "").strip().splitlines()[-1] if (result.stdout or "").strip() else "Validation failed."
-    if detail:
-        payload["detail"] = detail
+    if not success:
+        payload["detail"] = "Review the failed check guidance. If no check finished, verify Docker access and required local validator images. For full diagnostics, run ops/scripts/19-validate-stack.sh locally; its output may contain sensitive configuration. Skipped checks are not passes."
 
     write_validation_result(payload)
     return payload
@@ -2946,16 +3087,18 @@ def write_file(path: Path, content: str):
     path.write_text(content, encoding="utf-8")
 
 
+@env_store.serialized_env_operation
 def rollback_notification_state(env_text, config_text):
     # Write via env_store's path so every .env write shares one source of
     # truth (and one test patch point).
-    write_file(env_store.ENV_FILE, env_text)
+    env_store.restore_env_text(env_text)
     if config_text:
         write_file(ALERTMANAGER_CONFIG_FILE, config_text)
     run_script(str(ROOT_DIR / "ops/scripts/17-render-alertmanager.sh"))
     reload_alertmanager()
 
 
+@env_store.serialized_env_operation
 def set_notification_channel(channel_name, enabled):
     if channel_name not in CHANNEL_FIELDS:
         raise ValueError("Unknown notification channel.")
@@ -3038,6 +3181,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == "/api/system/status":
             return json_response(self, system_status_payload())
+
+        if self.path == "/api/system/validation":
+            return json_response(self, validation_preview())
 
         if self.path == "/api/version":
             return json_response(self, build_info())
@@ -3125,10 +3271,10 @@ class Handler(BaseHTTPRequestHandler):
 
         return json_response(self, {"error": "Not found"}, status=HTTPStatus.NOT_FOUND)
 
-    def _sse_send(self, payload):
-        """Write one SSE event. Returns False if the client disconnected."""
+    def _sse_send(self, payload=None):
+        """Write an event or a keepalive comment; False means disconnected."""
         try:
-            line = f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
+            line = ": keepalive\n\n" if payload is None else f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
             self.wfile.write(line.encode("utf-8"))
             self.wfile.flush()
             return True
@@ -3230,6 +3376,10 @@ class Handler(BaseHTTPRequestHandler):
         # Live tail: poll all planes, stream new queries, sleep, repeat.
         while True:
             time.sleep(QUERY_FEED_POLL_S)
+            # Detect closed browsers even when Pi-hole is idle or unavailable.
+            # SSE comments keep the connection alive without creating query events.
+            if not self._sse_send():
+                return
             for target in PIHOLE_API_TARGETS:
                 try:
                     queries = _fetch_pihole_queries(target, values, QUERY_FEED_BATCH_N)
@@ -3323,7 +3473,7 @@ class Handler(BaseHTTPRequestHandler):
                 },
             )
 
-        if self.path == "/api/system/validate":
+        if self.path in ("/api/system/validate", "/api/recovery/validate"):
             if recovery_busy():
                 return json_response(
                     self,
@@ -3331,18 +3481,10 @@ class Handler(BaseHTTPRequestHandler):
                     status=HTTPStatus.CONFLICT,
                 )
 
-            payload = run_system_validation()
-            return json_response(self, payload)
-
-        if self.path == "/api/recovery/validate":
-            if recovery_busy():
-                return json_response(
-                    self,
-                    {"error": "Recovery is running. Wait until it finishes before validating the stack."},
-                    status=HTTPStatus.CONFLICT,
-                )
-
-            payload = run_system_validation()
+            try:
+                payload = run_system_validation()
+            except ValidationBusyError as exc:
+                return json_response(self, {"error": str(exc)}, status=HTTPStatus.CONFLICT)
             return json_response(self, payload)
 
         if self.path == "/api/recovery/restore":

@@ -389,7 +389,19 @@ other local configuration selected during setup. You do **not** need to run the
 setup wizard again for a normal update.
 
 Before updating, make sure the current dashboard is healthy and avoid changing
-router DNS settings until the update has completed. From the Torhole host:
+router DNS settings until the update has completed. For **Advanced**, take a
+backup using the currently installed code **before downloading new source**:
+
+```bash
+cd ~/torhole/pi-dns-warden
+sudo ./ops/scripts/50-backup.sh
+```
+
+Keep this archive for rollback. The updater also backs up before rendering, but
+it cannot recover source already replaced by a download or `git pull`. For Home,
+take a host/VM backup when a full rollback is required.
+
+Then download the update from the Torhole host:
 
 ```bash
 cd ~/torhole
@@ -417,8 +429,8 @@ cd ~/torhole/pi-dns-warden
 sudo ./ops/scripts/40-update.sh
 ```
 
-The Advanced updater validates the rendered configuration and creates a backup
-before replacing running containers. Home rebuilds its containers while
+The Advanced updater creates its backup before changing rendered configuration,
+then validates the new configuration before replacing running containers. Home rebuilds its containers while
 retaining the persistent Pi-hole and Tor volumes. When the command finishes,
 open Torhole and run the privacy verification again.
 
@@ -510,38 +522,11 @@ with broad Docker-volume or recursive-delete commands.
 
 ### Update Torhole containers
 
-Updates require shell access to the Torhole host and `sudo`. Take a VM or host
-backup first; Advanced users should also create a snapshot under **Operate →
-Backups**. Updating downloads newer images for the configured tags, rebuilds
-Torhole's local images, and recreates only containers whose image or
-configuration changed. Persistent Docker volumes are retained.
-
-For Home:
-
-```bash
-cd ~/torhole
-git pull --ff-only
-cd pi-dns-warden
-sudo docker compose --env-file .env.quickstart.local \
-  -f docker-compose.quickstart.yml pull --ignore-buildable
-sudo docker compose --env-file .env.quickstart.local \
-  -f docker-compose.quickstart.yml up -d --build
-cd ..
-./install.sh status
-```
-
-Then open the Home dashboard and run **Verify privacy**.
-
-For Advanced, the deployment script is the supported updater because it also
-renders configuration, rebuilds the local images, validates the stack, and
-verifies that DNS still exits through Tor:
-
-```bash
-cd ~/torhole
-git pull --ff-only
-cd pi-dns-warden
-sudo ./deploy.sh --skip-prereqs
-```
+Use the [update procedure above](#update-torhole), including the pre-download
+backup for Advanced. It keeps configuration rendering and container changes in
+the maintained entry points. Persistent volumes are retained. Ansible-managed
+Advanced installations use the [shared deployment role](README-ANSIBLE.md),
+which backs up the installed source and state before synchronizing files.
 
 Do not treat Dockhand's image-status banner as proof that images are current.
 Dockhand is deliberately isolated from public registries, so registry checks
@@ -554,7 +539,8 @@ that the image is current.
 - `install.sh` and `get-torhole.sh` - the single guided installation entrypoint
 - `pi-dns-warden/` - DNS, Tor, dashboards, monitoring, and operational services
 - `ansible/` - optional Advanced provisioning
-- `scripts/` - repository-level bootstrap and validation helpers
+- `pi-dns-warden/ops/` - deployment, validation, recovery, and regression checks
+- `AGENTS.md` and `SKILLS.md` - project agent guidance and maintenance workflows
 - `README-ALERTING.md`, `README-ANSIBLE.md`, `README-PROXMOX.md`, and
   `README-TESTING.md` - focused operator documentation
 

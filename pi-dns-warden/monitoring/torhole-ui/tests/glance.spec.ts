@@ -17,14 +17,14 @@ test.describe("Glance screen", () => {
     const main = page.getByRole("main");
     await expect(main.getByText("Glance", { exact: true })).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Is the privacy guarantee intact?" }),
+      page.getByRole("heading", { name: "Glance" }),
     ).toBeVisible();
 
     // Hero statement
-    await expect(page.getByText("DNS exits via Tor", { exact: true })).toBeVisible();
+    await expect(page.getByText("DNS routed through Tor", { exact: true })).toBeVisible();
 
     // Live indicator
-    await expect(page.getByText(/LIVE\s*·/i)).toBeVisible();
+    await expect(page.getByText(/^Updated /)).toBeVisible();
   });
 
   test("shows all containers healthy", async ({ page }) => {
@@ -33,14 +33,9 @@ test.describe("Glance screen", () => {
     const snapshot = await snapshotResponse.json();
     await page.goto("/");
 
-    const counts = snapshot.container_counts;
-    await expect(
-      page.getByText(new RegExp(`${counts.healthy}/${counts.total}\\s*healthy`, "i")),
-    ).toBeVisible();
-
-    for (const container of snapshot.containers.filter((item: { core: boolean }) => item.core)) {
-      await expect(page.getByText(container.name, { exact: true }).first()).toBeVisible();
-    }
+    const overview = page.getByRole("region", { name: "Network overview" });
+    await expect(overview.getByText("All services healthy", { exact: true })).toBeVisible();
+    expect(snapshot.container_counts.offline + snapshot.container_counts.degraded).toBe(0);
   });
 
   test("shows every configured DNS plane serving", async ({ page }) => {
@@ -50,9 +45,6 @@ test.describe("Glance screen", () => {
     await page.goto("/");
 
     const planes = snapshot.dns.planes as Array<{ label: string; status: string }>;
-    const serving = planes.filter((plane) => plane.status === "healthy").length;
-    await expect(page.getByText(new RegExp(`${serving}/${planes.length}\\s*serving`, "i"))).toBeVisible();
-
     for (const plane of planes) {
       await expect(page.getByText(plane.label, { exact: true }).first()).toBeVisible();
     }
@@ -104,7 +96,7 @@ test.describe("Glance screen", () => {
     const snapshotResponse = await page.request.get("/api/system/snapshot");
     expect(snapshotResponse.ok()).toBeTruthy();
     const snapshot = await snapshotResponse.json();
-    const planeCount = snapshot.dns.planes.length;
+    expect(snapshot.dns.planes.length).toBeGreaterThan(0);
     // Intercept the live snapshot and force tor down — the plane cards must
     // stop claiming "via tor" and the serving count must drop to zero, even
     // though Pi-hole keeps counting forwarded (unanswered) queries.
@@ -116,25 +108,20 @@ test.describe("Glance screen", () => {
     });
     await page.goto("/");
 
-    await expect(page.getByText(new RegExp(`0/${planeCount}\\s*serving`, "i"))).toBeVisible();
-    await expect(page.getByText("tor down").first()).toBeVisible();
-    await expect(
-      page.getByText(/egress down — forwarded queries are not resolving/i).first(),
-    ).toBeVisible();
+    const table = page.getByRole("table", { name: "DNS planes" });
+    await expect(table.getByRole("cell", { name: "Healthy", exact: true })).toHaveCount(0);
+    await expect(page.getByText("Tor egress needs attention", { exact: true })).toBeVisible();
     await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 
-  test("shows 4 proof tiles with data", async ({ page }) => {
+  test("shows key metrics and operational summaries", async ({ page }) => {
     await page.goto("/");
-
-    // Each of the 4 tiles should be visible by its label
-    await expect(page.getByText("DNS", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("TOR", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("ALERTS", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("BACKUP", { exact: true }).first()).toBeVisible();
-
-    // TOR tile says BOOTSTRAPPED (the bold mono badge)
-    await expect(page.getByText("BOOTSTRAPPED", { exact: true })).toBeVisible();
+    const overview = page.getByRole("region", { name: "Network overview" });
+    for (const label of ["Queries today", "Blocked", "Tor", "Services"]) {
+      await expect(overview.getByText(label, { exact: true })).toBeVisible();
+    }
+    await expect(page.getByText("Alert channels", { exact: true })).toBeVisible();
+    await expect(page.getByText("Latest backup", { exact: true })).toBeVisible();
   });
 
   test("shows live Quick Actions strip with four enabled buttons", async ({ page }) => {

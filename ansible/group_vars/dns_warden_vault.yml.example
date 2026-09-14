@@ -8,3 +8,9 @@ dnscrypt_socks:
   trusted_pass: "changeme-secret"
   iot_user: iot
   iot_pass: "changeme-secret"
+
+# Required by the maintained Advanced deployer. Keep these stable on redeploy.
+torhole_admin_password: "CHANGE_ME"
+tor_control_password: "CHANGE_ME"
+# Internal Authelia/API secrets are generated on first deployment and retained
+# in the installed .env on subsequent Ansible runs.

@@ -36,7 +36,8 @@ def docker_post(container, operation):
 
 
 def tor_command(*commands):
-    cookie = open("/var/lib/tor/control.authcookie", "rb").read().hex()
+    with open("/var/lib/tor/control.authcookie", "rb") as cookie_file:
+        cookie = cookie_file.read().hex()
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as control:
         control.settimeout(5)
         control.connect(TOR_SOCKET)
@@ -49,8 +50,25 @@ def tor_command(*commands):
                 break
             chunks.append(part)
     text = b"".join(chunks).decode(errors="replace")
-    if "515 Authentication failed" in text or "5" in text[:1]:
-        raise RuntimeError("Tor control command failed")
+    # AUTHENTICATE succeeding says nothing about the following command.
+    # Check every status reply, skipping GETINFO's dot-terminated data blocks.
+    in_data = False
+    completed = 0
+    for line in text.splitlines():
+        if in_data:
+            if line == ".":
+                in_data = False
+            continue
+        if len(line) < 4 or not line[:3].isdigit() or line[3] not in " +-":
+            raise RuntimeError("Invalid Tor control reply")
+        if line[0] != "2":
+            raise RuntimeError("Tor control command failed")
+        if line[3] == "+":
+            in_data = True
+        elif line[3] == " ":
+            completed += 1
+    if in_data or completed != len(payload) or not text.endswith("\r\n"):
+        raise RuntimeError("Incomplete Tor control reply")
     return text
 
 

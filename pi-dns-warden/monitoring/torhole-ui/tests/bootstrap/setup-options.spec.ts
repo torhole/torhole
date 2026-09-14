@@ -162,7 +162,7 @@ test("missing runtime topology is unknown rather than assumed Single LAN", async
   await expect(panel.getByText("Flat LAN", { exact: true })).toHaveCount(0);
 });
 
-async function mockAdvancedGlance(page: Page) {
+async function mockAdvancedGlance(page: Page, torHealthy = true) {
   const now = new Date().toISOString();
   await page.route("**/api/system/snapshot", (route) =>
     route.fulfill({
@@ -172,13 +172,13 @@ async function mockAdvancedGlance(page: Page) {
         banner: null,
         torhole: {
           overall_status: "healthy",
-          privacy_intact: true,
+          privacy_intact: torHealthy,
           headline: "DNS is resolving through the isolated Tor path.",
           summary_sentence: "Privacy path verified.",
         },
         tor: {
-          overall_status: "healthy",
-          summary: "Tor ready",
+          overall_status: torHealthy ? "healthy" : "offline",
+          summary: torHealthy ? "Tor ready" : "Tor unavailable",
           bootstrap: { status: "healthy", detail: "Bootstrapped 100%", percent: 100 },
           isolation: { status: "healthy", detail: "IsolateSOCKSAuth verified" },
           network_path: { status: "healthy", detail: "Tor egress confirmed" },
@@ -464,9 +464,8 @@ test("installed Advanced keeps sidebar controls visible while the page scrolls",
 test("installed HTTP mode identifies Basic Auth instead of claiming SSO", async ({ page }) => {
   await mockInstalledAdvanced(page, "single-lan", "http");
 
-  await expect(page.getByText("Choose a view", { exact: true })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /Identity & access.*viewing/i })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /App parameters.*open/i })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Identity & access", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "App parameters", exact: true })).toHaveAttribute("aria-selected", "false");
   await expect(page.getByText("HTTP Basic Auth", { exact: true })).toBeVisible();
   await expect(page.getByText(/Authelia SSO is available.*HTTPS/i)).toBeVisible();
   await expect(page.getByRole("button", { name: /enable HTTPS \+ Authelia SSO/i })).toBeVisible();
@@ -505,7 +504,7 @@ test("installed Advanced persists theme choice and sidebar submenus deep-link to
   await expect(topologyLink).toBeVisible();
   await topologyLink.click();
   await expect(page).toHaveURL(/section=topology/);
-  await expect(page.getByRole("tab", { name: /Topology.*viewing/i })).toHaveAttribute(
+  await expect(page.getByRole("tab", { name: "Topology", exact: true })).toHaveAttribute(
     "aria-selected",
     "true",
   );
@@ -519,14 +518,55 @@ test("installed Advanced persists theme choice and sidebar submenus deep-link to
 test("Advanced glance explains the live DNS privacy journey", async ({ page }) => {
   await mockAdvancedGlance(page);
 
-  await expect(page.getByRole("heading", { name: "Is the privacy guarantee intact?" })).toBeVisible();
-  await expect(page.getByText("live privacy path", { exact: true })).toBeVisible();
-  await expect(page.getByText("DNS ingress", { exact: true })).toBeVisible();
-  await expect(page.getByText("1 isolated plane", { exact: true })).toBeVisible();
-  await expect(page.getByText("Tor relay mesh", { exact: true })).toBeVisible();
-  await expect(page.getByText("circuit ready", { exact: true })).toBeVisible();
-  await expect(page.getByText("Anonymized exit", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Glance", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "DNS routed through Tor" })).toBeVisible();
+  await expect(page.getByRole("table", { name: "DNS planes" }).getByRole("row")).toHaveCount(2);
+  await expect(page.getByText("Configured DNS path", { exact: true })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Configured DNS path" }).getByRole("listitem")).toHaveText(["Clients", "Pi-hole", "dnscrypt-proxy", "Tor"]);
+  await expect(page.getByText("Not run", { exact: true })).toBeVisible();
+  await expect(page.getByText("No snapshots", { exact: true })).toBeVisible();
+  await page.getByText("Technical evidence", { exact: true }).click();
   await expect(page.getByText("185.220.101.42", { exact: true })).toBeVisible();
+});
+
+test("Glance keeps unhealthy Tor visible and never labels its planes healthy", async ({ page }) => {
+  await mockAdvancedGlance(page, false);
+  await expect(page.getByRole("heading", { name: "Privacy needs attention" })).toBeVisible();
+  await expect(page.getByRole("table", { name: "DNS planes" }).getByRole("cell", { name: "Degraded", exact: true })).toBeVisible();
+  await expect(page.getByRole("table", { name: "DNS planes" }).getByRole("cell", { name: "Healthy", exact: true })).toHaveCount(0);
+});
+
+test("light surfaces avoid glare while keeping secondary text readable", async ({ page }) => {
+  await mockAdvancedGlance(page);
+  await page.evaluate(() => document.documentElement.dataset.theme = "light");
+  const colors = await page.getByRole("region", { name: "Network overview" }).evaluate(panel => {
+    const luminance = (color: string) => {
+      const rgb = color.match(/[\d.]+/g)!.slice(0, 3).map(Number).map(v => {
+        const s = v / 255;
+        return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      });
+      return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+    };
+    const surface = luminance(getComputedStyle(panel).backgroundColor);
+    const muted = luminance(getComputedStyle(panel.querySelector("small")!).color);
+    return { surface, contrast: (surface + 0.05) / (muted + 0.05) };
+  });
+  expect(colors.surface).toBeLessThan(0.88);
+  expect(colors.contrast).toBeGreaterThanOrEqual(4.5);
+});
+
+test("Glance direction A remains readable in both themes at supported widths", async ({ page }) => {
+  await mockAdvancedGlance(page);
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
+    for (const width of [1440, 1024]) {
+      await page.setViewportSize({ width, height: 1000 });
+      const table = await page.getByRole("table", { name: "DNS planes" }).boundingBox();
+      expect(table!.x + table!.width).toBeLessThanOrEqual(width);
+      await expect(page.getByRole("heading", { name: "Latest checks" })).toBeVisible();
+      await page.screenshot({ path: test.info().outputPath(`glance-${theme}-${width}.png`), fullPage: true });
+    }
+  }
 });
 
 test("an installed setup bookmark redirects to Configure", async ({ page }) => {

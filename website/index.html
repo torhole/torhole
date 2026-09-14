@@ -567,9 +567,12 @@
       var t = cmdText.textContent.trim();
       var done = function(){ copyBtn.textContent="Copied"; copyBtn.classList.add("done");
         setTimeout(function(){ copyBtn.textContent="Copy"; copyBtn.classList.remove("done"); },1600); };
-      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done).catch(done); }
+      var failed = function(){ copyBtn.textContent="Copy failed — select command"; copyBtn.classList.remove("done"); };
+      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done).catch(failed); }
       else { var ta=document.createElement("textarea"); ta.value=t; document.body.appendChild(ta); ta.select();
-        try{document.execCommand("copy");}catch(e){} document.body.removeChild(ta); done(); }
+        var copied=false;
+        try{copied=document.execCommand("copy");}catch(e){} document.body.removeChild(ta);
+        if(copied){done();}else{failed();} }
     });
   }
 

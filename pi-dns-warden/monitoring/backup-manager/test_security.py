@@ -24,6 +24,8 @@ class BackendAuthenticationTests(unittest.TestCase):
             "/api/recovery/download?archive=test.tar.gz",
             "/api/recovery/backup",
             "/api/services/action",
+            "/api/system/validation",
+            "/api/system/validate",
             "/api/not-a-route",
         )
         self.assertTrue(all(server_module.requires_backend_auth(path) for path in protected_paths))

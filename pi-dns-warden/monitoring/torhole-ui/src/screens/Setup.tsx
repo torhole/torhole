@@ -1,3 +1,4 @@
+import PageHeader from "../components/PageHeader";
 /*
  * Setup wizard — "How do I get from git clone to a working Torhole?"
  *
@@ -37,13 +38,11 @@ import {
   finishBootstrap,
   fetchBootstrapStatus,
   fetchConfig,
-  formatRelative,
   recoverBootstrapReceipt,
   startBootstrapInstall,
   useSnapshot,
   type BootstrapInstallStatus,
   type SetupApplyResult,
-  type SnapshotState,
 } from "../lib/snapshot";
 
 type StepId =
@@ -334,13 +333,13 @@ export default function SetupScreen({ bootstrap = false }: { bootstrap?: boolean
   const jumpTo = (s: StepId) => setStep(s);
 
   return (
-    <div className="px-6 py-7 lg:px-10 lg:py-9 xl:px-14 max-w-[1500px] 2xl:max-w-[1700px] mx-auto">
-      <Header state={state} />
+    <div className="th-dashboard-page">
+      <PageHeader title="How do you want to run Torhole?" description="Choose your edition and prepare your DNS gateway." state={state} />
 
       <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-5">
         <Stepper step={step} stepOrder={stepOrder} onJump={jumpTo} />
 
-        <div className="bg-th-panel border border-th-line rounded-lg overflow-hidden">
+        <div className="th-dashboard-surface overflow-hidden">
           <div className="px-7 py-7 min-h-[420px]">
             {step === "welcome" && <WelcomeStep />}
             {step === "edition" && (
@@ -431,19 +430,19 @@ export default function SetupScreen({ bootstrap = false }: { bootstrap?: boolean
               type="button"
               onClick={goBack}
               disabled={idx === 0}
-              className="flex items-center gap-1.5 px-3 rounded-md text-[11px] font-mono uppercase tracking-[0.14em] min-h-[44px] text-th-text-muted hover:text-th-text hover:bg-th-line/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              className="th-ui-label flex items-center gap-1.5 px-3 rounded-md min-h-[44px] text-th-text-muted hover:text-th-text hover:bg-th-line/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             >
               <ArrowLeft size={13} />
               back
             </button>
-            <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-th-text-muted/60">
+            <div className="th-ui-label text-th-text-muted">
               step {idx + 1} of {total}
             </div>
             <button
               type="button"
               onClick={goNext}
               disabled={idx === total - 1}
-              className="flex items-center gap-1.5 px-4 rounded-md text-[11px] font-mono uppercase tracking-[0.14em] min-h-[44px] bg-th-primary/15 border border-th-primary/40 text-th-primary hover:bg-th-primary/25 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              className="th-ui-label flex items-center gap-1.5 px-4 rounded-md min-h-[44px] bg-th-primary/15 border border-th-primary/40 text-th-primary hover:bg-th-primary/25 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             >
               next
               <ArrowRight size={13} />
@@ -455,25 +454,6 @@ export default function SetupScreen({ bootstrap = false }: { bootstrap?: boolean
   );
 }
 
-function Header({ state }: { state: SnapshotState }) {
-  const fetched =
-    state.kind === "ready" ? formatRelative(new Date(state.fetchedAt).toISOString()) : "—";
-  return (
-    <div className="flex items-end justify-between mb-7">
-      <div>
-        <div className="text-[10.5px] uppercase tracking-[0.22em] text-th-text-muted font-mono">
-          Setup
-        </div>
-        <h1 className="text-[28px] font-bold tracking-tight mt-1 leading-none">
-          How do you want to run Torhole?
-        </h1>
-      </div>
-      <div className="flex items-center gap-2 text-[11px] text-th-text-muted">
-        <span className="font-mono uppercase tracking-[0.14em]">live · {fetched}</span>
-      </div>
-    </div>
-  );
-}
 
 /* ----------------------------------------------------------------------- *
  * Stepper rail
@@ -491,7 +471,7 @@ function Stepper({
   const currentIdx = stepOrder.indexOf(step);
   return (
     <nav className="bg-th-panel border border-th-line rounded-lg p-3 h-fit sticky top-5">
-      <div className="text-[9.5px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono px-2 mb-2">
+      <div className="th-ui-label text-th-text-muted px-2 mb-2">
         first-run flow
       </div>
       <div className="space-y-0.5">
@@ -520,7 +500,7 @@ function Stepper({
                 <Circle size={14} className="text-th-text-muted/40 shrink-0" />
               )}
               <span className="flex-1 text-left">{STEP_TITLES[s]}</span>
-              <span className="text-[9px] font-mono text-th-text-muted/40">
+              <span className="text-[12px] font-mono text-th-text-muted/40">
                 {String(i + 1).padStart(2, "0")}
               </span>
             </button>
@@ -546,10 +526,10 @@ function StepHeader({
 }) {
   return (
     <div className="mb-6">
-      <div className="text-[10px] uppercase tracking-[0.22em] text-th-text-muted font-mono">
+      <div className="th-ui-label text-th-text-muted">
         {eyebrow}
       </div>
-      <h2 className="text-[24px] font-bold tracking-tight mt-1 leading-tight">{title}</h2>
+      <h2 className="text-[24px] font-semibold tracking-tight mt-1 leading-tight">{title}</h2>
       <p className="text-[13px] text-th-text-muted mt-2 max-w-[680px] leading-relaxed">
         {body}
       </p>
@@ -560,7 +540,7 @@ function StepHeader({
 function KV({ label, value }: { label: string; value: string | undefined }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5 px-3 py-2.5 bg-th-bg/40 border border-th-line/60 rounded">
-      <div className="text-[9.5px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono">
+      <div className="th-ui-label text-th-text-muted">
         {label}
       </div>
       <div className="break-all text-[12.5px] font-mono text-th-text-mono">
@@ -597,7 +577,7 @@ function SecretKV({ label, value }: { label: string; value: string | undefined }
   };
   return (
     <div className="flex min-w-0 flex-col gap-1 px-3 py-2.5 bg-th-bg/40 border border-th-line/60 rounded">
-      <div className="text-[9.5px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono">
+      <div className="th-ui-label text-th-text-muted">
         {label}
       </div>
       <div className="flex items-center gap-2 min-w-0">
@@ -644,7 +624,7 @@ function EditableKV({
 }) {
   return (
     <div className="flex flex-col gap-1 px-3 py-2 bg-th-bg/40 border border-th-line/60 rounded focus-within:border-th-primary/40 transition-colors">
-      <div className="text-[9.5px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono">
+      <div className="th-ui-label text-th-text-muted">
         {label}
       </div>
       <input
@@ -664,7 +644,7 @@ function EditableKV({
 function Note({ children, kind = "info" }: { children: React.ReactNode; kind?: "info" | "warn" }) {
   return (
     <div
-      className={`flex items-start gap-2 p-3 rounded text-[11.5px] ${
+      className={`flex items-start gap-2 p-3 rounded text-[12px] ${
         kind === "warn"
           ? "bg-th-warning/[0.06] border border-th-warning/30 text-th-warning"
           : "bg-th-bg/40 border border-th-line/60 text-th-text-muted"
@@ -734,7 +714,7 @@ function FeatureTile({
         <Icon size={15} />
       </div>
       <div className="text-[13px] font-semibold text-th-text">{title}</div>
-      <div className="text-[11.5px] text-th-text-muted mt-1 leading-relaxed">{body}</div>
+      <div className="text-[12px] text-th-text-muted mt-1 leading-relaxed">{body}</div>
     </div>
   );
 }
@@ -817,7 +797,7 @@ function EditionCard({
       <div className="flex items-start justify-between mb-3">
         <div>
           <div className="text-[15px] font-semibold text-th-text">{title}</div>
-          <div className="text-[9.5px] uppercase tracking-[0.16em] text-th-primary/70 font-mono mt-1">
+          <div className="th-ui-label text-th-primary/70 mt-1">
             {badge}
           </div>
         </div>
@@ -829,10 +809,10 @@ function EditionCard({
           {selected && <Check size={11} strokeWidth={3} className="text-th-bg" />}
         </div>
       </div>
-      <div className="text-[11.5px] text-th-text-muted leading-relaxed mb-3">{body}</div>
+      <div className="text-[12px] text-th-text-muted leading-relaxed mb-3">{body}</div>
       <div className="space-y-1.5">
         {capabilities.map((capability) => (
-          <div key={capability} className="flex items-start gap-2 text-[10.5px] text-th-text-mono">
+          <div key={capability} className="flex items-start gap-2 text-[12px] text-th-text-mono">
             <Check size={11} className="text-th-primary shrink-0 mt-0.5" />
             <span>{capability}</span>
           </div>
@@ -933,7 +913,7 @@ function TopologyCard({
       <div className="flex items-start justify-between mb-3">
         <div>
           <div className="text-[15px] font-semibold text-th-text">{title}</div>
-          <div className="text-[9.5px] uppercase tracking-[0.16em] text-th-primary/70 font-mono mt-1">
+          <div className="th-ui-label text-th-primary/70 mt-1">
             {badge}
           </div>
         </div>
@@ -945,8 +925,8 @@ function TopologyCard({
           {selected && <Check size={11} strokeWidth={3} className="text-th-bg" />}
         </div>
       </div>
-      <div className="text-[11.5px] text-th-text-muted leading-relaxed mb-3">{body}</div>
-      <pre className="text-[10px] font-mono text-th-text-mono/80 bg-th-bg/60 border border-th-line/40 rounded p-2.5 overflow-x-auto leading-relaxed">
+      <div className="text-[12px] text-th-text-muted leading-relaxed mb-3">{body}</div>
+      <pre className="text-[12px] font-mono text-th-text-mono/80 bg-th-bg/60 border border-th-line/40 rounded p-2.5 overflow-x-auto leading-relaxed">
         {diagram.map((line) => `${line}\n`).join("")}
       </pre>
       <div className="sr-only">{id}</div>
@@ -1059,7 +1039,7 @@ function NetworkStep({
 
       {topology === "vlan" && (
         <>
-          <div className="text-[9.5px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono mb-2">
+          <div className="th-ui-label text-th-text-muted mb-2">
             per-plane
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -1071,10 +1051,10 @@ function NetworkStep({
                 key={plane.id}
                 className="bg-th-bg/40 border border-th-line/60 rounded-md p-3"
               >
-                <div className="text-[10px] uppercase tracking-[0.14em] text-th-text-muted font-mono mb-2">
+                <div className="th-ui-label text-th-text-muted mb-2">
                   {plane.label}
                 </div>
-                <div className="space-y-1.5 text-[10.5px] font-mono">
+                <div className="space-y-1.5 text-[12px] font-mono">
                   <div>vlan {config?.[plane.id_key] || "—"}</div>
                   <div className="text-th-text-muted">{config?.[plane.cidr] || "—"}</div>
                   <div className="text-th-text-mono">{config?.[plane.ip_key] || "—"}</div>
@@ -1123,7 +1103,7 @@ function AdvancedPlaneFields({
 }) {
   return (
     <div className="bg-th-bg/30 border border-th-line/60 rounded-md p-4 mb-4">
-      <div className="text-[10px] uppercase tracking-[0.16em] text-th-primary/80 font-mono mb-3">
+      <div className="th-ui-label text-th-primary/80 mb-3">
         {label} plane
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1250,11 +1230,11 @@ function AccessStep({
           >
             <div className="flex items-center justify-between gap-2">
               <span className="text-[13px] font-semibold text-th-text">{choice.title}</span>
-              <span className="text-[8.5px] uppercase tracking-[0.14em] text-th-text-muted font-mono">
+              <span className="th-ui-label text-th-text-muted">
                 {choice.badge}
               </span>
             </div>
-            <div className="text-[11px] text-th-text-muted mt-2 leading-relaxed">{choice.body}</div>
+            <div className="text-[12px] text-th-text-muted mt-2 leading-relaxed">{choice.body}</div>
           </button>
         ))}
       </div>
@@ -1262,10 +1242,10 @@ function AccessStep({
       {mode === "https-custom" && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
           <label className="min-h-[74px] p-3 rounded-md border border-th-line bg-th-bg/40 hover:border-th-primary/40 cursor-pointer">
-            <span className="flex items-center gap-2 text-[11px] font-semibold text-th-text">
+            <span className="flex items-center gap-2 text-[12px] font-semibold text-th-text">
               <Upload size={13} /> Certificate
             </span>
-            <span className="block text-[10px] text-th-text-muted mt-2 font-mono">
+            <span className="block text-[12px] text-th-text-muted mt-2 font-mono">
               {certificate ? "PEM certificate loaded" : "Choose .crt or .pem"}
             </span>
             <input
@@ -1276,10 +1256,10 @@ function AccessStep({
             />
           </label>
           <label className="min-h-[74px] p-3 rounded-md border border-th-line bg-th-bg/40 hover:border-th-primary/40 cursor-pointer">
-            <span className="flex items-center gap-2 text-[11px] font-semibold text-th-text">
+            <span className="flex items-center gap-2 text-[12px] font-semibold text-th-text">
               <Upload size={13} /> Private key
             </span>
-            <span className="block text-[10px] text-th-text-muted mt-2 font-mono">
+            <span className="block text-[12px] text-th-text-muted mt-2 font-mono">
               {privateKey ? "PEM private key loaded" : "Choose .key or .pem"}
             </span>
             <input
@@ -1373,7 +1353,7 @@ function BlocklistsStep({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <div className="text-[12.5px] font-semibold text-th-text">{list.name}</div>
-                  <span className="text-[9px] uppercase tracking-[0.14em] font-mono text-th-text-muted">
+                  <span className="th-ui-label text-th-text-muted">
                     {interactive
                       ? isSelected
                         ? "selected"
@@ -1383,10 +1363,10 @@ function BlocklistsStep({
                         : "optional"}
                   </span>
                 </div>
-                <div className="text-[10.5px] font-mono text-th-text-mono/70 truncate">
+                <div className="text-[12px] font-mono text-th-text-mono/70 truncate">
                   {list.url}
                 </div>
-                <div className="text-[11px] text-th-text-muted mt-1">{list.desc}</div>
+                <div className="text-[12px] text-th-text-muted mt-1">{list.desc}</div>
               </div>
             </button>
           );
@@ -1527,7 +1507,7 @@ function AlertsStep({
             <span className={`w-5 h-5 rounded border flex items-center justify-center ${settings.email.requireTls ? "bg-th-primary border-th-primary text-th-bg" : "border-th-text-muted/50"}`}>
               {settings.email.requireTls && <Check size={12} strokeWidth={3} />}
             </span>
-            <span className="text-[11.5px] text-th-text">Require TLS for SMTP</span>
+            <span className="text-[12px] text-th-text">Require TLS for SMTP</span>
           </button>
         </div>
       )}
@@ -1577,7 +1557,7 @@ function AlertChannelCard({
         {selected && <Check size={12} strokeWidth={3} />}
       </span>
       <span className="text-[12.5px] text-th-text flex-1">{label}</span>
-      <span className="text-[9.5px] font-mono uppercase tracking-[0.14em] text-th-text-muted">
+      <span className="th-ui-label text-th-text-muted">
         {selected ? "enabled" : "optional"}
       </span>
     </button>
@@ -1638,13 +1618,13 @@ function TestStep({
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-[14px] font-semibold text-th-text">Run the live Tor egress test</div>
-            <div className="text-[11.5px] text-th-text-muted mt-1 leading-relaxed">
+            <div className="text-[12px] text-th-text-muted mt-1 leading-relaxed">
               The Privacy screen opens a real SOCKS5 connection through Tor and asks the Tor
               Project whether it sees a Tor exit IP.
             </div>
             <a
               href="#/privacy"
-              className="inline-flex items-center gap-1.5 mt-3 px-3 py-2 rounded-md text-[11px] font-mono uppercase tracking-[0.14em] bg-th-bg/60 border border-th-line text-th-text hover:border-th-primary/40 hover:bg-th-primary/[0.06] transition-colors min-h-[44px]"
+              className="th-ui-label inline-flex items-center gap-1.5 mt-3 px-3 py-2 rounded-md bg-th-bg/60 border border-th-line text-th-text hover:border-th-primary/40 hover:bg-th-primary/[0.06] transition-colors min-h-[44px]"
             >
               <ShieldCheck size={12} />
               open privacy screen
@@ -1849,14 +1829,14 @@ function BootstrapDoneStep({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-[14px] font-semibold text-th-text">Save your access details</div>
-                <div className="text-[11px] text-th-text-muted mt-1">
+                <div className="text-[12px] text-th-text-muted mt-1">
                   The Pi-hole password is masked below. Reveal it or copy it before closing setup.
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => void copyReceipt()}
-                className="inline-flex min-h-[40px] px-3 items-center gap-2 rounded-md border border-th-line text-th-text-muted hover:text-th-primary hover:border-th-primary/40 text-[10px] uppercase tracking-[0.14em] font-mono"
+                className="th-ui-label inline-flex min-h-[40px] px-3 items-center gap-2 rounded-md border border-th-line text-th-text-muted hover:text-th-primary hover:border-th-primary/40"
               >
                 {copiedReceipt ? <Check size={13} /> : <Copy size={13} />}
                 {copiedReceipt ? "copied" : "copy all"}
@@ -1875,7 +1855,7 @@ function BootstrapDoneStep({
                   .join(", ")}
               />
             </div>
-            <div className="mt-3 text-[10.5px] text-th-text-muted">
+            <div className="mt-3 text-[12px] text-th-text-muted">
               Missed them? On the Torhole host, run{" "}
               <span className="font-mono text-th-text-mono">./install.sh credentials</span>{" "}
               from the cloned repository.
@@ -1886,7 +1866,7 @@ function BootstrapDoneStep({
               type="button"
               disabled={finishing}
               onClick={() => void finish(install.home_url)}
-              className="inline-flex min-h-[46px] px-5 items-center gap-2 rounded-md bg-th-primary/15 border border-th-primary/40 text-th-primary hover:bg-th-primary/25 text-[11px] uppercase tracking-[0.14em] font-mono"
+              className="th-ui-label inline-flex min-h-[46px] px-5 items-center gap-2 rounded-md bg-th-primary/15 border border-th-primary/40 text-th-primary hover:bg-th-primary/25"
             >
               <ShieldCheck size={13} />
               {finishing ? "closing installer…" : "finish and open Torhole Home"}
@@ -1928,18 +1908,18 @@ function BootstrapDoneStep({
           )}
 
           {install.status === "error" && (
-            <div className="p-3 rounded border border-th-danger/35 bg-th-danger/[0.06] text-[11px] text-th-danger font-mono">
+            <div className="p-3 rounded border border-th-danger/35 bg-th-danger/[0.06] text-[12px] text-th-danger font-mono">
               {install.message}
             </div>
           )}
 
           {(install.status === "running" || install.logs.length > 0) && (
             <div className="rounded-md border border-th-line bg-th-bg/60 overflow-hidden">
-              <div className="px-3 py-2 border-b border-th-line text-[9.5px] uppercase tracking-[0.14em] text-th-text-muted font-mono flex items-center justify-between">
+              <div className="th-ui-label px-3 py-2 border-b border-th-line text-th-text-muted flex items-center justify-between">
                 <span>installer progress</span>
                 <span>{install.status}</span>
               </div>
-              <pre className="p-3 max-h-52 overflow-auto text-[10px] leading-relaxed text-th-text-mono font-mono whitespace-pre-wrap">
+              <pre className="p-3 max-h-52 overflow-auto text-[12px] leading-relaxed text-th-text-mono font-mono whitespace-pre-wrap">
                 {install.logs.slice(-30).join("\n") || install.message}
               </pre>
             </div>
@@ -1955,7 +1935,7 @@ function BootstrapDoneStep({
                 (!customCertificate || !customPrivateKey))
             }
             onClick={() => void begin()}
-            className="min-h-[46px] px-5 rounded-md bg-th-primary/15 border border-th-primary/40 text-th-primary hover:bg-th-primary/25 disabled:opacity-35 disabled:cursor-not-allowed flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] font-mono"
+            className="th-ui-label min-h-[46px] px-5 rounded-md bg-th-primary/15 border border-th-primary/40 text-th-primary hover:bg-th-primary/25 disabled:opacity-35 disabled:cursor-not-allowed flex items-center gap-2"
           >
             <Play size={13} />
             {starting || install.status === "running"
@@ -1971,7 +1951,7 @@ function BootstrapDoneStep({
               type="button"
               disabled={starting || recovering}
               onClick={() => void recoverReceipt()}
-              className="min-h-[42px] px-4 rounded-md border border-th-line text-th-text-muted hover:text-th-primary hover:border-th-primary/40 disabled:opacity-35 disabled:cursor-not-allowed flex items-center gap-2 text-[10px] uppercase tracking-[0.14em] font-mono"
+              className="th-ui-label min-h-[42px] px-4 rounded-md border border-th-line text-th-text-muted hover:text-th-primary hover:border-th-primary/40 disabled:opacity-35 disabled:cursor-not-allowed flex items-center gap-2"
             >
               <Lock size={13} />
               {recovering ? "recovering…" : "recover existing access details"}
@@ -1980,11 +1960,11 @@ function BootstrapDoneStep({
           {edition === "advanced" &&
             webMode === "https-custom" &&
             (!customCertificate || !customPrivateKey) && (
-              <div className="text-[10.5px] text-th-warning font-mono">
+              <div className="text-[12px] text-th-warning font-mono">
                 Upload both the certificate and matching private key before installing.
               </div>
             )}
-          <div className="text-[10.5px] text-th-text-muted font-mono">
+          <div className="text-[12px] text-th-text-muted font-mono">
             Existing Torhole data is never deleted by this action. A failed attempt keeps its
             generated configuration so it can be inspected and retried.
           </div>
@@ -2052,7 +2032,7 @@ function AdvancedInstallReceipt({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-[14px] font-semibold text-th-text">Services and DNS addresses</div>
-            <div className="text-[11px] text-th-text-muted mt-1">
+            <div className="text-[12px] text-th-text-muted mt-1">
               {singleLan
                 ? "Use this DNS address in your router's LAN DHCP settings. The monitoring and operational services remain fully enabled."
                 : "Use the two DNS addresses in the matching router or DHCP scopes."}
@@ -2061,7 +2041,7 @@ function AdvancedInstallReceipt({
           <button
             type="button"
             onClick={() => void copyReceipt()}
-            className="inline-flex min-h-[40px] px-3 items-center gap-2 rounded-md border border-th-line text-th-text-muted hover:text-th-primary hover:border-th-primary/40 text-[10px] uppercase tracking-[0.14em] font-mono"
+            className="th-ui-label inline-flex min-h-[40px] px-3 items-center gap-2 rounded-md border border-th-line text-th-text-muted hover:text-th-primary hover:border-th-primary/40"
           >
             {copied ? <Check size={13} /> : <Copy size={13} />}
             {copied ? "copied" : "copy all"}
@@ -2083,7 +2063,7 @@ function AdvancedInstallReceipt({
           <a
             href={install.certificate_url}
             download="torhole-local-ca.crt"
-            className="inline-flex min-h-[40px] px-3 mt-3 items-center gap-2 rounded-md border border-th-primary/40 text-th-primary hover:bg-th-primary/[0.08] text-[10px] uppercase tracking-[0.14em] font-mono"
+            className="th-ui-label inline-flex min-h-[40px] px-3 mt-3 items-center gap-2 rounded-md border border-th-primary/40 text-th-primary hover:bg-th-primary/[0.08]"
           >
             <ShieldCheck size={13} /> download HTTPS certificate
           </a>
@@ -2093,7 +2073,7 @@ function AdvancedInstallReceipt({
       {visibleCredentials.length > 0 ? (
         <div className="p-5 rounded-md border border-th-warning/30 bg-th-warning/[0.04]">
           <div className="text-[13px] font-semibold text-th-text mb-1">Save the administrator logins</div>
-          <div className="text-[10.5px] text-th-text-muted mb-3">
+          <div className="text-[12px] text-th-text-muted mb-3">
             The receipt includes both newly generated and preserved credentials. Passwords remain stored in the local .env file.
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -2120,7 +2100,7 @@ function AdvancedInstallReceipt({
           type="button"
           disabled={finishing}
           onClick={onFinish}
-          className="inline-flex min-h-[46px] px-5 items-center gap-2 rounded-md bg-th-primary/15 border border-th-primary/40 text-th-primary hover:bg-th-primary/25 text-[11px] uppercase tracking-[0.14em] font-mono disabled:opacity-35"
+          className="th-ui-label inline-flex min-h-[46px] px-5 items-center gap-2 rounded-md bg-th-primary/15 border border-th-primary/40 text-th-primary hover:bg-th-primary/25 disabled:opacity-35"
         >
           <ShieldCheck size={13} />
           {finishing ? "closing installer…" : "finish and open Torhole by IP"}
@@ -2225,7 +2205,7 @@ function DoneStep({
           <ChangeList changes={pendingChanges} />
 
           {state.kind === "error" && (
-            <div className="flex items-start gap-2 p-3 bg-th-danger/10 border border-th-danger/30 rounded text-[11.5px] text-th-danger font-mono">
+            <div className="flex items-start gap-2 p-3 bg-th-danger/10 border border-th-danger/30 rounded text-[12px] text-th-danger font-mono">
               <AlertCircle size={13} className="shrink-0 mt-0.5" />
               {state.message}
             </div>
@@ -2236,7 +2216,7 @@ function DoneStep({
               type="button"
               onClick={() => setModalOpen(true)}
               disabled={!canApply}
-              className={`px-3 rounded-md text-[10.5px] font-mono uppercase tracking-[0.14em] min-h-[44px] flex items-center gap-1.5 transition-colors ${
+              className={`px-3 rounded-md text-[12px] th-ui-label min-h-[44px] flex items-center gap-1.5 transition-colors ${
                 canApply
                   ? "bg-th-primary/15 border border-th-primary/40 text-th-primary hover:bg-th-primary/25"
                   : "bg-th-bg/60 border border-th-line/40 text-th-text-muted/40 cursor-not-allowed"
@@ -2245,7 +2225,7 @@ function DoneStep({
               <Save size={12} />
               apply configuration
             </button>
-            <div className="text-[10.5px] text-th-text-muted/80 font-mono leading-relaxed flex-1">
+            <div className="text-[12px] text-th-text-muted/80 font-mono leading-relaxed flex-1">
               Writes the changes above to{" "}
               <span className="text-th-text-mono">/opt/pi-dns-warden/.env</span>, backed
               up first to{" "}
@@ -2314,7 +2294,7 @@ function ChangeList({
 }) {
   if (changes.length === 0) {
     return (
-      <div className="p-4 bg-th-bg/40 border border-th-line/60 rounded-md text-[11.5px] text-th-text-muted leading-relaxed">
+      <div className="p-4 bg-th-bg/40 border border-th-line/60 rounded-md text-[12px] text-th-text-muted leading-relaxed">
         No changes yet. Edit the edition, admin user, or timezone in earlier steps, then come
         back here to apply. If you're on an existing install with nothing to change,
         head to <span className="font-mono text-th-text-mono">Glance</span> for live
@@ -2324,7 +2304,7 @@ function ChangeList({
   }
   return (
     <div className="rounded-md border border-th-line/60 bg-th-bg/40 overflow-hidden">
-      <div className="px-3 py-2 border-b border-th-line/60 text-[9.5px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono flex items-center justify-between">
+      <div className="th-ui-label px-3 py-2 border-b border-th-line/60 text-th-text-muted flex items-center justify-between">
         <span>pending changes</span>
         <span>
           {changes.length} key{changes.length === 1 ? "" : "s"}
@@ -2334,11 +2314,11 @@ function ChangeList({
         {changes.map((c) => (
           <div
             key={c.key}
-            className="px-3 py-2.5 flex items-baseline gap-3 text-[11.5px]"
+            className="px-3 py-2.5 flex items-baseline gap-3 text-[12px]"
           >
             <div className="w-[200px] shrink-0">
               <div className="font-semibold text-th-text">{c.label}</div>
-              <div className="text-[9.5px] font-mono text-th-text-muted/60 mt-0.5">
+              <div className="text-[12px] font-mono text-th-text-muted/60 mt-0.5">
                 {c.key}
               </div>
             </div>
@@ -2371,13 +2351,13 @@ function ApplySuccessPanel({
           <div className="text-[13px] font-semibold text-th-primary">
             Configuration written
           </div>
-          <div className="text-[11.5px] text-th-text-muted mt-1 leading-relaxed">
+          <div className="text-[12px] text-th-text-muted mt-1 leading-relaxed">
             {result.message}
           </div>
           {result.changes.length > 0 && (
             <div className="mt-3 space-y-1">
               {result.changes.map((c) => (
-                <div key={c.key} className="text-[10.5px] font-mono text-th-text-muted">
+                <div key={c.key} className="text-[12px] font-mono text-th-text-muted">
                   <span className="text-th-text-muted/60">wrote</span>{" "}
                   <span className="text-th-text-mono">{c.key}</span> ={" "}
                   <span className="text-th-primary">{c.new}</span>
@@ -2386,18 +2366,18 @@ function ApplySuccessPanel({
             </div>
           )}
           {result.backup && (
-            <div className="mt-3 text-[10px] font-mono text-th-text-muted/60">
+            <div className="mt-3 text-[12px] font-mono text-th-text-muted/60">
               rollback: <span className="text-th-text-mono">{result.backup}</span>
             </div>
           )}
           <div className="mt-4 p-3 bg-th-bg/50 border border-th-line/40 rounded">
-            <div className="text-[9.5px] uppercase tracking-[0.16em] text-th-text-muted/70 font-mono mb-1">
+            <div className="th-ui-label text-th-text-muted mb-1">
               next step
             </div>
-            <div className="text-[11.5px] font-mono text-th-text-mono">
+            <div className="text-[12px] font-mono text-th-text-mono">
               {edition === "advanced" ? "sudo ./deploy.sh" : "Home activation pending"}
             </div>
-            <div className="text-[10px] text-th-text-muted mt-1.5 leading-relaxed">
+            <div className="text-[12px] text-th-text-muted mt-1.5 leading-relaxed">
               {edition === "advanced"
                 ? "Run the deploy script on the host (via SSH) to have Torhole pick up the new values. Until you do, the running stack is still on the old config."
                 : "The profile choice is saved, but this checkpoint does not stop or replace an existing Advanced stack. The unified bootstrap dispatcher is the next implementation stage."}

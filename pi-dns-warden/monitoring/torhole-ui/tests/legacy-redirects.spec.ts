@@ -14,7 +14,7 @@ test.describe("Canonical and compatibility URLs", () => {
     await page.goto("/");
     await expect(page).toHaveURL(/\/?(#\/?)?$/);
     await expect(
-      page.getByRole("heading", { name: "Is the privacy guarantee intact?" }),
+      page.getByRole("heading", { name: "Glance", exact: true }),
     ).toBeVisible();
   });
 
@@ -22,7 +22,7 @@ test.describe("Canonical and compatibility URLs", () => {
     await page.goto("/v2/");
     await expect(page).toHaveURL(/\/?$/);
     await expect(
-      page.getByRole("heading", { name: "Is the privacy guarantee intact?" }),
+      page.getByRole("heading", { name: "Glance", exact: true }),
     ).toBeVisible();
   });
 
