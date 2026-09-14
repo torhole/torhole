@@ -55,6 +55,13 @@ if ! python3 "$RECOVERY_ARCHIVE_TOOL" extract "$ARCHIVE" "$WORKDIR/extract"; the
   exit 1
 fi
 
+# The host may use this very DNS stack. Require the complete staged image
+# inventory while it is still running; recovery must not need a registry.
+if ! check_cached_restore_images "$WORKDIR/extract" "$WORKDIR/images"; then
+  write_recovery_status "restore" "error" "Cached image preflight failed; installation unchanged" "$ARCHIVE"
+  exit 1
+fi
+
 if [[ "$ASSUME_YES" -ne 1 ]]; then
   echo "This will stop the Torhole stack, restore project files and service volumes, and may replace current state."
   read -r -p "Type RESTORE to continue: " CONFIRM
@@ -83,11 +90,11 @@ write_recovery_status "restore" "running" "Rendering and validating restored con
 "${ROOT_DIR}/ops/scripts/16-render-reverse-proxy-dns.sh"
 "${ROOT_DIR}/ops/scripts/13-render-prometheus.sh"
 "${ROOT_DIR}/ops/scripts/14-render-caddy-topology.sh"
-"${ROOT_DIR}/ops/scripts/19-validate-stack.sh" --allow-image-pulls
+"${ROOT_DIR}/ops/scripts/19-validate-stack.sh"
 
 if [[ "$AUTO_RESTART" -eq 1 ]]; then
   write_recovery_status "restore" "running" "Restarting restored stack" "$ARCHIVE"
-  "${ROOT_DIR}/ops/scripts/20-up.sh"
+  start_restored_stack_cached
 fi
 
 write_recovery_status "restore" "success" "Restore completed successfully" "$ARCHIVE"

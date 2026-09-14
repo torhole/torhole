@@ -187,6 +187,7 @@ restore_project_tree() {
   test -f "$1/project/.env"
 }
 restore_volumes() { :; }
+check_cached_restore_images() { :; }
 ''')
         for name in ("17-render-alertmanager.sh", "16-render-reverse-proxy-dns.sh", "13-render-prometheus.sh", "14-render-caddy-topology.sh", "19-validate-stack.sh"):
             (self.install / "ops/scripts" / name).write_text("#!/bin/sh\nexit 0\n")
@@ -195,6 +196,75 @@ restore_volumes() { :; }
             env={**os.environ, "TEST_EVENTS": str(self.events)}, capture_output=True, text=True,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def cached_restore_fixture(self, missing=False, topology="single-lan"):
+        archive = self.archive()
+        tree = self.base / "tree-modern"
+        project = tree / "project"
+        (project / ".env").write_text(f"TORHOLE_TOPOLOGY={topology}\n" if topology else "# legacy topology defaults to VLAN\n")
+        for script in (project / "ops/scripts").glob("*.sh"):
+            script.chmod(0o755)
+        # An older archive's startup script still tries the network. Recovery
+        # must use its retained cached-start implementation instead.
+        (project / "ops/scripts/20-up.sh").write_text("#!/bin/sh\ndocker compose pull\n")
+        with tarfile.open(archive, "w:gz") as tar:
+            for entry in tree.iterdir():
+                tar.add(entry, arcname=entry.name)
+        binary = self.base / "bin"
+        binary.mkdir()
+        docker = binary / "docker"
+        docker.write_text('''#!/bin/sh
+printf '%s\n' "$*" >> "$TEST_EVENTS"
+case "$*" in
+  *' pull'|*' pull '*|*' build'|*' build '*) echo 'fixture registry unavailable' >&2; exit 23 ;;
+  *'config --images'*) echo fixture-tor; echo fixture-auth; echo "${PIHOLE_IMAGE:-fixture-default-pihole}" ;;
+  'image inspect fixture-auth') [ "$MISSING_IMAGE" != 1 ] ;;
+  *'up '*) case "$*" in *'--pull never'*'--no-build'*) exit 0;; *) exit 24;; esac ;;
+  *) exit 0 ;;
+esac
+''')
+        docker.chmod(0o755)
+        result = subprocess.run(["bash", str(self.install / "ops/scripts/60-restore.sh"), "--yes", "--auto-restart", str(archive)],
+            env={**os.environ, "PATH": str(binary) + ":" + os.environ["PATH"],
+                 "TEST_EVENTS": str(self.events), "TORHOLE_TOPOLOGY": "single-lan", "PIHOLE_IMAGE": "fixture-installed-pihole", "MISSING_IMAGE": "1" if missing else "0"},
+            capture_output=True, text=True)
+        return result, self.events.read_text()
+
+    def test_restore_uses_cached_images_without_archived_network_startup(self):
+        result, events = self.cached_restore_fixture()
+        self.assertEqual(result.returncode, 0, result.stderr + events)
+        self.assertIn("--pull never --no-build", events)
+        self.assertLess(events.index("image inspect fixture-auth"), events.index("down"))
+        startup = next(line for line in events.splitlines() if " up " in line)
+        self.assertNotIn("--profile vlan", startup)
+        self.assertIn("--project-name install", startup)
+
+    def test_missing_cached_image_is_rejected_before_shutdown(self):
+        result, events = self.cached_restore_fixture(missing=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("down", events)
+        self.assertTrue(self.marker.exists())
+        self.assertIn("cached image", result.stderr.lower())
+
+    def test_cached_restore_preserves_vlan_profile(self):
+        result, events = self.cached_restore_fixture(topology="vlan")
+        self.assertEqual(result.returncode, 0, result.stderr + events)
+        startup = next(line for line in events.splitlines() if " up " in line)
+        self.assertIn("--profile vlan", startup)
+
+    def test_legacy_archive_defaults_to_vlan_despite_current_single_lan(self):
+        result, events = self.cached_restore_fixture(topology=None)
+        self.assertEqual(result.returncode, 0, result.stderr + events)
+        inventory = next(line for line in events.splitlines() if "config --images" in line)
+        startup = next(line for line in events.splitlines() if " up " in line)
+        self.assertIn("--profile vlan", inventory)
+        self.assertIn("--profile vlan", startup)
+
+    def test_cached_inventory_uses_archive_defaults_not_installed_image_override(self):
+        result, events = self.cached_restore_fixture()
+        self.assertEqual(result.returncode, 0, result.stderr + events)
+        self.assertIn("image inspect fixture-default-pihole", events)
+        self.assertNotIn("fixture-installed-pihole", events)
 
     def test_corrupt_nested_volume_is_rejected(self):
         result = self.shell('validate_archive_safety "$1"', self.archive(volume=b"broken"))

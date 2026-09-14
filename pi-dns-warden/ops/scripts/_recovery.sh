@@ -325,3 +325,78 @@ restore_volumes() {
     helper_restore_volume "$docker_volume" "$source_root/volumes" "$logical"
   done
 }
+
+# Keep this implementation in the running recovery process: an older archive
+# may contain a startup script that pulls/builds before restoring host DNS.
+restore_compose() {
+  local project="$1"
+  shift
+  local -a command
+  if docker compose version >/dev/null 2>&1; then
+    command=(docker compose)
+  elif command -v docker-compose >/dev/null 2>&1; then
+    command=(docker-compose)
+  else
+    echo "Docker Compose is required for cached recovery." >&2
+    return 1
+  fi
+  case "${TORHOLE_TOPOLOGY:-vlan}" in
+    single-lan) ;;
+    vlan) command+=(--profile vlan) ;;
+    *) echo "Invalid restored topology." >&2; return 1 ;;
+  esac
+  "${command[@]}" --project-name "$PROJECT_NAME" --project-directory "$ROOT_DIR" \
+    --env-file "$project/.env" -f "$project/docker-compose.yml" \
+    -f "$project/docker-compose.monitoring.yml" "$@"
+}
+
+load_cached_restore_env() {
+  local variable
+  # Installed topology/image overrides must not replace archived defaults.
+  # This runs only in recovery subprocesses, leaving safety-backup settings intact.
+  while IFS= read -r variable; do
+    case "$variable" in
+      TORHOLE_TOPOLOGY|*_IMAGE) unset "$variable" ;;
+    esac
+  done < <(compgen -v)
+  load_env_file "$1"
+}
+
+check_cached_restore_images() {
+  local project="$1"
+  local inventory="$2"
+  local image
+  [[ ! -d "$project/project" ]] || project="$project/project"
+  # Define the loader before project replacement so it survives an older
+  # archived ops tree. Load staged settings only in the inventory subprocess.
+  # shellcheck disable=SC1091
+  source "$ROOT_DIR/ops/lib/load-env.sh"
+  if ! (
+    load_cached_restore_env "$project/.env"
+    restore_compose "$project" config --images
+  ) >"$inventory"; then
+    echo "Cannot resolve cached image inventory for the staged backup." >&2
+    return 1
+  fi
+  if [[ ! -s "$inventory" ]]; then
+    echo "Staged backup has no cached image inventory." >&2
+    return 1
+  fi
+  while IFS= read -r image; do
+    [[ -n "$image" ]] || continue
+    if ! docker image inspect "$image" >/dev/null 2>&1; then
+      echo "Required cached image is missing: $image. Load it before restoring; stack unchanged." >&2
+      return 1
+    fi
+  done <"$inventory"
+  # Volume extraction must also avoid building its helper after shutdown.
+  if ! docker image inspect "$BACKUP_MANAGER_IMAGE" >/dev/null 2>&1; then
+    echo "Required cached image is missing: $BACKUP_MANAGER_IMAGE. Load it before restoring; stack unchanged." >&2
+    return 1
+  fi
+}
+
+start_restored_stack_cached() (
+  load_cached_restore_env "$ROOT_DIR/.env"
+  restore_compose "$ROOT_DIR" up -d --pull never --no-build
+)
