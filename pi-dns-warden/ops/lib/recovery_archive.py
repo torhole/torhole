@@ -176,6 +176,13 @@ def main():
                     # older Python versions without extraction filters.
                     options = {"filter": "data"} if hasattr(tarfile, "data_filter") else {}
                     archive.extractall(args.destination, **options)
+                    # The data filter deliberately drops directory modes, so
+                    # a private caller umask otherwise makes service bind mounts
+                    # untraversable. Reapply only safe bits after extraction,
+                    # deepest first; the same sanitization covers older Python.
+                    directories = (member for member in archive.getmembers() if member.isdir())
+                    for member in sorted(directories, key=lambda item: len(PurePosixPath(item.name).parts), reverse=True):
+                        (args.destination / member.name).chmod(member.mode & 0o755)
                     check_tree(args.destination)
     except (OSError, EOFError, ValueError, tarfile.TarError) as exc:
         # Do not include file contents (the archive contains credentials).

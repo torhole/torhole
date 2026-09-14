@@ -133,6 +133,52 @@ restore_project_tree "$2"
         self.assertFalse(self.marker.exists())
         self.assertEqual((self.install / ".env").read_text(), "# fixture\n")
 
+    def permission_archive(self):
+        archive = self.archive()
+        project = self.base / "tree-modern/project"
+        project.chmod(0o700)  # Backup staging wrapper is intentionally private.
+        (project / "dnscrypt").chmod(0o755)
+        (project / "monitoring").chmod(0o700)
+        (project / "tor").chmod(0o750)
+        (project / "tor-image").chmod(0o2777)
+        with tarfile.open(archive, "w:gz") as tar:
+            for entry in project.parent.iterdir():
+                tar.add(entry, arcname=entry.name)
+        return archive
+
+    def test_extraction_preserves_safe_directory_modes_under_private_umask(self):
+        archive = self.permission_archive()
+        stage = self.base / "stage"
+        result = self.shell('umask 077; python3 "$RECOVERY_ARCHIVE_TOOL" extract "$1" "$2"', archive, stage)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for name, mode in (("dnscrypt", 0o755), ("monitoring", 0o700), ("tor", 0o750), ("tor-image", 0o755)):
+            with self.subTest(directory=name):
+                self.assertEqual((stage / "project" / name).stat().st_mode & 0o7777, mode)
+
+    def test_private_backup_wrapper_cannot_change_installed_project_mode(self):
+        archive = self.permission_archive()
+        stage = self.base / "stage"
+        self.install.chmod(0o750)
+        transfer = self.base / "transferred.tar"
+        result = self.shell('''
+umask 077
+python3 "$RECOVERY_ARCHIVE_TOOL" extract "$1" "$2"
+PAYLOAD_ARCHIVE="$3"
+tar() {
+  case " $* " in
+    *" -cf - "*) command tar "$@" | tee "$PAYLOAD_ARCHIVE" ;;
+    *) command tar "$@" ;;
+  esac
+}
+restore_project_tree "$2"
+''', archive, stage, transfer)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        with tarfile.open(transfer) as payload:
+            self.assertNotIn(".", payload.getnames(), "Backup wrapper must not replace installed root metadata")
+        self.assertEqual(self.install.stat().st_mode & 0o7777, 0o750)
+        self.assertEqual((self.install / "dnscrypt").stat().st_mode & 0o7777, 0o755)
+        self.assertEqual((self.install / "monitoring").stat().st_mode & 0o7777, 0o700)
+
     def test_missing_captured_volume_is_rejected_before_shutdown(self):
         archive = self.archive(volume=b"placeholder")
         tree = self.base / "tree-modern"

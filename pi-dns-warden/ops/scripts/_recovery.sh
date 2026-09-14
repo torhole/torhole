@@ -298,9 +298,17 @@ restore_project_tree() {
       ops \
       pihole \
       tor \
-      tor-image | tar -C "$ROOT_DIR" -xf -
+      tor-image | tar -C "$ROOT_DIR" -xpf -
   else
-    tar -C "$source_root" -cf - . | tar -C "$ROOT_DIR" -xf -
+    # The project's wrapper is a private backup staging directory, not the
+    # installed root. Copy its children without a '.' header that could change
+    # ROOT_DIR permissions; retain sanitized payload modes despite caller umask.
+    (
+      cd "$source_root"
+      shopt -s dotglob nullglob
+      entries=(*)
+      tar -cf - -- "${entries[@]}"
+    ) | tar -C "$ROOT_DIR" -xpf -
   fi
 }
 
